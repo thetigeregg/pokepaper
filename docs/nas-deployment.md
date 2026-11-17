@@ -40,7 +40,9 @@ If the server logs `EACCES` or `SQLITE_CANTOPEN`, the data directories aren't wr
 
 The release workflow publishes `ghcr.io/thetigeregg/pokepaper-server` and `ghcr.io/thetigeregg/pokepaper-edge` (`:main`) on merges to `main` that change them. Both are **amd64**, matching the DS920+ (x86_64). These are the compose file's default images.
 
-> Until that workflow exists in the repo (it's added with CI/CD), the `:main` images aren't published: build them yourself (below) and set `SERVER_IMAGE`/`EDGE_IMAGE` to your tags, or the stack fails with "manifest unknown".
+Every release is also tagged by version (`v0.3.1`, `0.3.1`, `0.3`, `0`) and commit (`sha-…`), so you can pin `SERVER_IMAGE`/`EDGE_IMAGE` to a version instead of `:main`.
+
+> **Pull access:** GHCR packages start out private. Either make both packages public (GitHub → your profile → Packages → `pokepaper-server` / `pokepaper-edge` → Package settings → Change visibility), or log the NAS in once with a personal access token that has `read:packages`: `docker login ghcr.io -u <github-user>`.
 
 Check the published images are reachable:
 

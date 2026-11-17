@@ -1,0 +1,8 @@
+name: PokePaper CodeQL config
+
+# Unlike go-gather, no queries are excluded: server/ rate-limits every route
+# (@fastify/rate-limit), so js/missing-rate-limiting stays on as a real check.
+paths-ignore:
+  - www
+  - coverage
+  - "**/node_modules"
