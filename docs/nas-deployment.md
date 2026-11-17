@@ -17,18 +17,29 @@ TLS terminates at Cloudflare. Everything is protected by passkeys (`docs/auth.md
 
 The server container runs unprivileged as **PUID:PGID** (default `1000:1000`, the image's `node` user). Its data folders and the setup token must be accessible to that uid.
 
+Pick a folder for the stack. Every command in this section uses `ROOT`, so run them in the same shell:
+
+```bash
+ROOT=/path/to/pokepaper   # Synology: inside a shared folder you can write, e.g. /volumeN/<shared-folder>/pokepaper
+```
+
+The setup token lets whoever holds it register the first passkey, which makes them the owner. Keep it private, and delete it once setup is done (section 7).
+
 **On a Synology shared folder, use your own DSM user.** Shared folders carry ACLs that override `chown`/`chmod`: a uid the ACL doesn't list (like 1000) is denied even when it owns the folder. Run the container as a DSM user the share already allows instead:
 
 ```bash
-id <dsm-user>                         # prints uid=<puid>(<dsm-user>) gid=<pgid>(…)
-ROOT=/volumeN/<shared-folder>/pokepaper   # anywhere inside a shared folder you can write
+id <dsm-user>   # prints uid=<puid>(<dsm-user>) gid=<pgid>(…) groups=…
 mkdir -p "$ROOT/server-data" "$ROOT/server-backups" "$ROOT/secrets"
-
-# One-time token for registering the first passkey (only your user can read it)
-openssl rand -base64 32 > "$ROOT/secrets/setup_token" && chmod 400 "$ROOT/secrets/setup_token"
 ```
 
-Then set `PUID` / `PGID` to those IDs in the stack variables (section 3).
+Set `PUID` to that uid in the stack variables (section 3). The container gets **only** `PGID`, none of the user's other groups, so `PGID` must be a group the share's ACL allows to read and write. That's usually your primary gid. If the share grants you access only through another group (e.g. `administrators`), set `PGID` to that group's gid from the `groups=` list.
+
+`chmod` can't protect the token here: new files inherit the share's ACL, so other DSM users who can read the share could read the token too. Before creating it, lock down the `secrets` folder in File Station: right-click it → **Properties** → **Permission**, stop it inheriting the shared folder's permissions, and leave only your DSM user. Then create the token:
+
+```bash
+openssl rand -base64 32 > "$ROOT/secrets/setup_token"
+cat "$ROOT/secrets/setup_token"   # you'll paste this into the app once
+```
 
 **Elsewhere (plain Linux permissions, no ACLs):** keep the default 1000:1000 and give the folders to that uid:
 
@@ -37,9 +48,10 @@ sudo mkdir -p "$ROOT/server-data" "$ROOT/server-backups" "$ROOT/secrets"
 sudo chown -R 1000:1000 "$ROOT/server-data" "$ROOT/server-backups"
 openssl rand -base64 32 | sudo tee "$ROOT/secrets/setup_token" > /dev/null
 sudo chown 1000:1000 "$ROOT/secrets/setup_token" && sudo chmod 400 "$ROOT/secrets/setup_token"
+sudo cat "$ROOT/secrets/setup_token"   # you'll paste this into the app once
 ```
 
-**Check access before deploying.** Run the real image as the configured user with the real mounts. Set `PUID` / `PGID` to the values you'll use for the stack. Expect three `OK` lines:
+**Check access before deploying.** Run the real image as the configured user with the real mounts. Like the stack, it runs with exactly `PUID:PGID` and no other groups, so it also catches a wrong `PGID`. Set `PUID` / `PGID` to the values you'll use for the stack. Expect three `OK` lines:
 
 ```bash
 PUID=<puid> PGID=<pgid>
@@ -191,7 +203,7 @@ To restore:
 docker compose stop server
 cp server-backups/pokepaper-<timestamp>.db server-data/pokepaper.db
 rm -f server-data/pokepaper.db-wal server-data/pokepaper.db-shm
-sudo chown "$PUID:$PGID" server-data/pokepaper.db   # only needed if you copied as another user
+sudo chown <puid>:<pgid> server-data/pokepaper.db   # plain Linux only, if you copied as another user
 docker compose start server
 ```
 
