@@ -65,12 +65,17 @@ export class ImageDownloadService {
   private readonly _offlineSets = signal<OfflineSet[]>([]);
   /** Downloaded sets, newest release first. */
   readonly offlineSets = this._offlineSets.asReadonly();
+  /** Bytes come from actual pinned usage, so an image two sets share counts once. */
   readonly totals = computed(() => ({
     sets: this._offlineSets().length,
-    bytes: this._offlineSets().reduce((total, set) => total + set.bytes, 0),
+    bytes:
+      this.imageCache.usage()?.pinnedBytes ??
+      this._offlineSets().reduce((total, set) => total + set.bytes, 0),
   }));
 
   private readonly cancelled = new Set<string>();
+  /** Running downloads by set key, registered before their first await. */
+  private readonly running = new Map<string, Promise<void>>();
 
   private get engine(): StorageEngine {
     return this.storageEngineFactory.getEngine();
@@ -79,19 +84,32 @@ export class ImageDownloadService {
   /**
    * Downloads and pins a set's images in `languages` (each card's own scan,
    * or its fallback). Resolves when done or cancelled; a second call for the
-   * same set while one runs returns without starting another.
+   * same set while one runs joins it instead of starting another.
    */
-  async downloadSet(
+  downloadSet(
     region: CatalogRegion,
     setId: string,
     languages: readonly CatalogLanguage[]
   ): Promise<void> {
     const setKey = catalogKey(region, setId);
-    if (this._progress().get(setKey)?.running) {
-      return;
+    const existing = this.running.get(setKey);
+    if (existing) {
+      return existing;
     }
     this.cancelled.delete(setKey);
+    const run = this.runDownload(region, setId, setKey, languages).finally(() => {
+      this.running.delete(setKey);
+    });
+    this.running.set(setKey, run);
+    return run;
+  }
 
+  private async runDownload(
+    region: CatalogRegion,
+    setId: string,
+    setKey: string,
+    languages: readonly CatalogLanguage[]
+  ): Promise<void> {
     const cards = await this.engine.listCatalogCards(region, setId);
     const wanted = languages.filter((language) => regionLanguages(region).includes(language));
     const previous = (await this.engine.listDownloadedSets()).find(
@@ -153,13 +171,18 @@ export class ImageDownloadService {
 
   /** Unpins several downloaded sets (a series, or all of them). */
   async removeSets(setKeys: readonly string[]): Promise<void> {
-    const progress = new Map(this._progress());
     for (const setKey of setKeys) {
       this.cancelled.add(setKey);
+      // Let a running download stop first, so images it has in flight can't
+      // re-pin themselves after the set is removed.
+      await this.running.get(setKey)?.catch(() => undefined);
       await this.engine.runInTransaction(['imagePins', 'downloadedSets'], async () => {
         await this.engine.unpinSet(setKey);
         await this.engine.deleteDownloadedSet(setKey);
       });
+    }
+    const progress = new Map(this._progress());
+    for (const setKey of setKeys) {
       progress.delete(setKey);
     }
     this._progress.set(progress);

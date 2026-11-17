@@ -213,6 +213,56 @@ describe('ImageDownloadService', () => {
     expect(await engine.listEvictableImages(10)).toHaveLength(2);
   });
 
+  it('joins a download already running for the same set', async () => {
+    const requested: string[] = [];
+    responder = (request) => {
+      requested.push(request.request.url);
+      request.flush(new Blob(['image']));
+    };
+
+    const first = service.downloadSet('intl', 'sv01', ['de']);
+    const second = service.downloadSet('intl', 'sv01', ['de']);
+    await Promise.all([first, second]);
+
+    expect(second).toBe(first);
+    expect(requested).toHaveLength(2);
+    expect(service.progress().get('intl:sv01')).toMatchObject({ done: 2, total: 2 });
+  });
+
+  it('leaves nothing pinned when a set is removed mid-download', async () => {
+    const ids = Array.from({ length: 12 }, (_, i) => `big-${String(i).padStart(3, '0')}`);
+    await engine.replaceCatalogSet(makeContractPack('intl', 'big', ids));
+    const removal: { promise?: Promise<void> } = {};
+    responder = (request) => {
+      // The first response triggers a removal while other images are in flight.
+      removal.promise ??= service.removeSet('intl:big');
+      request.flush(new Blob(['image']));
+    };
+
+    await service.downloadSet('intl', 'big', ['en']);
+    await removal.promise;
+
+    expect(await engine.listPinnedSets()).toEqual([]);
+    expect(await engine.listDownloadedSets()).toEqual([]);
+    expect(service.offlineSets()).toEqual([]);
+  });
+
+  it('counts an image pinned by two sets once in the total', async () => {
+    await service.downloadSet('intl', 'sv01', ['de']);
+    // A second downloaded set that pins one of the same images.
+    await engine.putDownloadedSet({
+      setKey: 'intl:sv02',
+      languages: ['de'],
+      downloadedAt: new Date().toISOString(),
+    });
+    await engine.pinImages('intl:sv02', [img('sv01-001', 'de')]);
+    await service.refresh();
+
+    const perSet = service.offlineSets().reduce((total, entry) => total + entry.bytes, 0);
+    expect(perSet).toBe(15);
+    expect(service.totals().bytes).toBe(10);
+  });
+
   it('ignores languages from the other region', async () => {
     const requested: string[] = [];
     responder = (request) => {

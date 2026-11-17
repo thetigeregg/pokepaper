@@ -248,6 +248,19 @@ export function describeStorageEngineContract(
         expect(await engine.getImage('b')).toBeDefined();
       });
 
+      it('evicts only images that are still unpinned', async () => {
+        await engine.putImage(image('a', 1, '2026-01-01T00:00:00.000Z'));
+        await engine.putImage(image('b', 1, '2026-01-01T00:00:00.000Z'));
+        // Listed as evictable, then pinned by a download before the delete.
+        await engine.pinImages('intl:sv01', ['b']);
+
+        expect(await engine.evictImages(['a', 'b', 'never-stored'])).toEqual([
+          { key: 'a', filePath: 'files/a', size: 1 },
+        ]);
+        expect(await engine.getImage('a')).toBeUndefined();
+        expect(await engine.getImage('b')).toBeDefined();
+      });
+
       it('deletes several images at once, and clears pins with the cache', async () => {
         await engine.putImage(image('a', 1, '2026-01-01T00:00:00.000Z'));
         await engine.putImage(image('b', 1, '2026-01-01T00:00:00.000Z'));
@@ -256,8 +269,26 @@ export function describeStorageEngineContract(
         await engine.deleteImages(['a', 'b', 'never-stored']);
         expect(await engine.imageCacheUsage()).toEqual({ pinnedBytes: 0, unpinnedBytes: 0 });
 
+        await engine.putDownloadedSet({
+          setKey: 'intl:sv01',
+          languages: ['en'],
+          downloadedAt: '2026-01-01T00:00:00.000Z',
+        });
         await engine.clearImageCache();
         expect(await engine.listPinnedSets()).toEqual([]);
+        expect(await engine.listDownloadedSets()).toEqual([]);
+      });
+
+      it('records a view without rewriting the rest of the image', async () => {
+        await engine.putImage(image('a', 7, '2026-01-01T00:00:00.000Z'));
+
+        await engine.touchImage('a', '2026-02-01T00:00:00.000Z');
+
+        expect(await engine.getImage('a')).toMatchObject({
+          size: 7,
+          filePath: 'files/a',
+          lastAccessedAt: '2026-02-01T00:00:00.000Z',
+        });
       });
     });
 

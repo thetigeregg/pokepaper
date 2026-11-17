@@ -96,6 +96,24 @@ describe('ImageCacheService', () => {
     expect(await both).toEqual(['blob:test-0', 'blob:test-0']);
   });
 
+  it('downloads again, pinned, if eviction took a joined download before its pin', async () => {
+    const viewing = service.resolve(URL_A);
+    const first = await waitForRequest(httpMock, URL_A); // The unpinned download is in flight.
+    const pinning = service.store(URL_A, 'intl:sv01'); // Joins it.
+    const pinImages = engine.pinImages.bind(engine);
+    vi.spyOn(engine, 'pinImages').mockImplementationOnce(async (setKey, keys) => {
+      await engine.deleteImage(URL_A); // Evicted just before the pin lands.
+      return pinImages(setKey, keys);
+    });
+    first.flush(new Blob(['abc']));
+    (await waitForRequest(httpMock, URL_A)).flush(new Blob(['abc']));
+
+    expect(await pinning).toBe('downloaded');
+    await viewing;
+    expect(await engine.getImage(URL_A)).toBeDefined();
+    expect(await engine.listPinnedSets()).toEqual([{ setKey: 'intl:sv01', images: 1, bytes: 3 }]);
+  });
+
   it('returns null for an image the server lacks, and does not ask again', async () => {
     const first = service.resolve(URL_A);
     (await waitForRequest(httpMock, URL_A)).flush(null, { status: 404, statusText: 'Not Found' });

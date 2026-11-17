@@ -125,10 +125,22 @@ export class DexieStorageEngine implements StorageEngine {
     return this.imageCacheTable.bulkDelete([...keys]);
   }
 
-  clearImageCache(): Promise<void> {
+  evictImages(keys: readonly string[]): Promise<StoredImageRef[]> {
     return this.runInTransaction(['imageCache', 'imagePins'], async () => {
+      const pinned = await this.pinnedImageKeys();
+      const records = (await this.imageCacheTable.bulkGet(keys.filter((key) => !pinned.has(key))))
+        .filter((record) => record !== undefined)
+        .map(toImageRef);
+      await this.imageCacheTable.bulkDelete(records.map((record) => record.key));
+      return records;
+    });
+  }
+
+  clearImageCache(): Promise<void> {
+    return this.runInTransaction(['imageCache', 'imagePins', 'downloadedSets'], async () => {
       await this.imageCacheTable.clear();
       await this.imagePinsTable.clear();
+      await this.downloadedSetsTable.clear();
     });
   }
 
@@ -182,7 +194,12 @@ export class DexieStorageEngine implements StorageEngine {
     return this.runInTransaction(['imageCache', 'imagePins'], async () => {
       const bySet = new Map<string, string[]>();
       for (const pin of await this.imagePinsTable.toArray()) {
-        bySet.set(pin.setKey, [...(bySet.get(pin.setKey) ?? []), pin.imageKey]);
+        const keys = bySet.get(pin.setKey);
+        if (keys) {
+          keys.push(pin.imageKey);
+        } else {
+          bySet.set(pin.setKey, [pin.imageKey]);
+        }
       }
       const summaries: PinnedSetSummary[] = [];
       for (const [setKey, keys] of bySet) {

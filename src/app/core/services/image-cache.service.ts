@@ -98,9 +98,14 @@ export class ImageCacheService {
       });
     }
     const result = await download;
-    // A concurrent caller started the download; pin for this caller too.
+    // A concurrent caller started the (possibly unpinned) download: pin for
+    // this caller too. If eviction took the image before the pin landed,
+    // download it again, stored and pinned together.
     if (pending && pinFor && result !== 'missing') {
       await this.engine.pinImages(pinFor, [url]);
+      if (!(await this.engine.getImage(url))) {
+        return this.store(url, pinFor);
+      }
     }
     return result;
   }
@@ -153,8 +158,8 @@ export class ImageCacheService {
         if (batch.length === 0) {
           break;
         }
-        await this.engine.deleteImages(batch.map((ref) => ref.key));
-        await this.removeStored(batch);
+        // Re-checks pins: a download may have pinned one since it was listed.
+        await this.removeStored(await this.engine.evictImages(batch.map((ref) => ref.key)));
       }
     }
     this._usage.set(await this.engine.imageCacheUsage());
@@ -216,9 +221,10 @@ export class ImageCacheService {
   }
 
   private async hasBytes(record: ImageCacheRecord): Promise<boolean> {
-    return Boolean(
-      record.blob ?? (record.filePath && (await this.fileStore.getDisplayUrl(record.filePath)))
-    );
+    if (record.blob) {
+      return true;
+    }
+    return record.filePath ? this.fileStore.exists(record.filePath) : false;
   }
 
   private objectUrl(key: string, blob: Blob): string {

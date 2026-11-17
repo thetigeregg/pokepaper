@@ -28,6 +28,16 @@ export class ImageFileStore {
     return { filePath };
   }
 
+  /** Whether the file is still there (one native call). */
+  async exists(filePath: string): Promise<boolean> {
+    try {
+      await Filesystem.stat({ path: filePath, directory: Directory.Cache });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /** A WebView-displayable URL for the file, or null if it's gone. */
   async getDisplayUrl(filePath: string): Promise<string | null> {
     try {

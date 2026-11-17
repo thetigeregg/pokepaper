@@ -108,11 +108,17 @@ export class SqliteStorageEngine implements StorageEngine {
   }
 
   async getImage(key: string): Promise<ImageCacheRecord | undefined> {
-    const rows = await this.sql.query<PayloadRow>(
-      'SELECT payload FROM image_cache_meta WHERE key = ?',
+    const rows = await this.sql.query<PayloadRow & { last_accessed_at: string }>(
+      'SELECT payload, last_accessed_at FROM image_cache_meta WHERE key = ?',
       [key]
     );
-    return this.firstEntity(rows) as ImageCacheRecord | undefined;
+    const row = rows.at(0);
+    if (!row) {
+      return undefined;
+    }
+    // The column is authoritative: touchImage updates only it.
+    const record = this.parseEntity(row) as ImageCacheRecord;
+    return { ...record, lastAccessedAt: row.last_accessed_at || record.lastAccessedAt };
   }
 
   async putImage(record: ImageCacheRecord): Promise<void> {
@@ -129,10 +135,7 @@ export class SqliteStorageEngine implements StorageEngine {
   }
 
   async touchImage(key: string, at: string): Promise<void> {
-    const record = await this.getImage(key);
-    if (record) {
-      await this.putImage({ ...record, lastAccessedAt: at });
-    }
+    await this.sql.run('UPDATE image_cache_meta SET last_accessed_at = ? WHERE key = ?', [at, key]);
   }
 
   async deleteImage(key: string): Promise<void> {
@@ -148,10 +151,29 @@ export class SqliteStorageEngine implements StorageEngine {
     );
   }
 
-  clearImageCache(): Promise<void> {
+  evictImages(keys: readonly string[]): Promise<StoredImageRef[]> {
     return this.runInTransaction(['imageCache', 'imagePins'], async () => {
+      const removed: StoredImageRef[] = [];
+      for (const key of keys) {
+        const rows = await this.sql.query<{ key: string; file_path: string | null; size: number }>(
+          `SELECT key, file_path, size FROM image_cache_meta i WHERE key = ? AND NOT ${PINNED}`,
+          [key]
+        );
+        const row = rows.at(0);
+        if (row) {
+          await this.sql.run('DELETE FROM image_cache_meta WHERE key = ?', [key]);
+          removed.push({ key: row.key, filePath: row.file_path, size: row.size });
+        }
+      }
+      return removed;
+    });
+  }
+
+  clearImageCache(): Promise<void> {
+    return this.runInTransaction(['imageCache', 'imagePins', 'downloadedSets'], async () => {
       await this.sql.run('DELETE FROM image_cache_meta', []);
       await this.sql.run('DELETE FROM image_pins', []);
+      await this.sql.run('DELETE FROM downloaded_sets', []);
     });
   }
 

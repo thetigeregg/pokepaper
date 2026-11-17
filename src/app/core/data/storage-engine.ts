@@ -149,7 +149,13 @@ export interface StorageEngine {
   touchImage(key: string, at: string): Promise<void>;
   deleteImage(key: string): Promise<void>;
   deleteImages(keys: readonly string[]): Promise<void>;
-  /** Removes every image and pin. */
+  /**
+   * Deletes those of `keys` that are still unpinned, checked in the same
+   * transaction (a download may have pinned one since it was listed).
+   * Returns what was deleted.
+   */
+  evictImages(keys: readonly string[]): Promise<StoredImageRef[]>;
+  /** Removes every image, pin and downloaded-set record (files on disk are the caller's). */
   clearImageCache(): Promise<void>;
   imageCacheUsage(): Promise<ImageCacheUsage>;
   /** Up to `limit` unpinned images, least recently viewed first. */
