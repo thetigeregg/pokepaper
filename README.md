@@ -123,7 +123,7 @@ Releases skip themselves: the release commit is `chore(release): vX.Y.Z [skip ci
 
 ## Deployment
 
-Two Docker images, `server` (`server/Dockerfile`) and `edge` (`edge/Dockerfile`), run as a Portainer stack on the Synology NAS from `docker-compose.yml`. Public traffic goes Cloudflare → cloudflared tunnel → Nginx Proxy Manager → `edge` → `server`; only `edge` is published on the host. The full walkthrough (directories and permissions, Portainer variables, NPM and Cloudflare settings, verification, first sign-in, backups, updates) is in [`docs/nas-deployment.md`](docs/nas-deployment.md).
+Two Docker images, `server` (`server/Dockerfile`) and `edge` (`edge/Dockerfile`), run as a Portainer stack on the Synology NAS from `docker-compose.yml`. Public traffic goes Cloudflare → cloudflared tunnel → Nginx Proxy Manager → `edge` → `server`; only `edge` is published on the host. The full walkthrough (directories and permissions, Portainer variables, NPM and Cloudflare settings, verification, first sign-in, backups, updates) is in [`docs/nas-deployment.md`](docs/nas-deployment.md). When Nginx Proxy Manager runs in Docker on the same host, add `docker-compose.npm.yml` so edge joins its network and only NPM is trusted to set the client IP.
 
 To try the production stack locally (builds both images, runs in development mode with Docker volumes, so nothing needs creating or `chown`-ing):
 
