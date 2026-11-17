@@ -5,7 +5,13 @@
         <ion-back-button defaultHref="/tabs/cards" text="Cards"></ion-back-button>
       </ion-buttons>
     }
-    <ion-title>{{ title() }}</ion-title>
+    <ion-title>
+      @if (titleLogo(); as logo) {
+        <img class="title-logo" [src]="logo" [alt]="title()" />
+      } @else {
+        {{ title() }}
+      }
+    </ion-title>
     @if (set(); as set) {
       <ion-buttons slot="end">
         <app-language-button

@@ -3,9 +3,11 @@ import {
   Component,
   OnInit,
   computed,
+  effect,
   inject,
   input,
   signal,
+  untracked,
 } from '@angular/core';
 import {
   ActionSheetController,
@@ -24,7 +26,13 @@ import {
   IonToolbar,
   ModalController,
 } from '@ionic/angular';
-import type { CatalogCard, CatalogLanguage, CatalogRegion, CatalogSet } from '@pokepaper/shared';
+import {
+  catalogSetImageUrl,
+  type CatalogCard,
+  type CatalogLanguage,
+  type CatalogRegion,
+  type CatalogSet,
+} from '@pokepaper/shared';
 import { addIcons } from 'ionicons';
 import { cloudDoneOutline, cloudDownloadOutline } from 'ionicons/icons';
 import { catalogKey, type StorageEngine } from '../../core/data/storage-engine';
@@ -34,6 +42,7 @@ import {
   CatalogLanguageService,
   LANGUAGE_LABELS,
 } from '../../core/services/catalog-language.service';
+import { ImageCacheService } from '../../core/services/image-cache.service';
 import { ImageDownloadService } from '../../core/services/image-download.service';
 import { LayoutService, WIDE_LAYOUT_QUERY } from '../../core/services/layout.service';
 import { CardDetailComponent } from '../../features/cards/card-detail.component';
@@ -46,6 +55,14 @@ export function setLine(set: CatalogSet, card: CatalogCard): string {
   const prefix = set.abbreviation ?? set.id;
   const total = set.cardCount.official > 0 ? `/${String(set.cardCount.official)}` : '';
   return `${prefix} · ${card.localId}${total}`;
+}
+
+/** The set's logo in `language`, else in another language; null without one. */
+export function setLogoUrl(set: CatalogSet, language: CatalogLanguage): string | null {
+  const logoLanguage =
+    (set.logos[language] ? language : undefined) ??
+    (Object.keys(set.logos) as CatalogLanguage[]).at(0);
+  return logoLanguage ? catalogSetImageUrl(set, { kind: 'logo', language: logoLanguage }) : null;
 }
 
 /**
@@ -65,6 +82,13 @@ export function setLine(set: CatalogSet, card: CatalogCard): string {
         border: 0;
         background: none;
         cursor: pointer;
+      }
+      .title-logo {
+        display: block;
+        max-width: min(60vw, 280px);
+        max-height: 32px;
+        margin: 0 auto;
+        object-fit: contain;
       }
       .caption {
         margin: 4px 0 8px;
@@ -99,6 +123,7 @@ export class SetPage implements OnInit {
   private readonly downloads = inject(ImageDownloadService);
   private readonly actionSheets = inject(ActionSheetController);
   private readonly modals = inject(ModalController);
+  private readonly imageCache = inject(ImageCacheService);
   readonly layout = inject(LayoutService);
 
   /** Route parameters (component input binding). */
@@ -117,6 +142,12 @@ export class SetPage implements OnInit {
     const set = this.set();
     return set ? localized(set.names, this.language()) : '';
   });
+  /** The header shows the set's logo instead of its name when it has one. */
+  readonly titleLogo = signal<string | null>(null);
+  private readonly titleLogoUrl = computed(() => {
+    const set = this.set();
+    return set ? setLogoUrl(set, this.language()) : null;
+  });
   readonly progress = computed(() => this.downloads.progress().get(this.key()));
   readonly downloading = computed(() => this.progress()?.running ?? false);
   readonly downloaded = computed(() =>
@@ -129,6 +160,23 @@ export class SetPage implements OnInit {
 
   constructor() {
     addIcons({ cloudDoneOutline, cloudDownloadOutline });
+    effect(() => {
+      const url = this.titleLogoUrl();
+      untracked(() => void this.loadTitleLogo(url));
+    });
+  }
+
+  private async loadTitleLogo(url: string | null): Promise<void> {
+    let src: string | null = null;
+    try {
+      src = url ? await this.imageCache.resolve(url) : null;
+    } catch {
+      // Offline and not cached: the name shows instead.
+    }
+    // Ignore a slower load for a language picked before it.
+    if (url === this.titleLogoUrl()) {
+      this.titleLogo.set(src);
+    }
   }
 
   ngOnInit(): void {

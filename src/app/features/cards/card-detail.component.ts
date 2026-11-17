@@ -13,16 +13,12 @@ import {
   IonButton,
   IonButtons,
   IonContent,
-  IonFooter,
   IonHeader,
-  IonIcon,
   IonTitle,
   IonToolbar,
   ModalController,
 } from '@ionic/angular';
 import type { CatalogCard, CatalogLanguage, CatalogSet } from '@pokepaper/shared';
-import { addIcons } from 'ionicons';
-import { chevronBack, chevronForward } from 'ionicons/icons';
 import Swiper from 'swiper';
 import { Keyboard, Virtual } from 'swiper/modules';
 import { CatalogLanguageService } from '../../core/services/catalog-language.service';
@@ -39,8 +35,7 @@ interface VirtualWindow {
 /**
  * Card detail modal (docs/ui.md → Card detail). Swiper (the agreed non-stock
  * exception) pages through the set's cards, rendering only the slides near
- * the current one (virtual slides); ‹ / › buttons and arrow keys do the
- * same. The language button switches every card, and is remembered.
+ * the current one (virtual slides); arrow keys page on desktop. The language button switches every card, and is remembered.
  */
 @Component({
   selector: 'app-card-detail',
@@ -53,8 +48,6 @@ interface VirtualWindow {
     IonButton,
     IonTitle,
     IonContent,
-    IonFooter,
-    IonIcon,
     CardDetailsComponent,
     LanguageButtonComponent,
   ],
@@ -81,10 +74,6 @@ export class CardDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   readonly language = computed<CatalogLanguage>(() =>
     this.catalogLanguage.forSet(this.set().region, this.set().languages)
   );
-
-  constructor() {
-    addIcons({ chevronBack, chevronForward });
-  }
 
   ngOnInit(): void {
     this.set.set(this.setProp);
@@ -137,14 +126,6 @@ export class CardDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.swiper?.destroy(true, false);
-  }
-
-  previous(): void {
-    this.swiper?.slidePrev();
-  }
-
-  next(): void {
-    this.swiper?.slideNext();
   }
 
   pickLanguage(language: CatalogLanguage): void {

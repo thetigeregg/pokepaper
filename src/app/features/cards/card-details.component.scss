@@ -30,8 +30,10 @@
   gap: 2px;
 }
 
+/* Every attack's cost column is as wide as the card's longest cost, so
+   attack names line up. */
 .cost {
-  min-width: 2.5em;
+  width: calc(var(--cost-slots, 1) * 1.3em + (var(--cost-slots, 1) - 1) * 2px);
 }
 
 .damage {
@@ -42,5 +44,12 @@
 .stats {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 4px 16px;
+}
+
+.stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }

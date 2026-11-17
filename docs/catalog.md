@@ -127,7 +127,7 @@ The Cards tab browses the catalog on the device, so it works offline (layout and
 
 - **Catalogs:** an `IonSegment` switches between the international and the Asian catalog. Sets are grouped by series, newest first. On desktop the list stays beside the selected set (`IonSplitPane`).
 - **Set page:** a card grid in the current language; images load as they scroll into view and are cached ([Images on the device](#images-on-the-device)). The header has the language switch and "Download images" (this set's language, or all its languages), plus Remove.
-- **Card detail:** a modal paging through the set (Swiper with virtual slides, ‹ / ›, arrow keys), with the large scan and the full card text in the current language. Energy symbols in costs and rules text (`{P}`, `{R}`, …) are icons.
+- **Card detail:** a modal paging through the set (Swiper with virtual slides: swipe, or arrow keys on desktop), with the large scan and the full card text in the current language. Energy symbols in costs and rules text (`{P}`, `{R}`, …) are icons.
 - **Language:** the language picked in a set or card is remembered per catalog (`UserSettings.catalogLanguages`, synced across devices), and every set and card opens in it; a set that lacks it opens in its first language. Without a scan in that language, another language's is shown with a badge (`displayImage()`). Without any scan, a type-tinted card with the name, HP · stage and set number stands in.
 
 ## Storage
@@ -147,4 +147,4 @@ Cached images live in `DATA_DIR/images/catalog/` and are also rebuildable (delet
 
 ## Attribution
 
-Card data: [TCGdex](https://github.com/tcgdex/cards-database) (MIT License). Card images and names are © The Pokémon Company, Nintendo, Game Freak and Creatures. PokePaper is a personal, non-commercial project not affiliated with them.
+Card data: [TCGdex](https://github.com/tcgdex/cards-database) (MIT License). Energy symbol icons: from [Bulbapedia](<https://bulbapedia.bulbagarden.net/wiki/Type_(TCG)>). Card images, energy symbols and names are © The Pokémon Company, Nintendo, Game Freak and Creatures. PokePaper is a personal, non-commercial project not affiliated with them.

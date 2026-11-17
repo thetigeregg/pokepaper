@@ -1,7 +1,8 @@
-import type { CatalogCard } from '@pokepaper/shared';
+import { catalogSetImageUrl, type CatalogCard } from '@pokepaper/shared';
 import { makeContractCard, makeContractPack } from '../../core/data/storage-engine.contract';
 import { cardSubtitle, cardText, cardTint, formatStage } from './card-display';
-import { setLine } from '../../cards/set/set.page';
+import { setLine, setLogoUrl } from '../../cards/set/set.page';
+import { energyIconUrl } from './energy-icon.component';
 
 const card = (overrides: Partial<CatalogCard>): CatalogCard => ({
   ...makeContractCard('intl', 'sv01', 'sv01-001', 0),
@@ -44,5 +45,28 @@ describe('card display helpers', () => {
         card({ localId: '1' })
       )
     ).toBe('sv01 · 1');
+  });
+});
+
+describe('set and energy assets', () => {
+  it('picks the set logo in the language, else another, else none', () => {
+    const { set } = makeContractPack('intl', 'sv01', []);
+    const withLogos = {
+      ...set,
+      serieId: 'sv',
+      logos: { en: 'en/sv/sv01/logo', de: 'de/sv/sv01/logo' },
+    };
+
+    expect(setLogoUrl(withLogos, 'de')).toBe(
+      catalogSetImageUrl(withLogos, { kind: 'logo', language: 'de' })
+    );
+    expect(setLogoUrl(withLogos, 'fr')).toBe(
+      catalogSetImageUrl(withLogos, { kind: 'logo', language: 'en' })
+    );
+    expect(setLogoUrl({ ...set, logos: {} }, 'en')).toBeNull();
+  });
+
+  it('maps energy types to their icon files', () => {
+    expect(energyIconUrl('Psychic')).toBe('assets/energy/psychic.png');
   });
 });

@@ -84,16 +84,12 @@ describe('CardDetailComponent', () => {
     expect(detail.window()).toEqual({ offset: 390, from: 0, slides: cards.slice(0, 2) });
   });
 
-  it('pages, switches language and closes', async () => {
+  it('switches language and closes', async () => {
     const detail = await create(0);
 
-    detail.next();
-    detail.previous();
     detail.pickLanguage('de');
     detail.close();
 
-    expect(swiper.instances[0]?.slideNext).toHaveBeenCalled();
-    expect(swiper.instances[0]?.slidePrev).toHaveBeenCalled();
     expect(pick).toHaveBeenCalledWith('intl', 'de');
     expect(dismiss).toHaveBeenCalled();
   });

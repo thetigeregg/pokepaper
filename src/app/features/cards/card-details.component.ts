@@ -44,6 +44,10 @@ export class CardDetailsComponent {
       effect: this.text()?.attacks[index]?.effect ?? null,
     }))
   );
+  /** The longest attack cost, for one shared cost column width. */
+  readonly costSlots = computed(() =>
+    Math.max(1, ...this.attacks().map((attack) => attack.cost.length))
+  );
   readonly legal = computed(() => {
     const { standard, expanded } = this.card().legal;
     return [standard ? 'Standard' : null, expanded ? 'Expanded' : null].filter(Boolean).join(' · ');
