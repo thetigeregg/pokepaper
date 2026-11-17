@@ -42,6 +42,13 @@ export interface SyncPushResult {
   opId: string;
   status: SyncPushStatus;
   message?: string;
+  /**
+   * Set on `failed` results the server may accept later without the client
+   * changing anything (e.g. an entity type a newer app build knows but this
+   * server doesn't yet). Clients keep such operations queued without
+   * counting the attempt toward giving up.
+   */
+  retryable?: boolean;
 }
 
 export interface SyncPushResponse {
@@ -49,7 +56,10 @@ export interface SyncPushResponse {
 }
 
 export interface SyncPullRequest {
-  /** Opaque cursor from the previous pull; omit (or `'0'`) for a full pull. */
+  /**
+   * Opaque cursor from the previous pull; omit (or `'0'`) for a full pull.
+   * Clients must store and echo it verbatim, never parse it.
+   */
   cursor?: string;
 }
 

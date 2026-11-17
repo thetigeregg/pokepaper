@@ -64,18 +64,19 @@ Fastify 5 + better-sqlite3, run with `tsx` (no build step). It stores data in `s
 
 Configuration (environment variables, all optional):
 
-| Variable                | Default            | Purpose                                                           |
-| ----------------------- | ------------------ | ----------------------------------------------------------------- |
-| `HOST` / `PORT`         | `0.0.0.0` / `3000` | Listen address                                                    |
-| `DATA_DIR`              | `server/data`      | SQLite database directory                                         |
-| `BACKUP_DIR`            | `server/backups`   | `VACUUM INTO` snapshots                                           |
-| `BACKUP_KEEP`           | `14`               | Snapshots retained                                                |
-| `BACKUP_INTERVAL_HOURS` | `24`               | Backup schedule (one also runs at startup; `0` = startup only)    |
-| `TRUST_PROXY`           | `false`            | Trust `X-Forwarded-*` (on behind edge in production)              |
-| `RATE_LIMIT_PER_MINUTE` | `600`              | Requests per client IP per minute, across all routes (429 beyond) |
-| `LOG_LEVEL`             | `info`             | pino log level                                                    |
+| Variable                | Default            | Purpose                                                                                                                                                                                                    |
+| ----------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `HOST` / `PORT`         | `0.0.0.0` / `3000` | Listen address                                                                                                                                                                                             |
+| `DATA_DIR`              | `server/data`      | SQLite database directory                                                                                                                                                                                  |
+| `BACKUP_DIR`            | `server/backups`   | `VACUUM INTO` snapshots                                                                                                                                                                                    |
+| `BACKUP_KEEP`           | `14`               | Snapshots retained                                                                                                                                                                                         |
+| `BACKUP_INTERVAL_HOURS` | `24`               | Backup schedule. A backup also runs at startup unless the newest snapshot is younger than the interval (so restart loops can't rotate good snapshots out); `0` = startup only                              |
+| `TRUST_PROXY_HOPS`      | `0`                | Number of reverse proxies whose `X-Forwarded-*` headers to trust. Never "trust all": that would let clients choose their own IP                                                                            |
+| `CLIENT_IP_HEADER`      | _(unset)_          | Header holding the real client IP for rate limiting, e.g. `cf-connecting-ip` behind Cloudflare (Cloudflare overwrites it, so clients can't spoof it). Falls back to the connection IP when unset or absent |
+| `RATE_LIMIT_PER_MINUTE` | `600`              | Requests per client IP per minute, across all routes (429 beyond)                                                                                                                                          |
+| `LOG_LEVEL`             | `info`             | pino log level                                                                                                                                                                                             |
 
-Invalid values fail startup with a clear error.
+Invalid values fail startup with a clear error. Backups use SQLite's online backup API, so the server keeps serving while a snapshot is written; each snapshot gets a fresh sync epoch, so restoring one makes clients re-sync from scratch (see [`docs/sync.md`](docs/sync.md)).
 
 ## App Architecture
 

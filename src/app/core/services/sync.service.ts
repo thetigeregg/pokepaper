@@ -59,6 +59,8 @@ function entityKey(entityType: string, entityId: string): string {
  *   echoes it back in a later pull.
  * - An operation the server rejects `MAX_PUSH_ATTEMPTS` times is dropped and
  *   the pull cursor is reset, so a full re-pull restores the server's state.
+ *   Rejections marked `retryable` don't count toward that limit.
+ * - The pull cursor is opaque: stored and echoed verbatim.
  */
 @Injectable({ providedIn: 'root' })
 export class SyncService implements SyncOutboxWriter {
@@ -257,9 +259,11 @@ export class SyncService implements SyncOutboxWriter {
         continue;
       }
 
+      // Retryable rejections (e.g. an entity type the server doesn't know
+      // yet) stay queued without counting toward MAX_PUSH_ATTEMPTS.
       const updated: OutboxEntry = {
         ...existing,
-        attemptCount: existing.attemptCount + 1,
+        attemptCount: failure.retryable ? existing.attemptCount : existing.attemptCount + 1,
         lastError: failure.message ?? 'Failed to push operation.',
       };
 

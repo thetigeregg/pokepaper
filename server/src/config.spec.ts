@@ -10,7 +10,8 @@ describe('loadConfig', () => {
       port: 3000,
       backupKeep: 14,
       backupIntervalHours: 24,
-      trustProxy: false,
+      trustProxyHops: 0,
+      clientIpHeader: null,
       rateLimitPerMinute: 600,
       logLevel: 'info',
     });
@@ -26,7 +27,8 @@ describe('loadConfig', () => {
       BACKUP_DIR: '/backups',
       BACKUP_KEEP: '3',
       BACKUP_INTERVAL_HOURS: '0',
-      TRUST_PROXY: 'true',
+      TRUST_PROXY_HOPS: '2',
+      CLIENT_IP_HEADER: 'CF-Connecting-IP',
       RATE_LIMIT_PER_MINUTE: '30',
       LOG_LEVEL: 'warn',
     });
@@ -38,7 +40,8 @@ describe('loadConfig', () => {
       backupDir: '/backups',
       backupKeep: 3,
       backupIntervalHours: 0,
-      trustProxy: true,
+      trustProxyHops: 2,
+      clientIpHeader: 'cf-connecting-ip',
       rateLimitPerMinute: 30,
       logLevel: 'warn',
     });
@@ -49,14 +52,11 @@ describe('loadConfig', () => {
     [{ PORT: '0' }, /PORT must be an integer >= 1/],
     [{ BACKUP_KEEP: '0' }, /BACKUP_KEEP/],
     [{ BACKUP_INTERVAL_HOURS: '-1' }, /BACKUP_INTERVAL_HOURS/],
-    [{ TRUST_PROXY: 'yes' }, /TRUST_PROXY must be true\/false/],
+    [{ TRUST_PROXY_HOPS: '-1' }, /TRUST_PROXY_HOPS/],
+    [{ TRUST_PROXY_HOPS: 'true' }, /TRUST_PROXY_HOPS must be an integer/],
+    [{ CLIENT_IP_HEADER: 'bad header!' }, /CLIENT_IP_HEADER must be a header name/],
     [{ RATE_LIMIT_PER_MINUTE: '0' }, /RATE_LIMIT_PER_MINUTE/],
   ])('fails fast on %o', (env, message) => {
     expect(() => loadConfig(env)).toThrow(message);
-  });
-
-  it('accepts 1/0 for booleans', () => {
-    expect(loadConfig({ TRUST_PROXY: '1' }).trustProxy).toBe(true);
-    expect(loadConfig({ TRUST_PROXY: '0' }).trustProxy).toBe(false);
   });
 });

@@ -1,29 +1,29 @@
-import type { SyncPullRequest, SyncPushRequest } from '@pokepaper/shared';
+import type { SyncPullRequest } from '@pokepaper/shared';
 import type { FastifyInstance } from 'fastify';
-import { SyncStore } from './store.js';
+import type { SyncStore } from './store.js';
+import type { RawOperation } from './validation.js';
 
 /** Max operations accepted per push (the client sends batches of 200). */
 export const MAX_PUSH_OPERATIONS = 500;
 
+/**
+ * Deliberately minimal: only what's needed to answer per operation (an
+ * object with a string opId). All other field checks happen per operation in
+ * validation.ts, so one bad operation becomes a `failed` result instead of a
+ * 400 that would block every push containing it.
+ */
 const pushBodySchema = {
   type: 'object',
   required: ['operations'],
-  additionalProperties: false,
   properties: {
     operations: {
       type: 'array',
       maxItems: MAX_PUSH_OPERATIONS,
       items: {
         type: 'object',
-        required: ['opId', 'entityType', 'entityId', 'operation', 'payload', 'clientTimestamp'],
-        additionalProperties: false,
+        required: ['opId'],
         properties: {
-          opId: { type: 'string', minLength: 1, maxLength: 100 },
-          entityType: { type: 'string', minLength: 1, maxLength: 50 },
-          entityId: { type: 'string', maxLength: 200 },
-          operation: { type: 'string', enum: ['upsert', 'delete'] },
-          payload: {},
-          clientTimestamp: { type: 'string', minLength: 1, maxLength: 40 },
+          opId: { type: 'string', minLength: 1, maxLength: 200 },
         },
       },
     },
@@ -32,20 +32,18 @@ const pushBodySchema = {
 
 const pullBodySchema = {
   type: 'object',
-  additionalProperties: false,
   properties: {
-    cursor: { type: 'string', pattern: '^(0|[1-9][0-9]{0,15})$' },
+    cursor: { type: 'string', maxLength: 64 },
   },
 } as const;
 
 /**
  * `POST /api/sync/push` and `POST /api/sync/pull` (contract: docs/sync.md).
- * Malformed bodies are a 400 (schema validation; unknown properties are
- * stripped, per Fastify's default `removeAdditional`). Individually invalid
- * operations come back as `failed` results instead.
+ * The cursor is opaque to clients; an unrecognized one rewinds the client to
+ * a full re-pull rather than failing.
  */
 export function registerSyncRoutes(app: FastifyInstance, store: SyncStore): void {
-  app.post<{ Body: SyncPushRequest }>(
+  app.post<{ Body: { operations: RawOperation[] } }>(
     '/api/sync/push',
     { schema: { body: pushBodySchema } },
     (request) => ({ results: store.push(request.body.operations) })
@@ -54,6 +52,6 @@ export function registerSyncRoutes(app: FastifyInstance, store: SyncStore): void
   app.post<{ Body: SyncPullRequest }>(
     '/api/sync/pull',
     { schema: { body: pullBodySchema } },
-    (request) => store.pull(Number(request.body.cursor ?? '0'))
+    (request) => store.pull(request.body.cursor ?? '0')
   );
 }

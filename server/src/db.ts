@@ -26,7 +26,8 @@ export function loadMigrations(dir: string = MIGRATIONS_DIR): Migration[] {
         throw new Error(`Migration file "${file}" must be named NNNN_snake_case.sql`);
       }
 
-      const sql = readFileSync(join(dir, file), 'utf8');
+      // Normalize line endings so a CRLF checkout doesn't change the checksum.
+      const sql = readFileSync(join(dir, file), 'utf8').replace(/\r\n/g, '\n');
       return {
         version: Number(match[1]),
         name: match[2],

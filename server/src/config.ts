@@ -12,10 +12,19 @@ export interface ServerConfig {
   /** Hours between scheduled backups (one also runs at startup). 0 disables the schedule. */
   backupIntervalHours: number;
   /**
-   * Trust X-Forwarded-* headers. On in production, where the server only
-   * ever sees traffic from edge (Caddy) behind Nginx Proxy Manager.
+   * Number of reverse proxies in front of the server whose X-Forwarded-*
+   * headers to trust (0 = none). A hop count, never "trust all": with
+   * blanket trust, request.ip becomes the left-most X-Forwarded-For entry,
+   * which any client can set.
    */
-  trustProxy: boolean;
+  trustProxyHops: number;
+  /**
+   * Header carrying the real client IP, set by the outermost proxy (in
+   * production Cloudflare's `cf-connecting-ip`, which Cloudflare always
+   * overwrites, so clients can't spoof it). Used to key rate limits; falls
+   * back to request.ip when unset or absent. Lowercase.
+   */
+  clientIpHeader: string | null;
   /** Requests per client IP per minute, across all routes. */
   rateLimitPerMinute: number;
   logLevel: string;
@@ -39,23 +48,13 @@ function readInt(env: Env, key: string, fallback: number, min: number): number {
   return value;
 }
 
-function readBool(env: Env, key: string, fallback: boolean): boolean {
-  const raw = env[key]?.trim().toLowerCase();
-  if (!raw) {
-    return fallback;
-  }
-  if (raw === 'true' || raw === '1') {
-    return true;
-  }
-  if (raw === 'false' || raw === '0') {
-    return false;
-  }
-
-  throw new Error(`${key} must be true/false (got "${raw}")`);
-}
-
 /** Reads configuration from environment variables, failing fast on invalid values. */
 export function loadConfig(env: Env = process.env): ServerConfig {
+  const clientIpHeader = env['CLIENT_IP_HEADER']?.trim().toLowerCase();
+  if (clientIpHeader && !/^[a-z0-9-]+$/.test(clientIpHeader)) {
+    throw new Error(`CLIENT_IP_HEADER must be a header name (got "${clientIpHeader}")`);
+  }
+
   return {
     host: env['HOST']?.trim() || '0.0.0.0',
     port: readInt(env, 'PORT', 3000, 1),
@@ -63,7 +62,8 @@ export function loadConfig(env: Env = process.env): ServerConfig {
     backupDir: resolve(env['BACKUP_DIR']?.trim() || resolve(SERVER_ROOT, 'backups')),
     backupKeep: readInt(env, 'BACKUP_KEEP', 14, 1),
     backupIntervalHours: readInt(env, 'BACKUP_INTERVAL_HOURS', 24, 0),
-    trustProxy: readBool(env, 'TRUST_PROXY', false),
+    trustProxyHops: readInt(env, 'TRUST_PROXY_HOPS', 0, 0),
+    clientIpHeader: clientIpHeader || null,
     rateLimitPerMinute: readInt(env, 'RATE_LIMIT_PER_MINUTE', 600, 1),
     logLevel: env['LOG_LEVEL']?.trim() || 'info',
   };

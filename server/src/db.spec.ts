@@ -67,6 +67,21 @@ describe('migrations', () => {
     expect(() => loadMigrations(dir)).toThrow(/NNNN_snake_case/);
   });
 
+  it('checksums ignore CRLF vs LF line endings', () => {
+    writeFileSync(
+      join(dir, '0001_first.sql'),
+      'CREATE TABLE a (id INTEGER);\nCREATE TABLE b (id INTEGER);\n'
+    );
+    const lf = loadMigrations(dir)[0]?.checksum;
+    writeFileSync(
+      join(dir, '0001_first.sql'),
+      'CREATE TABLE a (id INTEGER);\r\nCREATE TABLE b (id INTEGER);\r\n'
+    );
+    const crlf = loadMigrations(dir)[0]?.checksum;
+
+    expect(crlf).toBe(lf);
+  });
+
   it('openDatabase creates the data directory and a migrated WAL database', () => {
     const db = openDatabase(join(dir, 'nested', 'pokepaper.db'));
 

@@ -8,7 +8,8 @@ const config = loadConfig();
 const db = openDatabase(join(config.dataDir, DB_FILENAME));
 const app = buildApp({
   db,
-  trustProxy: config.trustProxy,
+  trustProxyHops: config.trustProxyHops,
+  clientIpHeader: config.clientIpHeader,
   logLevel: config.logLevel,
   rateLimitPerMinute: config.rateLimitPerMinute,
 });

@@ -8,6 +8,14 @@ import {
 
 const MAX_ENTITY_ID_LENGTH = 200;
 
+/**
+ * The exact UTC form `Date.prototype.toISOString()` produces (what clients
+ * send). Strict on purpose: last-writer-wins compares these timestamps, so
+ * zone-less or loosely parsed values would make the outcome depend on the
+ * server's time zone.
+ */
+const ISO_UTC_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
+
 interface EntityRules {
   validEntityId(entityId: string): boolean;
   validPayload(payload: unknown): boolean;
@@ -21,32 +29,84 @@ const ENTITY_RULES: Record<SyncEntityType, EntityRules> = {
   },
 };
 
+export interface Rejection {
+  message: string;
+  /** True when a newer server may accept the op unchanged (see SyncPushResult.retryable). */
+  retryable: boolean;
+}
+
+export type ValidationResult =
+  { ok: true; op: SyncOperationRequest } | { ok: false; rejection: Rejection };
+
 /**
- * Returns why an operation must be permanently rejected, or null if it's
- * valid. Only deterministic problems belong here: the client gives up on an
- * op after repeated `failed` results.
+ * An operation as received: the route schema only guarantees a string opId,
+ * so every other field is unknown until validated.
  */
-export function rejectionReason(op: SyncOperationRequest): string | null {
-  if (!isSyncEntityType(op.entityType)) {
-    return `Unknown entity type "${String(op.entityType)}"`;
+export type RawOperation = { readonly opId: string } & Partial<
+  Record<Exclude<keyof SyncOperationRequest, 'opId'>, unknown>
+>;
+
+function reject(message: string, retryable = false): ValidationResult {
+  return { ok: false, rejection: { message, retryable } };
+}
+
+export function isIsoUtcTimestamp(value: unknown): value is string {
+  return (
+    typeof value === 'string' && ISO_UTC_TIMESTAMP.test(value) && !Number.isNaN(Date.parse(value))
+  );
+}
+
+/**
+ * Validates one pushed operation. The request schema only guarantees an
+ * object with a string `opId`; every other field is checked here so a single
+ * bad operation fails on its own instead of failing the whole push.
+ */
+export function validateOperation(raw: RawOperation): ValidationResult {
+  const { entityType, entityId, operation, payload, clientTimestamp } = raw;
+
+  if (typeof entityType !== 'string' || entityType.length === 0) {
+    return reject('entityType must be a non-empty string');
   }
 
-  if (op.entityId.length === 0 || op.entityId.length > MAX_ENTITY_ID_LENGTH) {
-    return 'entityId must be 1-200 characters';
+  if (!isSyncEntityType(entityType)) {
+    // A newer client may know entity types this server doesn't yet.
+    return reject(`Unknown entity type "${entityType}"`, true);
   }
 
-  const rules = ENTITY_RULES[op.entityType];
-  if (!rules.validEntityId(op.entityId)) {
-    return `Invalid entityId "${op.entityId}" for ${op.entityType}`;
+  if (
+    typeof entityId !== 'string' ||
+    entityId.length === 0 ||
+    entityId.length > MAX_ENTITY_ID_LENGTH
+  ) {
+    return reject(`entityId must be a string of 1-${String(MAX_ENTITY_ID_LENGTH)} characters`);
   }
 
-  if (Number.isNaN(Date.parse(op.clientTimestamp))) {
-    return 'clientTimestamp must be an ISO 8601 timestamp';
+  const rules = ENTITY_RULES[entityType];
+  if (!rules.validEntityId(entityId)) {
+    return reject(`Invalid entityId "${entityId}" for ${entityType}`);
   }
 
-  if (op.operation === 'upsert' && !rules.validPayload(op.payload)) {
-    return `Invalid ${op.entityType} payload`;
+  if (operation !== 'upsert' && operation !== 'delete') {
+    return reject('operation must be "upsert" or "delete"');
   }
 
-  return null;
+  if (!isIsoUtcTimestamp(clientTimestamp)) {
+    return reject('clientTimestamp must be a UTC ISO 8601 timestamp like 2026-01-01T00:00:00.000Z');
+  }
+
+  if (operation === 'upsert' && !rules.validPayload(payload)) {
+    return reject(`Invalid ${entityType} payload`);
+  }
+
+  return {
+    ok: true,
+    op: {
+      opId: raw.opId,
+      entityType,
+      entityId,
+      operation,
+      payload: operation === 'upsert' ? payload : null,
+      clientTimestamp,
+    },
+  };
 }
