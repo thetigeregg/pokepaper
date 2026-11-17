@@ -8,10 +8,13 @@
 #
 #   - NPM forwards to http://pokepaper-edge:8080 (container name), not
 #     <nas-ip>:EDGE_PORT
+#   - set EDGE_BIND=127.0.0.1 so EDGE_PORT stops listening on the LAN:
+#     Docker may route published-port traffic through this network's
+#     gateway, which a subnet in TRUSTED_PROXIES would trust
 #   - TRUSTED_PROXIES = NPM's address (with a fixed IP) or the network's
 #     subnet. A subnet trusts every container on that network, plus
-#     processes on the host that reach it through the network's gateway.
-#   - LAN devices reaching edge through EDGE_PORT are never trusted
+#     anything reaching edge through the network's gateway (the host, and
+#     the published port unless EDGE_BIND=127.0.0.1)
 #
 # Requires a user-defined network (Docker's default "bridge" has no
 # container-name DNS). Use it as an extra compose file (Portainer Git stack:

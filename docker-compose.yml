@@ -68,8 +68,11 @@ services:
       server:
         condition: service_healthy
     ports:
-      # Point the Nginx Proxy Manager proxy host at <nas-ip>:EDGE_PORT.
-      - "${EDGE_PORT:-8080}:8080"
+      # Point the Nginx Proxy Manager proxy host at <nas-ip>:EDGE_PORT. Once
+      # edge shares NPM's network (docker-compose.npm.yml), NPM reaches it by
+      # name instead: set EDGE_BIND=127.0.0.1 so the port is no longer
+      # reachable from the LAN (docs/nas-deployment.md, section 4).
+      - "${EDGE_BIND:-0.0.0.0}:${EDGE_PORT:-8080}:8080"
     environment:
       TZ: ${TZ:-Europe/Zurich}
       # Proxies allowed to set CF-Connecting-IP (the client IP the server
