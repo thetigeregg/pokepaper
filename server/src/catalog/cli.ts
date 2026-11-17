@@ -10,10 +10,14 @@ import { runCatalogIngest, type CatalogLogger } from './ingest.js';
 import { CatalogStore } from './store.js';
 import { TcgdexClient } from './tcgdex-client.js';
 
+// Errors' message and stack aren't enumerable, so JSON.stringify would drop them.
+const serializeErrors = (_key: string, value: unknown): unknown =>
+  value instanceof Error ? { name: value.name, message: value.message } : value;
+
 const write =
   (stream: NodeJS.WriteStream) =>
   (obj: object, msg: string): void => {
-    stream.write(`${new Date().toISOString()} ${msg} ${JSON.stringify(obj)}\n`);
+    stream.write(`${new Date().toISOString()} ${msg} ${JSON.stringify(obj, serializeErrors)}\n`);
   };
 const log: CatalogLogger = {
   info: write(process.stdout),

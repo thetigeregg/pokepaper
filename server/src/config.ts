@@ -73,15 +73,16 @@ type Env = Record<string, string | undefined>;
 
 const SERVER_ROOT = resolve(import.meta.dirname, '..');
 
-function readInt(env: Env, key: string, fallback: number, min: number): number {
+function readInt(env: Env, key: string, fallback: number, min: number, max?: number): number {
   const raw = env[key]?.trim();
   if (!raw) {
     return fallback;
   }
 
   const value = Number(raw);
-  if (!Number.isInteger(value) || value < min) {
-    throw new Error(`${key} must be an integer >= ${String(min)} (got "${raw}")`);
+  if (!Number.isInteger(value) || value < min || (max !== undefined && value > max)) {
+    const range = max === undefined ? `>= ${String(min)}` : `from ${String(min)} to ${String(max)}`;
+    throw new Error(`${key} must be an integer ${range} (got "${raw}")`);
   }
 
   return value;
@@ -160,8 +161,9 @@ function loadCatalogConfig(env: Env): CatalogConfig {
   return {
     syncEnabled: readBool(env, 'CATALOG_SYNC_ENABLED', true),
     languages: CATALOG_LANGUAGES.filter((language) => requested.includes(language)),
-    refreshHours: readInt(env, 'CATALOG_REFRESH_HOURS', 24, 1),
-    fullRefreshDays: readInt(env, 'CATALOG_FULL_REFRESH_DAYS', 7, 1),
+    // Capped well below setTimeout's ~24.8-day limit (longer delays fire at once).
+    refreshHours: readInt(env, 'CATALOG_REFRESH_HOURS', 24, 1, 168),
+    fullRefreshDays: readInt(env, 'CATALOG_FULL_REFRESH_DAYS', 7, 1, 365),
   };
 }
 

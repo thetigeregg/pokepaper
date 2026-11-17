@@ -71,7 +71,10 @@ export class CatalogStore {
    */
   writeSet(set: CatalogSet, cards: readonly CatalogCard[], now = new Date()): boolean {
     const hash = setContentHash(set, cards);
-    if (this.getSet(set.region, set.id)?.hash === hash) {
+    const stored = this.db
+      .prepare('SELECT content_hash FROM catalog_sets WHERE region = ? AND id = ?')
+      .get(set.region, set.id) as { content_hash: string } | undefined;
+    if (stored?.content_hash === hash) {
       return false;
     }
 

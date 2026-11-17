@@ -1,3 +1,4 @@
+import { setTimeout as delay } from 'node:timers/promises';
 import type { CatalogLanguage } from '@pokepaper/shared';
 
 export const TCGDEX_API_BASE = 'https://api.tcgdex.net/v2';
@@ -14,8 +15,8 @@ export interface TcgdexClientOptions {
   /** Attempts per request, including the first. */
   maxAttempts?: number;
   timeoutMs?: number;
-  /** Injected in tests so retries don't wait. */
-  sleep?: (ms: number) => Promise<void>;
+  /** Waits between retries; must reject when `signal` aborts. Injected in tests. */
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
   /** Aborts queued and in-flight requests (graceful shutdown). */
   signal?: AbortSignal;
 }
@@ -30,10 +31,14 @@ export class TcgdexResponseError extends Error {
   override readonly name = 'TcgdexResponseError';
 }
 
-const defaultSleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
+const defaultSleep = (ms: number, signal?: AbortSignal): Promise<void> =>
+  delay(ms, undefined, { signal });
+
+/** Aborts when any of the given signals does. */
+function anySignal(...signals: (AbortSignal | undefined)[]): AbortSignal | undefined {
+  const present = signals.filter((signal) => signal !== undefined);
+  return present.length > 1 ? AbortSignal.any(present) : present[0];
+}
 
 /**
  * Minimal TCGdex REST client: GETs JSON with a concurrency limit, a timeout,
@@ -46,7 +51,7 @@ export class TcgdexClient {
   private readonly concurrency: number;
   private readonly maxAttempts: number;
   private readonly timeoutMs: number;
-  private readonly sleep: (ms: number) => Promise<void>;
+  private readonly sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
   private readonly signal: AbortSignal | undefined;
   private active = 0;
   private readonly waiting: (() => void)[] = [];
@@ -63,46 +68,49 @@ export class TcgdexClient {
     this.signal = options.signal;
   }
 
-  series(language: CatalogLanguage): Promise<unknown> {
-    return this.get(`/${language}/series`);
+  series(language: CatalogLanguage, signal?: AbortSignal): Promise<unknown> {
+    return this.get(`/${language}/series`, signal);
   }
 
-  sets(language: CatalogLanguage): Promise<unknown> {
-    return this.get(`/${language}/sets`);
+  sets(language: CatalogLanguage, signal?: AbortSignal): Promise<unknown> {
+    return this.get(`/${language}/sets`, signal);
   }
 
-  set(language: CatalogLanguage, setId: string): Promise<unknown> {
-    return this.get(`/${language}/sets/${encodeURIComponent(setId)}`);
+  set(language: CatalogLanguage, setId: string, signal?: AbortSignal): Promise<unknown> {
+    return this.get(`/${language}/sets/${encodeURIComponent(setId)}`, signal);
   }
 
-  card(language: CatalogLanguage, cardId: string): Promise<unknown> {
-    return this.get(`/${language}/cards/${encodeURIComponent(cardId)}`);
+  card(language: CatalogLanguage, cardId: string, signal?: AbortSignal): Promise<unknown> {
+    return this.get(`/${language}/cards/${encodeURIComponent(cardId)}`, signal);
   }
 
-  /** GETs `path` as JSON; `null` when TCGdex answers 404. */
-  async get(path: string): Promise<unknown> {
+  /**
+   * GETs `path` as JSON; `null` when TCGdex answers 404. `signal` cancels just
+   * this request (queued, in flight or between retries), rejecting with its
+   * reason; the client's own signal cancels every request.
+   */
+  async get(path: string, signal?: AbortSignal): Promise<unknown> {
+    const combined = anySignal(this.signal, signal);
     await this.acquire();
     try {
-      return await this.getWithRetry(path);
+      return await this.getWithRetry(path, combined);
     } finally {
       this.release();
     }
   }
 
-  private async getWithRetry(path: string): Promise<unknown> {
+  private async getWithRetry(path: string, signal: AbortSignal | undefined): Promise<unknown> {
     let lastError: unknown;
 
     for (let attempt = 1; attempt <= this.maxAttempts; attempt++) {
-      this.signal?.throwIfAborted();
+      signal?.throwIfAborted();
       let retryAfterMs: number | null = null;
 
       try {
         this.requests += 1;
         const response = await this.fetchFn(`${this.baseUrl}${path}`, {
           headers: { accept: 'application/json', 'user-agent': TCGDEX_USER_AGENT },
-          signal: this.signal
-            ? AbortSignal.any([this.signal, AbortSignal.timeout(this.timeoutMs)])
-            : AbortSignal.timeout(this.timeoutMs),
+          signal: anySignal(signal, AbortSignal.timeout(this.timeoutMs)),
         });
 
         if (response.status === 404) {
@@ -121,8 +129,8 @@ export class TcgdexClient {
         lastError = new Error(`HTTP ${String(response.status)}`);
         retryAfterMs = parseRetryAfter(response.headers.get('retry-after'));
       } catch (error: unknown) {
-        if (this.signal?.aborted) {
-          throw this.signal.reason;
+        if (signal?.aborted) {
+          throw signal.reason;
         }
         if (error instanceof TcgdexResponseError) {
           throw error;
@@ -131,7 +139,11 @@ export class TcgdexClient {
       }
 
       if (attempt < this.maxAttempts) {
-        await this.sleep(retryAfterMs ?? 500 * 2 ** (attempt - 1));
+        try {
+          await this.sleep(retryAfterMs ?? 500 * 2 ** (attempt - 1), signal);
+        } catch (error: unknown) {
+          throw signal?.aborted ? signal.reason : error;
+        }
       }
     }
 
@@ -167,12 +179,26 @@ async function readJson(response: Response, path: string): Promise<unknown> {
     throw new TcgdexResponseError(`TCGdex ${path}: response too large (${String(declared)} bytes)`);
   }
 
-  const text = await response.text();
-  if (text.length > MAX_RESPONSE_BYTES) {
-    throw new TcgdexResponseError(`TCGdex ${path}: response too large`);
+  // Streamed, so a body without (or lying about) Content-Length can't be
+  // buffered past the cap.
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  const reader = response.body?.getReader();
+  for (;;) {
+    const chunk = reader ? await reader.read() : { done: true as const, value: undefined };
+    if (chunk.done) {
+      break;
+    }
+    size += chunk.value.byteLength;
+    if (size > MAX_RESPONSE_BYTES) {
+      await reader?.cancel();
+      throw new TcgdexResponseError(`TCGdex ${path}: response too large`);
+    }
+    chunks.push(chunk.value);
   }
+
   try {
-    return JSON.parse(text) as unknown;
+    return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
   } catch {
     throw new TcgdexResponseError(`TCGdex ${path}: invalid JSON`);
   }

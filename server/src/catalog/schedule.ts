@@ -55,8 +55,8 @@ export function startCatalogSchedule(options: CatalogScheduleOptions): CatalogSc
   store.abandonRunningRuns(now());
 
   const run = async (): Promise<void> => {
-    const kind = nextRunKind(store.lastCompletedFullRun(), now(), options.fullRefreshDays);
     try {
+      const kind = nextRunKind(store.lastCompletedFullRun(), now(), options.fullRefreshDays);
       await runCatalogIngest({
         store,
         client: createClient(controller.signal),

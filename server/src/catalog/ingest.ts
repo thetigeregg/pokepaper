@@ -47,13 +47,18 @@ export interface CatalogIngestOptions {
 export interface CatalogIngestStats {
   kind: CatalogRunKind;
   status: 'ok' | 'partial';
-  /** `empty`: listed by TCGdex but without any cards (stubs), so not stored. */
+  /**
+   * `empty`: listed by TCGdex but without any cards (stubs), so not stored.
+   * `skipped`: not attempted because TCGdex looked down (several sets in a
+   * row failed); they keep their previous data.
+   */
   sets: {
     seen: number;
     written: number;
     unchanged: number;
     empty: number;
     failed: number;
+    skipped: number;
     removed: number;
   };
   cards: { fetched: number; skipped: number };
@@ -65,6 +70,8 @@ export interface CatalogIngestStats {
 }
 
 const PROGRESS_EVERY = 50;
+/** Consecutive failed sets after which the rest of a region is skipped. */
+const MAX_CONSECUTIVE_SET_FAILURES = 3;
 
 /**
  * Imports the catalogue from TCGdex into `catalog.db`. Failures are
@@ -80,17 +87,16 @@ export async function runCatalogIngest(options: CatalogIngestOptions): Promise<C
   const stats: CatalogIngestStats = {
     kind,
     status: 'ok',
-    sets: { seen: 0, written: 0, unchanged: 0, empty: 0, failed: 0, removed: 0 },
+    sets: { seen: 0, written: 0, unchanged: 0, empty: 0, failed: 0, skipped: 0, removed: 0 },
     cards: { fetched: 0, skipped: 0 },
     skippedRegions: [],
     requests: 0,
     durationMs: 0,
     version: 0,
   };
-  const finish = (): void => {
+  const measure = (): void => {
     stats.requests = client.requests - requestsBefore;
     stats.durationMs = Date.now() - startedAt;
-    stats.version = store.version();
   };
 
   log.info({ kind, languages: options.languages }, 'catalog.ingest_started');
@@ -104,19 +110,26 @@ export async function runCatalogIngest(options: CatalogIngestOptions): Promise<C
       }
     }
   } catch (error: unknown) {
-    finish();
+    measure();
     const aborted = signal?.aborted ?? false;
-    store.finishRun(runId, aborted ? 'aborted' : 'failed', stats);
     if (!aborted) {
       log.error({ err: error, stats }, 'catalog.ingest_failed');
+    }
+    // The error may be the database itself failing: recording the run must
+    // not replace it (the run is marked aborted at the next start instead).
+    try {
+      store.finishRun(runId, aborted ? 'aborted' : 'failed', stats);
+    } catch (recordError: unknown) {
+      log.error({ err: recordError }, 'catalog.run_record_failed');
     }
     throw error;
   }
 
-  if (stats.sets.failed > 0 || stats.skippedRegions.length > 0) {
+  if (stats.sets.failed > 0 || stats.sets.skipped > 0 || stats.skippedRegions.length > 0) {
     stats.status = 'partial';
   }
-  finish();
+  measure();
+  stats.version = store.version();
   store.finishRun(runId, stats.status, stats);
   log.info({ stats }, 'catalog.ingest_finished');
   return stats;
@@ -135,20 +148,23 @@ async function ingestRegion(context: RegionContext): Promise<void> {
   // response can't drop translations or whole series.
   const seriesLists = new Map<CatalogLanguage, RawSeries[]>();
   const setLists = new Map<CatalogLanguage, Set<string>>();
-  const setOrder: string[] = [];
+  // Insertion-ordered: the preferred language's sets first.
+  const setOrder = new Set<string>();
   try {
-    for (const language of languages) {
-      const series = parseSeriesList(await client.series(language));
-      const sets = parseSetList(await client.sets(language));
+    const listings = await Promise.all(
+      languages.map(async (language) => {
+        const [series, sets] = await Promise.all([client.series(language), client.sets(language)]);
+        return { language, series: parseSeriesList(series), sets: parseSetList(sets) };
+      })
+    );
+    for (const { language, series, sets } of listings) {
       if (!series || !sets) {
         throw new TcgdexResponseError(`TCGdex ${language} listings are not lists`);
       }
       seriesLists.set(language, series);
       setLists.set(language, new Set(sets.map((set) => set.id)));
       for (const set of sets) {
-        if (!setOrder.includes(set.id)) {
-          setOrder.push(set.id);
-        }
+        setOrder.add(set.id);
       }
     }
   } catch (error: unknown) {
@@ -167,12 +183,19 @@ async function ingestRegion(context: RegionContext): Promise<void> {
     languages.map((language) => [language, store.getVocabulary(language)])
   );
 
-  // Sets to keep: stored or failed (a failed set keeps its previous data).
+  // Sets to keep: stored, failed or skipped (those keep their previous data).
   const keep = new Set<string>();
   let done = 0;
+  let consecutiveFailures = 0;
   for (const setId of setOrder) {
     context.signal?.throwIfAborted();
     stats.sets.seen += 1;
+    if (consecutiveFailures >= MAX_CONSECUTIVE_SET_FAILURES) {
+      // TCGdex looks down: don't spend hours retrying every remaining set.
+      stats.sets.skipped += 1;
+      keep.add(setId);
+      continue;
+    }
     const setLanguages = languages.filter((language) => setLists.get(language)?.has(setId));
     try {
       const outcome = await ingestSet(context, setId, setLanguages, vocabularies);
@@ -180,6 +203,7 @@ async function ingestRegion(context: RegionContext): Promise<void> {
       if (outcome !== 'empty') {
         keep.add(setId);
       }
+      consecutiveFailures = 0;
     } catch (error: unknown) {
       if (!isContainedFailure(error)) {
         throw error;
@@ -187,11 +211,15 @@ async function ingestRegion(context: RegionContext): Promise<void> {
       stats.sets.failed += 1;
       keep.add(setId);
       log.warn({ err: error, region, setId }, 'catalog.set_failed');
+      consecutiveFailures += 1;
+      if (consecutiveFailures === MAX_CONSECUTIVE_SET_FAILURES) {
+        log.warn({ region, after: setId }, 'catalog.region_interrupted');
+      }
     }
 
     done += 1;
     if (done % PROGRESS_EVERY === 0) {
-      log.info({ region, done, total: setOrder.length }, 'catalog.ingest_progress');
+      log.info({ region, done, total: setOrder.size }, 'catalog.ingest_progress');
     }
   }
 
@@ -217,13 +245,18 @@ async function ingestSet(
 ): Promise<'written' | 'unchanged' | 'empty'> {
   const { store, client, region, kind, stats } = context;
 
+  // Every language listing the set must have a usable detail. Otherwise the
+  // set fails and keeps its stored data: rewriting it from the languages that
+  // did load would drop the rest (or, with none, delete the set).
   const details = new Map<CatalogLanguage, RawSetDetail>();
   await Promise.all(
     setLanguages.map(async (language) => {
-      const detail = await fetchContained(() => client.set(language, setId), parseSetDetail);
-      if (detail) {
-        details.set(language, detail);
+      const response = await client.set(language, setId);
+      const detail = response === null ? null : parseSetDetail(response);
+      if (!detail) {
+        throw new TcgdexResponseError(`TCGdex ${language} set ${setId}: missing or unusable`);
       }
+      details.set(language, detail);
     })
   );
   const set = mergeSet(region, details);
@@ -244,6 +277,9 @@ async function ingestSet(
 
   const existing = new Map(store.listSetCards(region, setId).map((card) => [card.id, card]));
   const fetched = new Map<string, Map<CatalogLanguage, RawCard>>();
+  // The first unavailable error cancels the set's remaining requests: the set
+  // fails either way, so retrying hundreds of them would only add load.
+  const cancel = new AbortController();
   const jobs: Promise<void>[] = [];
   for (const [cardId, entry] of cardLanguages) {
     for (const language of entry.languages) {
@@ -251,16 +287,22 @@ async function ingestSet(
         continue;
       }
       jobs.push(
-        fetchContained(() => client.card(language, cardId), parseCard).then((raw) => {
-          if (!raw || raw.id !== cardId) {
-            stats.cards.skipped += 1;
-            return;
+        fetchContained(() => client.card(language, cardId, cancel.signal), parseCard).then(
+          (raw) => {
+            if (!raw || raw.id !== cardId) {
+              stats.cards.skipped += 1;
+              return;
+            }
+            stats.cards.fetched += 1;
+            const printings = fetched.get(cardId) ?? new Map<CatalogLanguage, RawCard>();
+            printings.set(language, raw);
+            fetched.set(cardId, printings);
+          },
+          (error: unknown) => {
+            cancel.abort(error);
+            throw error;
           }
-          stats.cards.fetched += 1;
-          const printings = fetched.get(cardId) ?? new Map<CatalogLanguage, RawCard>();
-          printings.set(language, raw);
-          fetched.set(cardId, printings);
-        })
+        )
       );
     }
   }

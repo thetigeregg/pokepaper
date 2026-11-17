@@ -27,6 +27,16 @@ describe('loadConfig', () => {
     });
   });
 
+  it.each([
+    ['CATALOG_REFRESH_HOURS', '169'],
+    ['CATALOG_REFRESH_HOURS', '0'],
+    ['CATALOG_FULL_REFRESH_DAYS', '366'],
+  ])('rejects %s=%s', (key, value) => {
+    expect(() => loadConfig({ [key]: value })).toThrow(
+      new RegExp(`${key} must be an integer from`)
+    );
+  });
+
   it.each(['en,xx', ',', 'english'])('rejects CATALOG_LANGUAGES=%s', (value) => {
     expect(() => loadConfig({ CATALOG_LANGUAGES: value })).toThrow(/CATALOG_LANGUAGES/);
   });

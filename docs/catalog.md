@@ -44,9 +44,16 @@ The server runs an import **10 seconds after startup**, then **every `CATALOG_RE
 - **Light pass** (usual): fetches the series and set listings and every set's card list (about 1,150 requests for all seven languages), then full details only for cards, or card languages, not stored yet. Sets and cards TCGdex no longer lists are removed.
 - **Full refresh**: also refetches every card (about 105,000 requests), picking up TCGdex's corrections. It runs when the last full refresh is older than `CATALOG_FULL_REFRESH_DAYS` (default 7), and on the very first start, when it builds the catalogue. It takes 10–15 minutes.
 
-The client is polite to the free API: 4 requests at a time, a 20-second timeout, retries with backoff on network errors, 429 and 5xx (honoring `Retry-After`), and a `User-Agent` naming the project.
+The client is polite to the free API: 4 requests at a time, a 20-second timeout, a 5 MB cap on each response, retries with backoff on network errors, 429 and 5xx (honoring `Retry-After`), and a `User-Agent` naming the project. Shutdown cancels requests and retry waits immediately.
 
-**Failures stay contained.** A card TCGdex can't serve (404 or malformed) is skipped. A set whose requests keep failing keeps its previous data, and the run ends `partial`. If a language's listings can't be loaded, that whole region is left untouched, because missing sets would otherwise look like removals. Only a database error or shutdown ends a run early. Every run is recorded in `catalog_runs` with its stats, and logged as `catalog.ingest_started`, `catalog.ingest_progress` and `catalog.ingest_finished`.
+**Failures stay contained.**
+
+- **Cards:** a card TCGdex can't serve (404 or malformed) is skipped.
+- **Sets:** a set keeps its previous data, and the run ends `partial`, when its requests keep failing or when any language listing the set returns a missing or unusable set detail. A set is rewritten only from complete data, and removed only when TCGdex's listings no longer include it. The first unavailable error in a set cancels its remaining requests.
+- **Outages:** after 3 failed sets in a row, the rest of that region is skipped for this run (`catalog.region_interrupted`), keeping its data, rather than retrying every set against an API that's down.
+- **Listings:** if a language's listings can't be loaded, that whole region is left untouched, because missing sets would otherwise look like removals.
+
+Only a database error or shutdown ends a run early. Every run is recorded in `catalog_runs` with its stats, and logged as `catalog.ingest_started`, `catalog.ingest_progress` and `catalog.ingest_finished`.
 
 Each set is written in one transaction together with a **content hash** (SHA-256 of the set and its cards as canonical JSON), and a catalogue **version** is bumped whenever anything changes. Clients will compare these to download only the sets that changed.
 
@@ -65,12 +72,12 @@ The catalogue lives in **`catalog.db`**, next to `pokepaper.db` in `DATA_DIR`, w
 
 ## Configuration
 
-| Variable                    | Default                      | Purpose                                                        |
-| --------------------------- | ---------------------------- | -------------------------------------------------------------- |
-| `CATALOG_SYNC_ENABLED`      | `true`                       | Run the scheduled import                                       |
-| `CATALOG_LANGUAGES`         | `en,fr,it,de,ja,zh-tw,zh-cn` | Languages to import (comma-separated TCGdex codes)             |
-| `CATALOG_REFRESH_HOURS`     | `24`                         | Hours between imports                                          |
-| `CATALOG_FULL_REFRESH_DAYS` | `7`                          | A run is a full refresh when the last one is at least this old |
+| Variable                    | Default                      | Purpose                                                                |
+| --------------------------- | ---------------------------- | ---------------------------------------------------------------------- |
+| `CATALOG_SYNC_ENABLED`      | `true`                       | Run the scheduled import                                               |
+| `CATALOG_LANGUAGES`         | `en,fr,it,de,ja,zh-tw,zh-cn` | Languages to import (comma-separated TCGdex codes)                     |
+| `CATALOG_REFRESH_HOURS`     | `24`                         | Hours between imports (1–168)                                          |
+| `CATALOG_FULL_REFRESH_DAYS` | `7`                          | A run is a full refresh when the last one is at least this old (1–365) |
 
 ## Attribution
 

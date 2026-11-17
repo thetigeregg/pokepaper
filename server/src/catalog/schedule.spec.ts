@@ -74,15 +74,14 @@ describe('startCatalogSchedule', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const store = memoryCatalogStore();
     const log = silentLogger();
-    let release: () => void = () => undefined;
     const fake = fakeTcgdex();
-    const fetchFn = fake.fetch;
-    fake.fetch = async (...args: Parameters<typeof fetch>) => {
-      await new Promise<void>((resolve) => {
-        release = resolve;
+    // Requests hang until aborted, like a stalled TCGdex.
+    fake.fetch = (_input, init) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject(init.signal?.reason as Error);
+        });
       });
-      return fetchFn(...args);
-    };
 
     const schedule = startCatalogSchedule({
       store,
@@ -95,12 +94,36 @@ describe('startCatalogSchedule', () => {
     });
     await vi.advanceTimersByTimeAsync(0);
 
-    const stopped = schedule.stop();
-    release();
-    await stopped;
+    await schedule.stop();
 
     expect(lastStatus(store)).toBe('aborted');
     expect(log.errors).toEqual([]);
+  });
+
+  it('logs a database error before the run starts instead of crashing', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const store = memoryCatalogStore();
+    const log = silentLogger();
+    vi.spyOn(store, 'lastCompletedFullRun').mockImplementationOnce(() => {
+      throw new Error('SQLITE_IOERR');
+    });
+
+    const schedule = startCatalogSchedule({
+      store,
+      languages: ['en'],
+      refreshHours: 1,
+      fullRefreshDays: 7,
+      log,
+      initialDelayMs: 0,
+      createClient: (signal) => fakeClient(fakeTcgdex(), signal),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(log.errors).toEqual(['catalog.scheduled_run_failed']);
+
+    await vi.advanceTimersByTimeAsync(HOUR);
+    expect(runKinds(store)).toEqual(['full']);
+
+    await schedule.stop();
   });
 
   it('logs a failed run and tries again at the next interval', async () => {

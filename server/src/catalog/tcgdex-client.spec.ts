@@ -138,6 +138,64 @@ describe('TcgdexClient', () => {
     expect(peak).toBe(3);
   });
 
+  it('stops waiting between retries as soon as it is aborted', async () => {
+    const controller = new AbortController();
+    const tcgdex = new TcgdexClient({
+      fetch: () =>
+        Promise.resolve(new Response(null, { status: 429, headers: { 'retry-after': '60' } })),
+      signal: controller.signal,
+    });
+    const started = Date.now();
+    setTimeout(() => {
+      controller.abort(new Error('shutting down'));
+    }, 20);
+
+    await expect(tcgdex.get('/en/sets')).rejects.toThrow('shutting down');
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
+  it('cancels a single request, even while it waits for a slot', async () => {
+    let release: () => void = () => undefined;
+    const calls: string[] = [];
+    const fetchFn = async (url: string) => {
+      calls.push(url);
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return Response.json({});
+    };
+    const tcgdex = new TcgdexClient({ fetch: fetchFn as typeof fetch, concurrency: 1 });
+    const cancel = new AbortController();
+
+    const first = tcgdex.get('/en/cards/1');
+    const queued = tcgdex.get('/en/cards/2', cancel.signal);
+    await vi.waitFor(() => {
+      expect(calls).toHaveLength(1);
+    });
+    cancel.abort(new Error('set failed'));
+    release();
+
+    await expect(first).resolves.toEqual({});
+    await expect(queued).rejects.toThrow('set failed');
+    expect(calls).toHaveLength(1);
+  });
+
+  it('stops reading a body without Content-Length once it passes the cap', async () => {
+    let pulled = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        controller.enqueue(new Uint8Array(1024 * 1024));
+      },
+    });
+    const tcgdex = new TcgdexClient({
+      fetch: () => Promise.resolve(new Response(body)),
+    });
+
+    await expect(tcgdex.get('/en/sets')).rejects.toThrow('too large');
+    expect(pulled).toBeLessThan(10);
+  });
+
   it('stops retrying once aborted', async () => {
     const controller = new AbortController();
     const tcgdex = new TcgdexClient({

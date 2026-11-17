@@ -1,6 +1,7 @@
 import type { CatalogLanguage } from '@pokepaper/shared';
 import { runCatalogIngest, type CatalogIngestOptions } from './ingest.js';
 import type { CatalogStore } from './store.js';
+import { TcgdexClient } from './tcgdex-client.js';
 import {
   fakeClient,
   fakeTcgdex,
@@ -259,6 +260,98 @@ describe('runCatalogIngest', () => {
     expect(fake.calls.filter((path) => path === '/en/cards/sv01-001')).toHaveLength(4);
   });
 
+  it.each([
+    ['answers with something that is not a set', '<html>Bad gateway</html>'],
+    ['is refused', new Status(403)],
+    ['is missing', new Status(404)],
+  ])('keeps a set and all its languages when one language’s detail %s', async (_case, route) => {
+    const store = memoryCatalogStore();
+    const fake = fakeTcgdex();
+    await ingest(store, fake);
+    const before = store.listSetCards('intl', 'sv01');
+    const version = store.version();
+    fake.routes.set('/fr/sets/sv01', route);
+
+    const stats = await ingest(store, fake, { kind: 'light' });
+
+    expect(stats.sets).toMatchObject({ failed: 1, removed: 0 });
+    expect(store.listSetCards('intl', 'sv01')).toEqual(before);
+    expect(store.getSet('intl', 'sv01')?.set.languages).toEqual(['en', 'fr']);
+    expect(store.version()).toBe(version);
+  });
+
+  it('keeps a set whose details are unusable in every language', async () => {
+    const store = memoryCatalogStore();
+    const fake = fakeTcgdex();
+    await ingest(store, fake);
+    for (const language of ['en', 'fr']) {
+      const detail = fake.routes.get(`/${language}/sets/sv01`) as { serie?: unknown };
+      delete detail.serie;
+    }
+
+    const stats = await ingest(store, fake, { kind: 'light' });
+
+    expect(stats.sets).toMatchObject({ failed: 1, removed: 0 });
+    expect(store.listSetCards('intl', 'sv01')).toHaveLength(2);
+  });
+
+  it('cancels a set’s remaining card requests once TCGdex is unavailable', async () => {
+    const store = memoryCatalogStore();
+    const fake = fakeTcgdex();
+    for (const path of [...fake.routes.keys()].filter((key) => key.includes('/cards/sv01-'))) {
+      fake.routes.set(path, new Status(503));
+    }
+    const client = new TcgdexClient({
+      fetch: fake.fetch,
+      sleep: () => Promise.resolve(),
+      concurrency: 1,
+    });
+
+    const stats = await ingest(store, fake, { client, languages: ['en', 'fr'] });
+
+    expect(stats.sets.failed).toBe(1);
+    // One card's four attempts, plus at most one request that took the freed
+    // slot just before the cancel landed. Without cancelling: 4 cards × 4.
+    expect(fake.calls.filter((path) => path.includes('/cards/sv01-')).length).toBeLessThanOrEqual(
+      5
+    );
+  });
+
+  it('skips the rest of a region after several sets in a row fail, keeping their data', async () => {
+    const store = memoryCatalogStore();
+    const ids = ['s1', 's2', 's3', 's4', 's5'];
+    const routes: Record<string, unknown> = {
+      '/en/series': [{ id: 'x', name: 'X' }],
+      '/en/sets': ids.map((id) => ({ id })),
+    };
+    for (const id of ids) {
+      routes[`/en/sets/${id}`] = {
+        id,
+        name: id,
+        serie: { id: 'x' },
+        cards: [{ id: `${id}-1`, localId: '1' }],
+      };
+      routes[`/en/cards/${id}-1`] = { id: `${id}-1`, localId: '1', name: id, category: 'Pokemon' };
+    }
+    const fake = fakeTcgdex(routes);
+    await ingest(store, fake, { languages: ['en'] });
+    for (const id of ids) {
+      fake.routes.set(`/en/sets/${id}`, new Status(503));
+    }
+    fake.calls.length = 0;
+    const log = silentLogger();
+
+    const stats = await ingest(store, fake, { languages: ['en'], log });
+
+    expect(stats).toMatchObject({
+      status: 'partial',
+      sets: { failed: 3, skipped: 2, removed: 0 },
+    });
+    expect(fake.calls).not.toContain('/en/sets/s4');
+    expect(store.listSetIds('intl').sort()).toEqual(ids);
+    expect(log.warnings).toContain('catalog.region_interrupted');
+  });
+
   it('leaves a region untouched when its listings cannot be loaded', async () => {
     const store = memoryCatalogStore();
     const fake = fakeTcgdex();
@@ -296,6 +389,21 @@ describe('runCatalogIngest', () => {
 
     expect(store.lastCompletedFullRun()).toBeNull();
     expect(store.listSetIds('intl')).toEqual([]);
+  });
+
+  it('rethrows the original error even when recording the run fails too', async () => {
+    const store = memoryCatalogStore();
+    const log = silentLogger();
+    vi.spyOn(store, 'replaceSeries').mockImplementation(() => {
+      throw new Error('disk full');
+    });
+    vi.spyOn(store, 'finishRun').mockImplementation(() => {
+      throw new Error('still full');
+    });
+
+    await expect(ingest(store, fakeTcgdex(), { log })).rejects.toThrow('disk full');
+
+    expect(log.errors).toEqual(['catalog.ingest_failed', 'catalog.run_record_failed']);
   });
 
   it('records a failed run and rethrows unexpected errors', async () => {
