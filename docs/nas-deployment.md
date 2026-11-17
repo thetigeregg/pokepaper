@@ -99,18 +99,19 @@ docker build -f edge/Dockerfile -t pokepaper-edge:local .
 
 Create a stack from `docker-compose.yml` (upload it or point Portainer at the repo) with these environment variables:
 
-| Variable           | Example                                | Notes                                                                     |
-| ------------------ | -------------------------------------- | ------------------------------------------------------------------------- |
-| `PUBLIC_ORIGIN`    | `https://pokepaper.example.com`        | **Required.** The public HTTPS origin. Passkeys are bound to its hostname |
-| `NAS_DATA_ROOT`    | `/volume1/docker/pokepaper`            | Parent of `server-data` and `server-backups`                              |
-| `SECRETS_HOST_DIR` | `/volume1/docker/pokepaper/secrets`    | Holds `setup_token`                                                       |
-| `EDGE_PORT`        | `8080`                                 | Host port Nginx Proxy Manager forwards to. Pick a free one                |
-| `PUID` / `PGID`    | `<puid>` / `<pgid>`                    | User the server runs as (default `1000`/`1000`); see section 1            |
-| `TRUSTED_PROXIES`  | _(default `private_ranges`)_           | Proxies allowed to set `CF-Connecting-IP`; see section 4                  |
-| `NPM_NETWORK`      | _(only with `docker-compose.npm.yml`)_ | Nginx Proxy Manager's Docker network; see section 4                       |
-| `TZ`               | `Europe/Zurich`                        |                                                                           |
-| `SERVER_IMAGE`     | _(default `…-server:main`)_            | Override to pin a version                                                 |
-| `EDGE_IMAGE`       | _(default `…-edge:main`)_              | Override to pin a version                                                 |
+| Variable           | Example                                  | Notes                                                                                                                |
+| ------------------ | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `PUBLIC_ORIGIN`    | `https://pokepaper.example.com`          | **Required.** The public HTTPS origin. Passkeys are bound to its hostname                                            |
+| `NAS_DATA_ROOT`    | `/volume1/docker/pokepaper`              | Parent of `server-data` and `server-backups`                                                                         |
+| `SECRETS_HOST_DIR` | `/volume1/docker/pokepaper/secrets`      | Holds `setup_token`                                                                                                  |
+| `EDGE_PORT`        | `8080`                                   | Host port Nginx Proxy Manager forwards to. Pick a free one                                                           |
+| `EDGE_BIND`        | _(unset: all interfaces, IPv4 and IPv6)_ | Host address the edge port listens on, e.g. `127.0.0.1` once edge shares NPM's network (section 4). IPv6 in brackets |
+| `PUID` / `PGID`    | `<puid>` / `<pgid>`                      | User the server runs as (default `1000`/`1000`); see section 1                                                       |
+| `TRUSTED_PROXIES`  | _(default `private_ranges`)_             | Proxies allowed to set `CF-Connecting-IP`; see section 4                                                             |
+| `NPM_NETWORK`      | _(only with `docker-compose.npm.yml`)_   | Nginx Proxy Manager's Docker network; see section 4                                                                  |
+| `TZ`               | `Europe/Zurich`                          |                                                                                                                      |
+| `SERVER_IMAGE`     | _(default `…-server:main`)_              | Override to pin a version                                                                                            |
+| `EDGE_IMAGE`       | _(default `…-edge:main`)_                | Override to pin a version                                                                                            |
 
 The compose file already sets `NODE_ENV=production`, `SETUP_TOKEN_FILE`, `CLIENT_IP_HEADER=cf-connecting-ip`, and `TRUST_PROXY_HOPS=1`. Optional server settings (session lifetime, backups, rate limits) are listed, commented, in `docker-compose.yml`. All server settings are in `README.md` → Server and `docs/auth.md` → Configuration.
 
@@ -144,13 +145,21 @@ NPM passes request headers through unchanged, including Cloudflare's `CF-Connect
 
 3. **Point NPM at edge by name.** Change the proxy host's **Forward Hostname** to `pokepaper-edge` and **Forward Port** to `8080` (the container's port, not `EDGE_PORT`). Check the site still loads through the public URL.
 
-4. **Narrow `TRUSTED_PROXIES`**, then update the stack again. Choose one:
-   - **NPM's address only (strictest):** give NPM a fixed IP on that network in NPM's own stack (`networks: <npm-network>: ipv4_address: …`), then set `TRUSTED_PROXIES` = `<npm-ip>/32`.
-   - **The network's subnet:** `TRUSTED_PROXIES` = `<npm-network-subnet>`. Simpler, and survives NPM getting a new address on restart, but it trusts **every** container on that network, plus processes on the NAS itself that reach it through the network's gateway. Fine when only NPM and its tunnel are on it.
+4. **Lock down the trust, in one stack update.** With edge on two networks, Docker may route published-port traffic in through the **NPM network's gateway**, and that gateway is inside the network's subnet. So trusting the subnet is only safe once edge isn't published on the LAN. Pick one path and set both of its variables together:
+   - **No LAN access to edge needed (recommended):** `EDGE_BIND` = `127.0.0.1` and `TRUSTED_PROXIES` = `<npm-network-subnet>`. NPM reaches edge by name, so nothing on the LAN needs `EDGE_PORT`. Survives NPM getting a new address on restart. It trusts **every** container on that network, plus processes on the NAS itself (they reach edge through the gateway), so it's fine when only NPM and its tunnel are on that network.
+   - **Keep `EDGE_PORT` reachable on the LAN:** leave `EDGE_BIND` unset, give NPM a fixed IP on that network in NPM's own stack (`networks: <npm-network>: ipv4_address: …`), and set `TRUSTED_PROXIES` = `<npm-ip>/32`. **Don't** trust the subnet on this path.
 
-5. **Verify the client IP end to end.** From a browser or another machine, open `https://pokepaper.<your-domain>/api/health`. `clientIp` must be **your public IP** (compare with any what-is-my-IP site). If it shows a private address (NPM's or a gateway), the proxy isn't trusted: every visitor then shares one rate-limit bucket. Re-check `TRUSTED_PROXIES` against step 1.
+   `EDGE_BIND` takes a host address; write IPv6 addresses in brackets (e.g. `[::1]`).
 
-`EDGE_PORT` stays published for direct LAN access and troubleshooting. LAN devices that come that way are never trusted, so they can't set the client IP.
+5. **Verify both directions.**
+   - **Public:** from a browser or another machine, open `https://pokepaper.<your-domain>/api/health`. `clientIp` must be **your public IP** (compare with any what-is-my-IP site). A private address (NPM's or a gateway) means the proxy isn't trusted, and every visitor shares one rate-limit bucket. Re-check `TRUSTED_PROXIES` against step 1.
+   - **LAN:** from another machine on your network, try to fake the client IP:
+
+     ```bash
+     curl -s -m 5 -H 'CF-Connecting-IP: 203.0.113.9' http://<nas-ip>:<EDGE_PORT>/api/health
+     ```
+
+     With `EDGE_BIND=127.0.0.1` the connection is refused. Otherwise `clientIp` must **not** be `203.0.113.9`. If it is, `TRUSTED_PROXIES` covers the address the request arrived from: either the NPM network's gateway (the subnet is trusted while the port is on the LAN) or your LAN itself (`TRUSTED_PROXIES` is still the default `private_ranges`). Fix it as in step 4.
 
 ## 5. Cloudflare
 

@@ -1,23 +1,14 @@
-# Optional: put edge on Nginx Proxy Manager's Docker network.
+# Optional: put edge on Nginx Proxy Manager's Docker network, so NPM
+# forwards to http://pokepaper-edge:8080 from its own address and
+# TRUSTED_PROXIES can be narrowed to it. Behind Docker's port proxy (the
+# published EDGE_PORT) every source looks the same, so that isn't possible
+# otherwise. Requires a user-defined network; set NPM_NETWORK, and also set
+# EDGE_BIND / TRUSTED_PROXIES as described in docs/nas-deployment.md,
+# section 4 (the safe combinations are documented there, not here).
 #
-# Why: when NPM reaches edge through the published EDGE_PORT, Docker's
-# port proxy rewrites every connection's source to the bridge gateway, so
-# edge can't tell NPM apart from any other device on the LAN, and
-# TRUSTED_PROXIES can't be narrowed usefully. On a shared network NPM
-# connects from its own address, so:
-#
-#   - NPM forwards to http://pokepaper-edge:8080 (container name), not
-#     <nas-ip>:EDGE_PORT
-#   - TRUSTED_PROXIES = NPM's address (with a fixed IP) or the network's
-#     subnet. A subnet trusts every container on that network, plus
-#     processes on the host that reach it through the network's gateway.
-#   - LAN devices reaching edge through EDGE_PORT are never trusted
-#
-# Requires a user-defined network (Docker's default "bridge" has no
-# container-name DNS). Use it as an extra compose file (Portainer Git stack:
-# "Additional paths"), and include it in every manual compose command:
+# Use it as an extra compose file (Portainer Git stack: "Additional paths"),
+# and in every manual compose command:
 #   docker compose -f docker-compose.yml -f docker-compose.npm.yml up -d
-# with NPM_NETWORK and TRUSTED_PROXIES set. See docs/nas-deployment.md, section 4.
 
 services:
   edge:
