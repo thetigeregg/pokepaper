@@ -1,0 +1,13 @@
+# Normalize text files to LF in the repository and working tree. Server
+# migrations are checksummed, so a CRLF checkout must not change their bytes.
+* text=auto eol=lf
+*.sql text eol=lf
+
+# Binary assets
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.db binary

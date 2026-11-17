@@ -243,6 +243,43 @@ describe('SyncService', () => {
     consoleError.mockRestore();
   });
 
+  it('keeps retryable rejections queued without counting the attempt', async () => {
+    await engine.putOutboxEntry(
+      makeContractOutboxEntry({ opId: 'future', attemptCount: MAX_PUSH_ATTEMPTS - 1 })
+    );
+
+    const syncPromise = syncService.syncNow();
+    (await waitForRequest(httpMock, PUSH_URL)).flush({
+      results: [
+        { opId: 'future', status: 'failed', message: 'Unknown entity type', retryable: true },
+      ],
+    });
+    (await waitForRequest(httpMock, PULL_URL)).flush(EMPTY_PULL);
+    await syncPromise;
+
+    const entry = await engine.getOutboxEntry('future');
+    expect(entry?.attemptCount).toBe(MAX_PUSH_ATTEMPTS - 1);
+    expect(entry?.lastError).toBe('Unknown entity type');
+    expect(syncService.rejectedOperations()).toBe(0);
+    expect(syncService.status()).toBe('error');
+  });
+
+  it('stores and echoes an opaque server cursor verbatim', async () => {
+    const first = syncService.syncNow();
+    (await waitForRequest(httpMock, PULL_URL)).flush({
+      cursor: 'a1b2c3:17',
+      changes: [],
+      hasMore: false,
+    });
+    await first;
+
+    const second = syncService.syncNow();
+    const pull = await waitForRequest(httpMock, PULL_URL);
+    expect(pull.request.body).toEqual({ cursor: 'a1b2c3:17' });
+    pull.flush({ cursor: 'a1b2c3:17', changes: [], hasMore: false });
+    await second;
+  });
+
   it('does not overwrite an entity that still has a queued local operation', async () => {
     await engine.putSettings({ cardLanguage: 'ja' });
     await engine.putOutboxEntry(

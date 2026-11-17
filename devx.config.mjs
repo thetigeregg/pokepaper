@@ -15,6 +15,12 @@ export default {
     feedbackOutputFile: 'prompts/pr-feedback-prompt.md',
     excludedDiffPaths: [':(glob,exclude)**/package-lock.json', ':(glob,exclude)**/dist/**'],
     ciWorkflowName: 'CI PR Checks',
-    verifyCommands: ['npm run lint', 'npm run test', 'npm run build', 'npm run test:scripts'],
+    verifyCommands: [
+      'npm run lint',
+      'npm run typecheck:server',
+      'npm run test',
+      'npm run build',
+      'npm run test:scripts',
+    ],
   },
 };
