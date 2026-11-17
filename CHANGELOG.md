@@ -41,3 +41,7 @@
 ## v0.4.0 - 2026-11-17
 
 - 65f2d18 feat(catalog): serve catalogue packs and cached card images (#18)
+
+## v0.5.0 - 2026-11-17
+
+- 3481e2b feat(catalog): keep the card catalog offline on the device (#19)
