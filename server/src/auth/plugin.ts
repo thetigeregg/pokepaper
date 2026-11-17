@@ -13,7 +13,6 @@ import { PasskeyService } from './passkeys.js';
 import {
   clearSessionCookie,
   issueSession,
-  optionalSession,
   readSessionToken,
   type RequestSession,
   setSessionCookie,
@@ -58,43 +57,68 @@ export function registerAuth(app: FastifyInstance, { store, config }: AuthPlugin
 
   app.decorateRequest('session', null);
 
-  // preValidation, not onRequest: rate limiting (a route-level onRequest
-  // hook) must run first, so floods of bad tokens are throttled before they
-  // cost a session lookup.
-  app.addHook('preValidation', async (request, reply) => {
-    if (request.routeOptions.config.auth === 'public') {
-      return;
-    }
-
+  /**
+   * Resolves the request's session (cookie or bearer) and keeps the cookie
+   * in step: refreshed when the sliding expiry was just extended, cleared
+   * when it no longer matches a live session. Used by the hook and by public
+   * routes that read an optional session.
+   */
+  function sessionFor(request: FastifyRequest, reply: FastifyReply): RequestSession | null {
     if (config.devBypass) {
-      request.session = DEV_BYPASS_SESSION;
-      return;
+      return DEV_BYPASS_SESSION;
     }
 
     const presented = readSessionToken(request);
-    const session = presented ? store.resolveSession(presented.token) : null;
-    if (!presented || !session) {
-      if (presented?.via === 'cookie') {
+    if (!presented) {
+      return null;
+    }
+
+    const session = store.resolveSession(presented.token);
+    if (!session) {
+      if (presented.via === 'cookie') {
         clearSessionCookie(reply);
       }
-      return reply.status(401).send({ error: 'Sign in required' });
+      return null;
     }
 
-    // Cookies ride along on cross-site requests; SameSite=Strict already
-    // blocks that, and this rejects any state-changing request whose Origin
-    // isn't the app\'s own as a second line of defense. Bearer tokens are
-    // never sent implicitly, so they skip this check.
-    if (presented.via === 'cookie' && !SAFE_METHODS.has(request.method)) {
-      const origin = request.headers.origin;
-      if (origin !== undefined && origin !== config.publicOrigin) {
-        return reply.status(403).send({ error: 'Cross-origin request rejected' });
-      }
-    }
-
-    request.session = { ...session, via: presented.via };
     if (session.extended && presented.via === 'cookie') {
       setSessionCookie(reply, presented.token, config.sessionTtlDays);
     }
+    return { ...session, via: presented.via };
+  }
+
+  /**
+   * Cookies ride along on cross-site requests. SameSite=Strict already blocks
+   * that; as a second line of defense, a state-changing cookie request whose
+   * Origin isn't the app's own is rejected. Bearer tokens are never sent
+   * implicitly, so they skip this check.
+   */
+  function isCrossOriginCookieWrite(request: FastifyRequest, session: RequestSession): boolean {
+    if (session.via !== 'cookie' || SAFE_METHODS.has(request.method)) {
+      return false;
+    }
+    const origin = request.headers.origin;
+    return origin !== undefined && origin !== config.publicOrigin;
+  }
+
+  // preParsing: after rate limiting (a route-level onRequest hook), so floods
+  // of bad tokens are throttled before they cost a session lookup, and before
+  // the body is read, so unauthenticated requests never get parsed.
+  app.addHook('preParsing', async (request, reply, payload) => {
+    if (request.routeOptions.config.auth === 'public') {
+      return payload;
+    }
+
+    const session = sessionFor(request, reply);
+    if (!session) {
+      return reply.status(401).send({ error: 'Sign in required' });
+    }
+    if (isCrossOriginCookieWrite(request, session)) {
+      return reply.status(403).send({ error: 'Cross-origin request rejected' });
+    }
+
+    request.session = session;
+    return payload;
   });
 
   app.setErrorHandler((error: unknown, request, reply) => {
@@ -105,8 +129,10 @@ export function registerAuth(app: FastifyInstance, { store, config }: AuthPlugin
     if (validation) {
       return reply.status(400).send({ error: message });
     }
-    if (statusCode === 429) {
-      return reply.status(429).send({ error: message });
+    // Client errors raised by Fastify itself (malformed JSON 400, body too
+    // large 413, unsupported media type 415, rate limit 429, …) keep their status.
+    if (statusCode !== undefined && statusCode >= 400 && statusCode < 500) {
+      return reply.status(statusCode).send({ error: message });
     }
     request.log.error({ err: error }, 'request.failed');
     return reply.status(500).send({ error: 'Internal server error' });
@@ -118,10 +144,14 @@ export function registerAuth(app: FastifyInstance, { store, config }: AuthPlugin
    */
   function authorizeRegistration(
     request: FastifyRequest,
+    reply: FastifyReply,
     setupToken: string | undefined
   ): { mode: 'add'; session: RequestSession } | { mode: 'setup' } {
-    const session = config.devBypass ? DEV_BYPASS_SESSION : optionalSession(request, store);
+    const session = sessionFor(request, reply);
     if (session) {
+      if (isCrossOriginCookieWrite(request, session)) {
+        throw new AuthError(403, 'Cross-origin request rejected');
+      }
       return { mode: 'add', session };
     }
     if (store.hasCredentials()) {
@@ -133,11 +163,11 @@ export function registerAuth(app: FastifyInstance, { store, config }: AuthPlugin
     return { mode: 'setup' };
   }
 
-  app.get('/api/auth/status', { config: { auth: 'public' } }, (request) => {
+  app.get('/api/auth/status', { config: { auth: 'public' } }, (request, reply) => {
     const registered = store.hasCredentials();
     return {
       registered,
-      authenticated: config.devBypass || optionalSession(request, store) !== null,
+      authenticated: sessionFor(request, reply) !== null,
       setupAvailable: !registered && readSetupToken(config) !== null,
     };
   });
@@ -153,8 +183,8 @@ export function registerAuth(app: FastifyInstance, { store, config }: AuthPlugin
         },
       },
     },
-    async (request) => {
-      authorizeRegistration(request, request.body.setupToken);
+    async (request, reply) => {
+      authorizeRegistration(request, reply, request.body.setupToken);
       return passkeys.registrationOptions();
     }
   );
@@ -178,7 +208,7 @@ export function registerAuth(app: FastifyInstance, { store, config }: AuthPlugin
     },
     async (request, reply) => {
       const { response, setupToken, label, client } = request.body;
-      const authorization = authorizeRegistration(request, setupToken);
+      const authorization = authorizeRegistration(request, reply, setupToken);
       const credential = await passkeys.verifyRegistration(
         response as RegistrationResponseJSON,
         label?.trim() || 'Passkey'
@@ -189,6 +219,11 @@ export function registerAuth(app: FastifyInstance, { store, config }: AuthPlugin
       const result = store.transaction(() => {
         if (authorization.mode === 'setup' && store.hasCredentials()) {
           throw new AuthError(409, 'PokePaper is already set up; sign in instead');
+        }
+        // An authenticator that ignores excludeCredentials, or two
+        // overlapping add-passkey flows, can present an existing credential.
+        if (store.findCredential(credential.id)) {
+          throw new AuthError(409, 'This passkey is already registered');
         }
         const summary = store.addCredential(credential);
         const token =

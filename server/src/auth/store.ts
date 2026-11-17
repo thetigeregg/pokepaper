@@ -129,7 +129,7 @@ export class AuthStore {
   }
 
   hasCredentials(): boolean {
-    return (this.statements.countCredentials.get()?.n ?? 0) > 0;
+    return this.credentialCount() > 0;
   }
 
   credentialCount(): number {

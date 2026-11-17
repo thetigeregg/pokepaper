@@ -38,10 +38,11 @@ Every route requires a session **except** `GET /api/health`, `GET /api/auth/stat
 
 ### Hardening
 
-- **Rate limits** per client IP: 600 requests/minute overall, and 20/minute (`AUTH_RATE_LIMIT_PER_MINUTE`) on the unauthenticated auth routes. The client IP comes from `CLIENT_IP_HEADER` (`cf-connecting-ip` behind Cloudflare, which overwrites it so clients can't spoof it). Rate limiting runs before the session check, so floods of bad tokens are throttled before they cost a lookup.
-- **CSRF:** `SameSite=Strict` cookies, plus a 403 for any state-changing cookie request whose `Origin` isn't `PUBLIC_ORIGIN`. Bearer tokens are never sent implicitly, so they skip that check.
+- **Rate limits** per client IP: 600 requests/minute overall, and 20/minute (`AUTH_RATE_LIMIT_PER_MINUTE`) on the unauthenticated auth routes. The client IP comes from `CLIENT_IP_HEADER` (`cf-connecting-ip` behind Cloudflare, which overwrites it so clients can't spoof it). Rate limiting runs before the session check, and the session check runs before the request body is read (`preParsing`), so floods of bad tokens are throttled before they cost a lookup and unauthenticated bodies are never parsed.
+- **CSRF:** `SameSite=Strict` cookies, plus a 403 for any state-changing cookie request whose `Origin` isn't `PUBLIC_ORIGIN`, including the passkey registration routes. Bearer tokens are never sent implicitly, so they skip that check.
 - **No CORS:** browsers only talk to the app's own origin through `edge`, and the iOS app uses native HTTP (`CapacitorHttp`), which isn't subject to CORS.
-- Unexpected errors return a generic `500` without details.
+- Client errors keep their status (malformed JSON 400, body too large 413, unsupported media type 415, rate limited 429). Only unexpected errors become a generic `500`, without details.
+- Registering a passkey that already exists returns `409`.
 
 ### Offline behavior (client)
 
@@ -49,7 +50,9 @@ Sign-in state on the device is a local marker (`pokepaper.auth.signedIn` in Pref
 
 - Once signed in, the app opens straight to the tabs **with or without a connection**. All data is local.
 - When the server rejects the session (sync gets a 401), sync pauses, the marker is cleared, and the app shows the sign-in screen. **Queued offline changes are kept** and sync after signing back in.
-- Signing out also works offline: the local sign-out applies immediately, and the server session simply expires.
+- **Sync runs only while signed in.** Signing out pauses it immediately, and a sync cycle already in flight stops before its next request.
+- **Signing out works offline.** The local sign-out applies immediately. A sign-out that couldn't reach the server is remembered (`pokepaper.auth.pendingSignOut`) and completed before the sign-in screen next checks the session, so the still-valid cookie can't silently sign you back in.
+- Any signed-in account call that gets a `401` (session expired, revoked from another device, or its passkey removed) signs out locally and shows the sign-in screen.
 - First-time sign-in needs a connection. The sign-in screen says so when the server is unreachable.
 
 ## Routes

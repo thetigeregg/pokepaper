@@ -462,6 +462,61 @@ describe('SyncService', () => {
     expect(await engine.listOutboxOrderedByCreatedAt()).toEqual([]);
   });
 
+  it('does not sync while paused (signed out)', async () => {
+    syncService.pause();
+
+    await syncService.syncNow();
+
+    httpMock.expectNone(PULL_URL);
+    expect(syncService.status()).toBe('unauthorized');
+  });
+
+  it('ignores a stale 401 from a cycle that started before the latest sign-in', async () => {
+    // A cycle starts without a valid session...
+    const stale = syncService.syncNow();
+    const pull = await waitForRequest(httpMock, PULL_URL);
+
+    // ...the user signs in while it is in flight...
+    const resumed = syncService.resumeAfterReauth();
+    expect(resumed).toBe(stale);
+
+    // ...and only then does the old request come back 401.
+    pull.flush(null, { status: 401, statusText: 'Unauthorized' });
+
+    // The stale 401 must not mark the new session unauthorized: one more
+    // cycle runs under the new session instead.
+    (await waitForRequest(httpMock, PULL_URL)).flush(EMPTY_PULL);
+    await stale;
+
+    expect(syncService.status()).toBe('idle');
+  });
+
+  it('a cycle overtaken by sign-out sends no further requests', async () => {
+    await engine.putOutboxEntry(makeContractOutboxEntry({ opId: 'queued' }));
+    const inFlight = syncService.syncNow();
+    const push = await waitForRequest(httpMock, PUSH_URL);
+
+    // Sign-out lands while the push is in flight; the cycle must not go on to pull.
+    syncService.pause();
+    push.flush({ results: [{ opId: 'queued', status: 'applied' }] });
+    await inFlight;
+
+    httpMock.expectNone(PULL_URL);
+    expect(syncService.status()).toBe('unauthorized');
+  });
+
+  it('a cycle overtaken by sign-out stays paused and does not run again', async () => {
+    const inFlight = syncService.syncNow();
+    const pull = await waitForRequest(httpMock, PULL_URL);
+
+    syncService.pause();
+    pull.flush(EMPTY_PULL);
+    await inFlight;
+
+    expect(syncService.status()).toBe('unauthorized');
+    httpMock.expectNone(PULL_URL);
+  });
+
   it('reports error on other failures and retries on the next trigger', async () => {
     const syncPromise = syncService.syncNow();
     (await waitForRequest(httpMock, PULL_URL)).flush(null, {

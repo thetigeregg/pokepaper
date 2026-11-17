@@ -43,15 +43,16 @@ bootstrapApplication(AppComponent, {
     // local data first (offline-capable) and syncs in the background.
     provideAppInitializer(() => {
       const storageEngineFactory = inject(StorageEngineFactory);
+      const authService = inject(AuthService);
       const syncService = inject(SyncService);
 
-      return storageEngineFactory.initialize().then(() => {
+      // The local signed-in marker must be loaded before the router's first
+      // navigation (so the guards pick the right screen, offline too) and
+      // before sync starts (sync stays paused while signed out).
+      return Promise.all([storageEngineFactory.initialize(), authService.initialize()]).then(() => {
         syncService.initialize();
       });
     }),
-    // The local signed-in marker must be loaded before the router's first
-    // navigation so the guards send the user to the right screen (offline too).
-    provideAppInitializer(() => inject(AuthService).initialize()),
     {
       provide: STORAGE_ENGINE,
       useFactory: (engineFactory: StorageEngineFactory) => engineFactory.getEngine(),

@@ -61,8 +61,8 @@ export function buildApp({
 
   // The server is reachable from the public internet, so every route is
   // limited per client IP. The limit is generous: a single user syncing every
-  // 30s, plus the compose healthcheck, stays far below it. Stricter limits for
-  // auth routes come with passkey auth.
+  // 30s, plus the compose healthcheck, stays far below it. The unauthenticated
+  // auth routes add a stricter per-route limit (auth/plugin.ts).
   void app.register(rateLimit, {
     global: true,
     max: rateLimitPerMinute,

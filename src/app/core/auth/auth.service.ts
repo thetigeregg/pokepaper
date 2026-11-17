@@ -21,6 +21,8 @@ import { PreferenceStorageService } from '../storage/preference-storage.service'
 
 /** Local marker: this device has signed in and hasn't since been told the session ended. */
 export const SIGNED_IN_KEY = 'pokepaper.auth.signedIn';
+/** Set when a sign-out couldn't reach the server; the server session is ended before the next sign-in check. */
+export const PENDING_SIGN_OUT_KEY = 'pokepaper.auth.pendingSignOut';
 
 /**
  * The web app authenticates with an httpOnly session cookie. The iOS client
@@ -41,6 +43,10 @@ export class AuthFlowError extends Error {
  * marker is cleared on sign-out, or when the server rejects the session (sync
  * reports `unauthorized`), which sends the user to the sign-in screen. Queued
  * offline changes survive that and sync after signing back in.
+ *
+ * Sync only runs while signed in. A sign-out made offline is remembered and
+ * completed on the server before the sign-in screen next checks the session,
+ * so a surviving cookie can't silently sign the user back in.
  */
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -62,7 +68,32 @@ export class AuthService {
 
   /** Loads the local marker. Runs in an app initializer, before the first navigation. */
   async initialize(): Promise<void> {
-    this._signedIn.set((await this.preferences.getItem(SIGNED_IN_KEY)) === 'true');
+    const signedIn = (await this.preferences.getItem(SIGNED_IN_KEY)) === 'true';
+    this._signedIn.set(signedIn);
+    if (!signedIn) {
+      this.syncService.pause();
+    }
+  }
+
+  /**
+   * Completes a sign-out that couldn't reach the server earlier. Resolves
+   * true when no sign-out is pending anymore (so an existing server session
+   * may be adopted), false while it still can't be completed.
+   */
+  async completePendingSignOut(): Promise<boolean> {
+    if ((await this.preferences.getItem(PENDING_SIGN_OUT_KEY)) !== 'true') {
+      return true;
+    }
+    try {
+      await firstValueFrom(this.http.post(this.url('/logout'), {}));
+    } catch (error: unknown) {
+      // A 401 means the session is already gone: that also completes it.
+      if (!(error instanceof HttpErrorResponse && error.status === 401)) {
+        return false;
+      }
+    }
+    await this.preferences.removeItem(PENDING_SIGN_OUT_KEY);
+    return true;
   }
 
   status(): Promise<AuthStatusResponse> {
@@ -106,34 +137,46 @@ export class AuthService {
 
   /** Adds another passkey to the signed-in account. */
   async addPasskey(label: string): Promise<CredentialSummary> {
-    const optionsJSON = await this.request(() =>
-      this.http.post<PublicKeyCredentialCreationOptionsJSON>(this.url('/register/options'), {})
+    const optionsJSON = await this.request(
+      () =>
+        this.http.post<PublicKeyCredentialCreationOptionsJSON>(this.url('/register/options'), {}),
+      { requiresSession: true }
     );
     const response = await this.runCeremony(() => startRegistration({ optionsJSON }));
-    const result = await this.request(() =>
-      this.http.post<RegisterVerifyResponse>(this.url('/register/verify'), {
-        response,
-        label,
-        client: CLIENT,
-      })
+    const result = await this.request(
+      () =>
+        this.http.post<RegisterVerifyResponse>(this.url('/register/verify'), {
+          response,
+          label,
+          client: CLIENT,
+        }),
+      { requiresSession: true }
     );
     return result.credential;
   }
 
   listPasskeys(): Promise<CredentialSummary[]> {
-    return this.request(() => this.http.get<CredentialSummary[]>(this.url('/credentials')));
+    return this.request(() => this.http.get<CredentialSummary[]>(this.url('/credentials')), {
+      requiresSession: true,
+    });
   }
 
   async removePasskey(id: string): Promise<void> {
-    await this.request(() => this.http.delete(this.url(`/credentials/${encodeURIComponent(id)}`)));
+    await this.request(() => this.http.delete(this.url(`/credentials/${encodeURIComponent(id)}`)), {
+      requiresSession: true,
+    });
   }
 
   listSessions(): Promise<SessionSummary[]> {
-    return this.request(() => this.http.get<SessionSummary[]>(this.url('/sessions')));
+    return this.request(() => this.http.get<SessionSummary[]>(this.url('/sessions')), {
+      requiresSession: true,
+    });
   }
 
   async revokeSession(id: string): Promise<void> {
-    await this.request(() => this.http.delete(this.url(`/sessions/${encodeURIComponent(id)}`)));
+    await this.request(() => this.http.delete(this.url(`/sessions/${encodeURIComponent(id)}`)), {
+      requiresSession: true,
+    });
   }
 
   /**
@@ -143,19 +186,25 @@ export class AuthService {
   async signOut(): Promise<void> {
     try {
       await firstValueFrom(this.http.post(this.url('/logout'), {}));
-    } catch {
-      // Offline or already expired: the local sign-out below still applies.
+    } catch (error: unknown) {
+      // Already expired (401) needs nothing more. Otherwise (offline, server
+      // down) finish the server sign-out before the next sign-in check.
+      if (!(error instanceof HttpErrorResponse && error.status === 401)) {
+        await this.preferences.setItem(PENDING_SIGN_OUT_KEY, 'true');
+      }
     }
     await this.endLocalSession();
   }
 
   private async markSignedIn(): Promise<void> {
+    await this.preferences.removeItem(PENDING_SIGN_OUT_KEY);
     await this.preferences.setItem(SIGNED_IN_KEY, 'true');
     this._signedIn.set(true);
     void this.syncService.resumeAfterReauth();
   }
 
   private async endLocalSession(): Promise<void> {
+    this.syncService.pause();
     this._signedIn.set(false);
     await this.preferences.removeItem(SIGNED_IN_KEY);
     await this.router.navigateByUrl('/login');
@@ -165,11 +214,22 @@ export class AuthService {
     return `${environment.apiUrl}/api/auth${path}`;
   }
 
-  /** Runs an API call, converting HTTP failures into user-facing messages. */
-  private async request<T>(call: () => Observable<T>): Promise<T> {
+  /**
+   * Runs an API call, converting HTTP failures into user-facing messages. For
+   * calls that need a session, a 401 means it has ended (expired, revoked
+   * from another device, or its passkey removed): sign out locally.
+   */
+  private async request<T>(
+    call: () => Observable<T>,
+    { requiresSession = false }: { requiresSession?: boolean } = {}
+  ): Promise<T> {
     try {
       return await firstValueFrom(call());
     } catch (error: unknown) {
+      if (requiresSession && error instanceof HttpErrorResponse && error.status === 401) {
+        await this.endLocalSession();
+        throw new AuthFlowError('Your session has ended. Please sign in again.');
+      }
       throw new AuthFlowError(describeHttpError(error));
     }
   }

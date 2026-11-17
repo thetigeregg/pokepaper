@@ -36,12 +36,7 @@ export class AccountSectionComponent implements OnInit {
 
   async load(): Promise<void> {
     await this.run(async () => {
-      const [passkeys, sessions] = await Promise.all([
-        this.auth.listPasskeys(),
-        this.auth.listSessions(),
-      ]);
-      this.passkeys.set(passkeys);
-      this.sessions.set(sessions);
+      await this.reload();
       this.loaded.set(true);
     });
   }

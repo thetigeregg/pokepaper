@@ -65,8 +65,11 @@ export class LoginPage {
     this.error.set(null);
 
     try {
+      // A sign-out made offline must reach the server before a surviving
+      // session cookie is allowed to count as "already signed in".
+      const noPendingSignOut = await this.auth.completePendingSignOut();
       const status = await this.auth.status();
-      if (status.authenticated) {
+      if (status.authenticated && noPendingSignOut) {
         await this.auth.adoptExistingSession();
         await this.router.navigateByUrl('/tabs', { replaceUrl: true });
         return;

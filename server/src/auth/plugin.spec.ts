@@ -432,6 +432,96 @@ describe('passkey auth routes', () => {
     });
   });
 
+  describe('request handling', () => {
+    it('rejects unauthenticated requests before reading the body', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/sync/push',
+        headers: { 'content-type': 'application/json' },
+        payload: '{ this is not json',
+      });
+
+      // 401 (auth ran first), not 400 (body parse).
+      expect(response.statusCode).toBe(401);
+    });
+
+    it.each([
+      ['malformed JSON', 'application/json', '{ nope', 400],
+      ['an unsupported content type', 'application/xml', '<x/>', 415],
+      [
+        'an oversized body',
+        'application/json',
+        JSON.stringify({ operations: [], pad: 'x'.repeat(6 * 1024 * 1024) }),
+        413,
+      ],
+    ])('keeps the client-error status for %s', async (_label, contentType, payload, status) => {
+      const headers = await bearerFor();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/sync/push',
+        headers: { ...headers, 'content-type': contentType },
+        payload,
+      });
+
+      expect(response.statusCode).toBe(status);
+    });
+
+    it('refreshes and clears the cookie on public routes too', async () => {
+      const cookie = `${SESSION_COOKIE}=${String(sessionCookie(await setUp('web'))?.value)}`;
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(Date.now() + 2 * 60 * 60 * 1000);
+
+      const refreshed = await app.inject({
+        method: 'GET',
+        url: '/api/auth/status',
+        headers: { cookie },
+      });
+      vi.useRealTimers();
+      const stale = await app.inject({
+        method: 'GET',
+        url: '/api/auth/status',
+        headers: { cookie: `${SESSION_COOKIE}=stale` },
+      });
+
+      expect(sessionCookie(refreshed)?.maxAge).toBe(90 * 24 * 60 * 60);
+      expect(sessionCookie(stale)).toMatchObject({ value: '', maxAge: 0 });
+      expect(stale.json()).toMatchObject({ authenticated: false });
+    });
+
+    it('applies the origin check to cookie sessions on the registration routes', async () => {
+      const cookie = `${SESSION_COOKIE}=${String(sessionCookie(await setUp('web'))?.value)}`;
+
+      const foreign = await post(
+        '/api/auth/register/options',
+        {},
+        { cookie, origin: 'https://evil.example' }
+      );
+      const sameOrigin = await post(
+        '/api/auth/register/options',
+        {},
+        { cookie, origin: TEST_ORIGIN }
+      );
+
+      expect([foreign.statusCode, sameOrigin.statusCode]).toEqual([403, 200]);
+    });
+
+    it('rejects registering a passkey that already exists', async () => {
+      const headers = await bearerFor();
+      await post('/api/auth/register/options', {}, headers);
+      mockRegistrationSucceeds(() => lastChallenge, 'cred-1');
+
+      const response = await post(
+        '/api/auth/register/verify',
+        { response: credentialResponse('cred-1'), client: 'ios' },
+        headers
+      );
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toEqual({ error: 'This passkey is already registered' });
+    });
+  });
+
   describe('sign-out and session management', () => {
     it('logout ends the session and clears the cookie', async () => {
       const cookie = `${SESSION_COOKIE}=${String(sessionCookie(await setUp('web'))?.value)}`;

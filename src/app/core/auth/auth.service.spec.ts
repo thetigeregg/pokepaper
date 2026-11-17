@@ -7,7 +7,13 @@ import { startAuthentication, startRegistration } from '@simplewebauthn/browser'
 import { vi } from 'vitest';
 import { SyncService, type SyncStatus } from '../services/sync.service';
 import { PreferenceStorageService } from '../storage/preference-storage.service';
-import { AuthFlowError, AuthService, describeHttpError, SIGNED_IN_KEY } from './auth.service';
+import {
+  AuthFlowError,
+  AuthService,
+  describeHttpError,
+  PENDING_SIGN_OUT_KEY,
+  SIGNED_IN_KEY,
+} from './auth.service';
 
 vi.mock('@simplewebauthn/browser', () => ({
   startRegistration: vi.fn(),
@@ -28,6 +34,7 @@ describe('AuthService', () => {
   let store: Map<string, string>;
   let syncStatus: ReturnType<typeof signal<SyncStatus>>;
   let resumeAfterReauth: ReturnType<typeof vi.fn>;
+  let pause: ReturnType<typeof vi.fn>;
   let navigateByUrl: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
@@ -35,6 +42,7 @@ describe('AuthService', () => {
     store = new Map();
     syncStatus = signal<SyncStatus>('idle');
     resumeAfterReauth = vi.fn(() => Promise.resolve());
+    pause = vi.fn();
     navigateByUrl = vi.fn(() => Promise.resolve(true));
 
     TestBed.resetTestingModule();
@@ -50,7 +58,10 @@ describe('AuthService', () => {
             removeItem: (key: string) => Promise.resolve(void store.delete(key)),
           },
         },
-        { provide: SyncService, useValue: { status: syncStatus.asReadonly(), resumeAfterReauth } },
+        {
+          provide: SyncService,
+          useValue: { status: syncStatus.asReadonly(), resumeAfterReauth, pause },
+        },
         { provide: Router, useValue: { navigateByUrl } },
       ],
     });
@@ -62,13 +73,19 @@ describe('AuthService', () => {
     http.verify();
   });
 
-  it('starts signed out and restores the local marker', async () => {
-    expect(service.signedIn()).toBe(false);
+  it('starts signed out with sync paused', async () => {
+    await service.initialize();
 
+    expect(service.signedIn()).toBe(false);
+    expect(pause).toHaveBeenCalled();
+  });
+
+  it('restores the local marker without pausing sync', async () => {
     store.set(SIGNED_IN_KEY, 'true');
     await service.initialize();
 
     expect(service.signedIn()).toBe(true);
+    expect(pause).not.toHaveBeenCalled();
   });
 
   it('fetches auth status', async () => {
@@ -189,7 +206,22 @@ describe('AuthService', () => {
     await revoke;
   });
 
-  it('signs out (even offline) and returns to the sign-in screen', async () => {
+  it('signs out, pauses sync, and returns to the sign-in screen', async () => {
+    store.set(SIGNED_IN_KEY, 'true');
+    await service.initialize();
+
+    const done = service.signOut();
+    http.expectOne('/api/auth/logout').flush(null);
+    await done;
+
+    expect(service.signedIn()).toBe(false);
+    expect(store.has(SIGNED_IN_KEY)).toBe(false);
+    expect(store.has(PENDING_SIGN_OUT_KEY)).toBe(false);
+    expect(pause).toHaveBeenCalled();
+    expect(navigateByUrl).toHaveBeenCalledWith('/login');
+  });
+
+  it('remembers a sign-out that could not reach the server', async () => {
     store.set(SIGNED_IN_KEY, 'true');
     await service.initialize();
 
@@ -198,8 +230,80 @@ describe('AuthService', () => {
     await done;
 
     expect(service.signedIn()).toBe(false);
-    expect(store.has(SIGNED_IN_KEY)).toBe(false);
+    expect(store.get(PENDING_SIGN_OUT_KEY)).toBe('true');
+  });
+
+  it('does not remember a sign-out whose session had already expired', async () => {
+    const done = service.signOut();
+    http.expectOne('/api/auth/logout').flush(null, { status: 401, statusText: 'Unauthorized' });
+    await done;
+
+    expect(store.has(PENDING_SIGN_OUT_KEY)).toBe(false);
+  });
+
+  it('completes a pending sign-out on the server', async () => {
+    await expect(service.completePendingSignOut()).resolves.toBe(true);
+    http.expectNone('/api/auth/logout');
+
+    store.set(PENDING_SIGN_OUT_KEY, 'true');
+    const offline = service.completePendingSignOut();
+    await flush();
+    http.expectOne('/api/auth/logout').error(new ProgressEvent('offline'));
+    await expect(offline).resolves.toBe(false);
+    expect(store.get(PENDING_SIGN_OUT_KEY)).toBe('true');
+
+    const online = service.completePendingSignOut();
+    await flush();
+    http.expectOne('/api/auth/logout').flush(null);
+    await expect(online).resolves.toBe(true);
+    expect(store.has(PENDING_SIGN_OUT_KEY)).toBe(false);
+  });
+
+  it('treats a 401 as a completed pending sign-out', async () => {
+    store.set(PENDING_SIGN_OUT_KEY, 'true');
+
+    const done = service.completePendingSignOut();
+    await flush();
+    http.expectOne('/api/auth/logout').flush(null, { status: 401, statusText: 'Unauthorized' });
+
+    await expect(done).resolves.toBe(true);
+    expect(store.has(PENDING_SIGN_OUT_KEY)).toBe(false);
+  });
+
+  it('a new sign-in clears any pending sign-out', async () => {
+    store.set(PENDING_SIGN_OUT_KEY, 'true');
+
+    await service.adoptExistingSession();
+
+    expect(store.has(PENDING_SIGN_OUT_KEY)).toBe(false);
+  });
+
+  it('ends the local session when a signed-in call gets a 401', async () => {
+    store.set(SIGNED_IN_KEY, 'true');
+    await service.initialize();
+
+    const done = service.listPasskeys();
+    http
+      .expectOne('/api/auth/credentials')
+      .flush({ error: 'Sign in required' }, { status: 401, statusText: 'Unauthorized' });
+
+    await expect(done).rejects.toThrow(/session has ended/);
+    expect(service.signedIn()).toBe(false);
     expect(navigateByUrl).toHaveBeenCalledWith('/login');
+  });
+
+  it('does not treat a failed sign-in (401) as a session ending', async () => {
+    vi.mocked(startAuthentication).mockResolvedValue({ id: 'stranger' } as never);
+
+    const done = service.signIn();
+    http.expectOne('/api/auth/login/options').flush({ challenge: 'c' });
+    await flush();
+    http
+      .expectOne('/api/auth/login/verify')
+      .flush({ error: 'Unknown passkey' }, { status: 401, statusText: 'Unauthorized' });
+
+    await expect(done).rejects.toEqual(new AuthFlowError('Unknown passkey'));
+    expect(navigateByUrl).not.toHaveBeenCalled();
   });
 
   it('ends the local session when sync reports the server rejected it', async () => {

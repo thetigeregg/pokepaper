@@ -11,6 +11,7 @@ describe('LoginPage', () => {
     signIn: vi.fn(),
     setUp: vi.fn(),
     adoptExistingSession: vi.fn(() => Promise.resolve()),
+    completePendingSignOut: vi.fn(() => Promise.resolve(true)),
   };
   const navigateByUrl = vi.fn(() => Promise.resolve(true));
 
@@ -53,6 +54,17 @@ describe('LoginPage', () => {
 
     expect(auth.adoptExistingSession).toHaveBeenCalled();
     expect(navigateByUrl).toHaveBeenCalledWith('/tabs', { replaceUrl: true });
+  });
+
+  it('does not adopt a surviving session while a sign-out is still pending', async () => {
+    auth.completePendingSignOut.mockResolvedValueOnce(false);
+    auth.status.mockResolvedValue({ registered: true, authenticated: true, setupAvailable: false });
+    const page = await createPage();
+
+    await page.refresh();
+
+    expect(auth.adoptExistingSession).not.toHaveBeenCalled();
+    expect(page.mode()).toBe('sign-in');
   });
 
   it('explains when the server is unreachable', async () => {

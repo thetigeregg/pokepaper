@@ -29,12 +29,18 @@ const MAX_PULL_PAGES = 50;
  * - `idle`: last cycle succeeded with nothing left to push (or none has run yet)
  * - `syncing`: a cycle is in flight
  * - `offline`: the browser reports no connectivity; local data keeps working
- * - `unauthorized`: the server rejected the session (401). Syncing stops
- *   until `resumeAfterReauth()` is called; queued outbox writes are kept.
+ * - `unauthorized`: signed out, or the server rejected the session (401).
+ *   Syncing stops until `resumeAfterReauth()` is called; queued outbox
+ *   writes are kept.
  * - `error`: the last cycle failed, or the server rejected some operations
  *   that are still queued for retry
  */
 export type SyncStatus = 'idle' | 'syncing' | 'offline' | 'unauthorized' | 'error';
+
+/** Thrown inside a cycle that a sign-out or sign-in has overtaken, to stop it before its next request. */
+class CycleSuperseded extends Error {
+  override readonly name = 'CycleSuperseded';
+}
 
 function entityKey(entityType: string, entityId: string): string {
   return `${entityType}\u0000${entityId}`;
@@ -88,6 +94,14 @@ export class SyncService implements SyncOutboxWriter {
 
   private syncInFlight: Promise<void> | null = null;
   private rerunRequested = false;
+  /**
+   * Bumped on every pause/resume. A cycle that finishes under an older value
+   * was overtaken by a sign-out or sign-in, so its outcome (including a 401
+   * from before the new session existed) must not change the status.
+   */
+  private authEpoch = 0;
+  /** authEpoch when the running cycle started. */
+  private cycleEpoch = 0;
   private intervalId: number | null = null;
 
   /**
@@ -114,12 +128,16 @@ export class SyncService implements SyncOutboxWriter {
     });
   }
 
-  /** Clears the `unauthorized` stop after a successful sign-in and syncs immediately. */
-  resumeAfterReauth(): Promise<void> {
-    if (this._status() === 'unauthorized') {
-      this._status.set('idle');
-    }
+  /** Stops syncing while signed out (status `unauthorized`). Queued writes are kept. */
+  pause(): void {
+    this.authEpoch += 1;
+    this._status.set('unauthorized');
+  }
 
+  /** Resumes after a successful sign-in and syncs immediately. */
+  resumeAfterReauth(): Promise<void> {
+    this.authEpoch += 1;
+    this._status.set('idle');
     return this.syncNow();
   }
 
@@ -167,20 +185,44 @@ export class SyncService implements SyncOutboxWriter {
   }
 
   private async runCycle(): Promise<void> {
+    const epoch = this.authEpoch;
+    this.cycleEpoch = epoch;
     this._status.set('syncing');
 
+    let outcome: SyncStatus;
     try {
       const pendingFailures = await this.pushOutbox();
       await this.pullChanges();
-      this._status.set(pendingFailures ? 'error' : 'idle');
+      outcome = pendingFailures ? 'error' : 'idle';
     } catch (error: unknown) {
-      if (error instanceof HttpErrorResponse && error.status === 401) {
-        this._status.set('unauthorized');
-        return;
-      }
+      outcome =
+        error instanceof HttpErrorResponse && error.status === 401
+          ? 'unauthorized'
+          : navigator.onLine
+            ? 'error' // Best effort: retried on the next interval/online/write trigger.
+            : 'offline';
+    }
 
-      // Best effort: retried on the next interval/online/write trigger.
-      this._status.set(navigator.onLine ? 'error' : 'offline');
+    if (epoch !== this.authEpoch) {
+      // Overtaken by a sign-out (stay paused) or a sign-in (run again under
+      // the new session instead of reporting this stale outcome).
+      if (this._status() !== 'unauthorized') {
+        this.rerunRequested = true;
+      }
+      return;
+    }
+
+    this._status.set(outcome);
+  }
+
+  /**
+   * Stops a cycle overtaken by sign-out or sign-in before it sends another
+   * request: after a sign-out (even one still pending on the server, while
+   * the old cookie is valid) nothing may sync.
+   */
+  private ensureCycleCurrent(): void {
+    if (this.cycleEpoch !== this.authEpoch) {
+      throw new CycleSuperseded();
     }
   }
 
@@ -238,6 +280,7 @@ export class SyncService implements SyncOutboxWriter {
       })),
     };
 
+    this.ensureCycleCurrent();
     const response = await firstValueFrom(
       this.http.post<SyncPushResponse>(`${environment.apiUrl}/api/sync/push`, body)
     );
@@ -311,6 +354,7 @@ export class SyncService implements SyncOutboxWriter {
     for (let page = 0; page < MAX_PULL_PAGES; page += 1) {
       const cursor = (await this.engine.getSyncMeta(PULL_CURSOR_KEY))?.value ?? '0';
 
+      this.ensureCycleCurrent();
       const response = await firstValueFrom(
         this.http.post<SyncPullResponse>(`${environment.apiUrl}/api/sync/pull`, { cursor })
       );

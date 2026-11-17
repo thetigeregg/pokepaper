@@ -1,7 +1,7 @@
 import type { ClientKind } from '@pokepaper/shared';
 import type {} from '@fastify/cookie';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { AuthStore, ResolvedSession } from './store.js';
+import type { ResolvedSession } from './store.js';
 
 /**
  * `__Host-` prefix: the browser only accepts it with Secure, Path=/ and no
@@ -36,16 +36,6 @@ export function readSessionToken(
 
   const cookie = request.cookies[SESSION_COOKIE];
   return cookie ? { token: cookie, via: 'cookie' } : null;
-}
-
-/** Resolves the request's session without requiring one (for public routes). */
-export function optionalSession(request: FastifyRequest, store: AuthStore): RequestSession | null {
-  const presented = readSessionToken(request);
-  if (!presented) {
-    return null;
-  }
-  const session = store.resolveSession(presented.token);
-  return session ? { ...session, via: presented.via } : null;
 }
 
 export function setSessionCookie(reply: FastifyReply, token: string, ttlDays: number): void {
