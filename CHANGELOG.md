@@ -32,3 +32,8 @@
 ## v0.2.2 - 2026-11-17
 
 - 296f7be fix(deploy): tidy leftover deployment doc and config issues (#16)
+
+## v0.3.0 - 2026-11-17
+
+- e81009a feat(catalog): import the TCGdex card catalogue on the server (#17)
+- 5585e34 chore(ci): Bump actions/checkout from 4 to 7 (#9)
