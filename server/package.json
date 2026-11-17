@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.5",
-    "@fastify/rate-limit": "^10.3.0",
+    "@fastify/rate-limit": "^11.2.2",
     "@pokepaper/shared": "*",
     "@simplewebauthn/server": "^14.1.0",
     "better-sqlite3": "^13.2.0",
