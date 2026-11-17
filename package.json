@@ -14,7 +14,10 @@
     "format:check": "prettier --check .",
     "prepare": "husky",
     "deps:angular:update": "ng update @angular/core @angular/cli @angular/cdk",
-    "deps:angular:ecosystem": "ng update angular-eslint"
+    "deps:angular:ecosystem": "ng update angular-eslint",
+    "typecheck:server": "npm run typecheck --workspace server",
+    "test:server": "vitest run --project server",
+    "start:server": "npm run dev --workspace server"
   },
   "devDependencies": {
     "@angular-devkit/build-angular": "^22.2.7",
@@ -52,7 +55,8 @@
     "vitest": "^5.1.0"
   },
   "workspaces": [
-    "shared"
+    "shared",
+    "server"
   ],
   "dependencies": {
     "@angular/animations": "^22.2.6",

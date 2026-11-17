@@ -1,0 +1,20 @@
+{
+  "name": "@pokepaper/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch --exclude 'data/**' --exclude 'backups/**' src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0"
+  },
+  "dependencies": {
+    "@pokepaper/shared": "*",
+    "better-sqlite3": "^13.2.0",
+    "fastify": "^5.12.8",
+    "tsx": "^4.23.15"
+  }
+}

@@ -4,19 +4,21 @@ Before suggesting any commit, classify the diff, then scope validation according
 
 1. **Docs/non-code only** (`*.md`, `docs/**`, `CHANGELOG.md`, comments-only edits): skip lint/test/build entirely. Say explicitly that no validation was run and why.
 2. **App-only change** (`src/**`): `npm run lint`, `npm run test`, `npm run build`.
-3. **Scripts-only change** (`scripts/**`): `npm run lint`, `npm run test:scripts`.
-4. **Cross-cutting change** (`shared/**`, root config like `angular.json`/`tsconfig*.json`/`eslint.config.mjs`/`vitest.config.ts`, or `package.json`/`package-lock.json` dependency changes): run the full `npm run lint`, `npm run test`, `npm run build`, and `npm run test:scripts` from the root.
-5. `npm run lint` (`eslint .`) always runs repo-wide; there's no per-workspace lint script.
-6. `.husky/pre-commit` already runs `lint-staged` (Prettier plus targeted `eslint --fix` on staged files) on every commit. The manual `npm run lint` step is a broader safety net for cross-file/type-aware rules, not a duplicate check.
-7. Do not bypass pre-commit hooks.
-8. If any step fails, fix the issue before proceeding.
+3. **Server-only change** (`server/**`): `npm run lint`, `npm run typecheck:server`, `npm run test:server`.
+4. **Scripts-only change** (`scripts/**`): `npm run lint`, `npm run test:scripts`.
+5. **Cross-cutting change** (`shared/**`, root config like `angular.json`/`tsconfig*.json`/`eslint.config.mjs`/`vitest.config.ts`, or `package.json`/`package-lock.json` dependency changes): run the full `npm run lint`, `npm run typecheck:server`, `npm run test`, `npm run build`, and `npm run test:scripts` from the root.
+6. `npm run lint` (`eslint .`) always runs repo-wide; there's no per-workspace lint script.
+7. `.husky/pre-commit` already runs `lint-staged` (Prettier plus targeted `eslint --fix` on staged files) on every commit. The manual `npm run lint` step is a broader safety net for cross-file/type-aware rules, not a duplicate check.
+8. Do not bypass pre-commit hooks.
+9. If any step fails, fix the issue before proceeding.
 
 # Architecture Notes
 
 - **Local-first data.** The app boots from on-device storage and works offline. All structured data goes through the `StorageEngine` interface (`src/app/core/data/storage-engine.ts`): Dexie/IndexedDB on web, Capacitor SQLite on iOS. Both engines must pass the shared contract suite (`storage-engine.contract.ts`).
 - **Writes are local + outbox in one transaction** (`LocalUserDataRepository`), then `SyncService` pushes the outbox and pulls the server change log. Wire types live in `shared/src/sync.ts`.
 - **Adding a syncable entity:** extend `SyncEntityType` in `shared/`, add a storage scope (Dexie version + SQLite migration + contract tests), add repository write methods, and register a `SyncEntityApplier` via `SYNC_ENTITY_APPLIERS` in `main.ts`.
-- **Schema changes are append-only:** add a new Dexie `version(n)` and a new `SQLITE_UPGRADE_STATEMENTS` entry; never edit shipped ones.
+- **Schema changes are append-only:** add a new Dexie `version(n)` and a new `SQLITE_UPGRADE_STATEMENTS` entry; never edit shipped ones. Server migrations (`server/src/migrations/NNNN_name.sql`) are checksummed: editing an applied one fails startup, so fix forward with a new file.
+- **Server:** `buildApp({ db })` (`server/src/app.ts`) takes its database as an argument; tests use `openDatabase(':memory:')` and `app.inject()`. Adding a syncable entity also needs validation rules in `server/src/sync/validation.ts` (type-checked to cover every `SyncEntityType`).
 
 # Code Quality
 

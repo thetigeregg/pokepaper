@@ -17,7 +17,7 @@ It runs as a web app and as a native iOS app (Capacitor). It works offline: data
 - `shared/`: domain and sync wire types shared by the frontend and server (`@pokepaper/shared`, npm workspace)
 - `scripts/`: Node tooling (devx worktree adapter; iOS build/version/environment scripts _(planned)_), each with `*.test.mjs` tests
 - `public/`: static web assets (favicon, web app manifest)
-- `server/`: Fastify API with SQLite storage (sync, auth, catalog, image cache) _(planned)_
+- `server/`: Fastify API with SQLite storage: sync and health today; auth, card catalog, and image cache _(planned)_ (npm workspace)
 - `edge/`: Caddy container serving the web app and proxying `/api` to `server` _(planned)_
 - `ios/`: Capacitor iOS project with App DEV / App PROD targets _(planned)_
 - `docs/`: sync rules ([`docs/sync.md`](docs/sync.md)); deployment, auth, and iOS docs _(planned)_
@@ -30,7 +30,7 @@ It runs as a web app and as a native iOS app (Capacitor). It works offline: data
 
 ## Local Development
 
-1. Install dependencies (npm workspaces: installs the root app and `shared/` together):
+1. Install dependencies (npm workspaces: installs the root app, `server/`, and `shared/` together):
 
 ```bash
 npm ci
@@ -42,7 +42,39 @@ npm ci
 npm start
 ```
 
-The app opens at `http://localhost:4200`. `ng serve` proxies `/api` and `/images` to `http://127.0.0.1:3000` (`proxy.conf.json`), so the app and API share one origin in dev, matching production behind `edge`. Until the server lands, Settings shows "Sync failed: will retry"; everything else works from local storage.
+3. Run the API server (separate terminal):
+
+```bash
+npm run start:server
+```
+
+The app opens at `http://localhost:4200`. `ng serve` proxies `/api` and `/images` to `http://127.0.0.1:3000` (`proxy.conf.json`), so the app and API share one origin in dev, matching production behind `edge`. Without the server running, Settings shows "Sync failed: will retry" and everything else still works from local storage.
+
+> Port 3000 is a common default. If another local project already listens on `127.0.0.1:3000`, the PokePaper server can still bind `0.0.0.0:3000` while the proxy reaches the other project. Free the port, or run the server with `PORT=3001 npm run start:server` and point `proxy.conf.json` at it.
+
+## Server
+
+Fastify 5 + better-sqlite3, run with `tsx` (no build step). It stores data in `server/data/pokepaper.db` (WAL mode) and applies the checksummed migrations in `server/src/migrations/` on startup.
+
+| Route                 | Purpose                                                       |
+| --------------------- | ------------------------------------------------------------- |
+| `GET /api/health`     | 200 `{ status: 'ok' }` when the database answers, else 503    |
+| `POST /api/sync/push` | Apply queued client operations (idempotent, last-writer-wins) |
+| `POST /api/sync/pull` | Page through the compacted change log from a cursor           |
+
+Configuration (environment variables, all optional):
+
+| Variable                | Default            | Purpose                                                        |
+| ----------------------- | ------------------ | -------------------------------------------------------------- |
+| `HOST` / `PORT`         | `0.0.0.0` / `3000` | Listen address                                                 |
+| `DATA_DIR`              | `server/data`      | SQLite database directory                                      |
+| `BACKUP_DIR`            | `server/backups`   | `VACUUM INTO` snapshots                                        |
+| `BACKUP_KEEP`           | `14`               | Snapshots retained                                             |
+| `BACKUP_INTERVAL_HOURS` | `24`               | Backup schedule (one also runs at startup; `0` = startup only) |
+| `TRUST_PROXY`           | `false`            | Trust `X-Forwarded-*` (on behind edge in production)           |
+| `LOG_LEVEL`             | `info`             | pino log level                                                 |
+
+Invalid values fail startup with a clear error.
 
 ## App Architecture
 
@@ -53,11 +85,13 @@ The app opens at `http://localhost:4200`. `ng serve` proxies `/api` and `/images
 ## Testing and Quality
 
 ```bash
-npm run lint          # ESLint (repo-wide)
-npm run test          # Vitest with coverage (app + shared)
-npm run build         # production web build into www/
-npm run test:scripts  # Node script tests (scripts/*.test.mjs)
-npm run format:check  # Prettier
+npm run lint              # ESLint (repo-wide)
+npm run typecheck:server  # tsc for server/
+npm run test              # Vitest with coverage: app (jsdom) + server (node) projects
+npm run test:server       # server project only
+npm run build             # production web build into www/
+npm run test:scripts      # Node script tests (scripts/*.test.mjs)
+npm run format:check      # Prettier
 ```
 
 Commits are checked by husky: `lint-staged` (Prettier and `eslint --fix` on staged files) runs on pre-commit, and `commitlint` (Conventional Commits) runs on commit-msg.

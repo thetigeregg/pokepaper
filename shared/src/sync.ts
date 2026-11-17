@@ -10,7 +10,14 @@
  * (collection entries, decks, …) extend `SyncEntityType`; the envelope stays
  * the same. Conflict rules and server requirements: docs/sync.md.
  */
-export type SyncEntityType = 'settings';
+/** Every syncable entity type. The server rejects operations for anything else. */
+export const SYNC_ENTITY_TYPES = ['settings'] as const;
+
+export type SyncEntityType = (typeof SYNC_ENTITY_TYPES)[number];
+
+export function isSyncEntityType(value: unknown): value is SyncEntityType {
+  return typeof value === 'string' && (SYNC_ENTITY_TYPES as readonly string[]).includes(value);
+}
 
 export type SyncOperation = 'upsert' | 'delete';
 

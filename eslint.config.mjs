@@ -45,7 +45,15 @@ export default defineConfig([
       sourceType: 'script',
 
       parserOptions: {
-        project: ['tsconfig.app.json', 'tsconfig.spec.json', 'tsconfig.json'],
+        // First match wins: server/tsconfig.json must precede the root
+        // tsconfig.json, which has no `include` and would otherwise claim
+        // server files without the server's vitest/node types.
+        project: [
+          'tsconfig.app.json',
+          'tsconfig.spec.json',
+          'server/tsconfig.json',
+          'tsconfig.json',
+        ],
         tsconfigRootDir: import.meta.dirname,
       },
     },

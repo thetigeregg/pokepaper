@@ -23,7 +23,11 @@ PokePaper is local-first: the app reads and writes on-device storage and works f
 
 **Auth.** A 401 sets status `unauthorized` and stops syncing (the outbox is kept) until `SyncService.resumeAfterReauth()` is called after sign-in.
 
-## Server requirements (Phase 2: `server/`)
+## Server (implemented: `server/src/sync/`)
+
+`SyncStore` stores each entity's current state in `entity_changes`, which doubles as the compacted change log (requirement 5): an applied write replaces the entity's row with a fresh `seq`. Deletes stay as tombstones. Processed `opId`s and their results live in `applied_operations`. Per-entity validation is in `validation.ts`. If a pull's cursor is beyond the newest `seq` the database has ever issued (for example after restoring an older backup), the server answers `{ cursor: '0', changes: [], hasMore: true }`, so the client immediately re-pulls everything.
+
+### Requirements
 
 1. **Idempotent push.** Record every applied `opId`. A repeated `opId` returns `duplicate` and changes nothing.
 2. **Last-writer-wins per entity by `clientTimestamp`.** Apply an operation only if its `clientTimestamp` is not older than the entity's stored one; otherwise return `applied` without changing state. Combined with client-side superseding, this guarantees an older operation can never overwrite a newer one, whatever order they arrive in.

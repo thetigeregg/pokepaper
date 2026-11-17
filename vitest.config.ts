@@ -3,26 +3,43 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     globals: true,
-    environment: 'jsdom',
-    setupFiles: ['src/vitest.setup.ts'],
-    include: ['src/**/*.spec.ts', 'shared/src/**/*.spec.ts'],
-    server: {
-      deps: {
-        inline: ['@ionic/angular', '@ionic/core'],
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'app',
+          environment: 'jsdom',
+          setupFiles: ['src/vitest.setup.ts'],
+          include: ['src/**/*.spec.ts', 'shared/src/**/*.spec.ts'],
+          server: {
+            deps: {
+              inline: ['@ionic/angular', '@ionic/core'],
+            },
+          },
+        },
       },
-    },
+      {
+        extends: true,
+        test: {
+          name: 'server',
+          environment: 'node',
+          include: ['server/src/**/*.spec.ts'],
+        },
+      },
+    ],
     coverage: {
       provider: 'v8',
       reportsDirectory: './coverage/app',
       reporter: ['text', 'html', 'lcov'],
-      include: ['src/**/*.ts', 'shared/src/**/*.ts'],
+      include: ['src/**/*.ts', 'shared/src/**/*.ts', 'server/src/**/*.ts'],
       exclude: [
-        'src/**/*.spec.ts',
+        '**/*.spec.ts',
         'src/environments/**',
         'src/main.ts',
         'src/polyfills.ts',
         'src/zone-flags.ts',
         'src/vitest.setup.ts',
+        'server/src/index.ts',
       ],
     },
   },
