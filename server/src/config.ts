@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import { CATALOG_LANGUAGES, isCatalogLanguage, type CatalogLanguage } from '@pokepaper/shared';
 
 export interface AuthConfig {
   /** Origin the app is served from (e.g. https://pokepaper.example.com); WebAuthn's expected origin. */
@@ -22,6 +23,17 @@ export interface AuthConfig {
    * pointed at a LAN IP can't use passkeys); refused when NODE_ENV=production.
    */
   devBypass: boolean;
+}
+
+export interface CatalogConfig {
+  /** Run the scheduled TCGdex import (docs/catalog.md). */
+  syncEnabled: boolean;
+  /** Languages to import, in display order. */
+  languages: CatalogLanguage[];
+  /** Hours between imports. */
+  refreshHours: number;
+  /** Days between full refreshes (which refetch every card). */
+  fullRefreshDays: number;
 }
 
 export interface ServerConfig {
@@ -54,6 +66,7 @@ export interface ServerConfig {
   logLevel: string;
   production: boolean;
   auth: AuthConfig;
+  catalog: CatalogConfig;
 }
 
 type Env = Record<string, string | undefined>;
@@ -132,6 +145,26 @@ function loadAuthConfig(env: Env, production: boolean): AuthConfig {
   };
 }
 
+function loadCatalogConfig(env: Env): CatalogConfig {
+  const raw = env['CATALOG_LANGUAGES']?.trim();
+  const requested = raw
+    ? raw.split(',').map((code) => code.trim().toLowerCase())
+    : [...CATALOG_LANGUAGES];
+  const invalid = requested.filter((code) => !isCatalogLanguage(code));
+  if (invalid.length > 0 || requested.length === 0) {
+    throw new Error(
+      `CATALOG_LANGUAGES must be a comma-separated list of ${CATALOG_LANGUAGES.join(', ')} (got "${raw ?? ''}")`
+    );
+  }
+
+  return {
+    syncEnabled: readBool(env, 'CATALOG_SYNC_ENABLED', true),
+    languages: CATALOG_LANGUAGES.filter((language) => requested.includes(language)),
+    refreshHours: readInt(env, 'CATALOG_REFRESH_HOURS', 24, 1),
+    fullRefreshDays: readInt(env, 'CATALOG_FULL_REFRESH_DAYS', 7, 1),
+  };
+}
+
 /** Reads configuration from environment variables, failing fast on invalid values. */
 export function loadConfig(env: Env = process.env): ServerConfig {
   const clientIpHeader = env['CLIENT_IP_HEADER']?.trim().toLowerCase();
@@ -154,5 +187,6 @@ export function loadConfig(env: Env = process.env): ServerConfig {
     logLevel: env['LOG_LEVEL']?.trim() || 'info',
     production,
     auth: loadAuthConfig(env, production),
+    catalog: loadCatalogConfig(env),
   };
 }

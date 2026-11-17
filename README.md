@@ -54,7 +54,7 @@ The app opens at `http://localhost:4200`. `ng serve` proxies `/api` and `/images
 
 ## Server
 
-Fastify 5 + better-sqlite3, run with `tsx` (no build step). It stores data in `server/data/pokepaper.db` (WAL mode) and applies the checksummed migrations in `server/src/migrations/` on startup.
+Fastify 5 + better-sqlite3, run with `tsx` (no build step). It stores data in `server/data/pokepaper.db` (WAL mode) and applies the checksummed migrations in `server/src/migrations/` on startup. The card catalogue, imported from TCGdex on a schedule, lives separately in `server/data/catalog.db` ([`docs/catalog.md`](docs/catalog.md)).
 
 | Route                 | Purpose                                                                                                                                         |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -79,7 +79,7 @@ Configuration (environment variables, all optional):
 | `RATE_LIMIT_PER_MINUTE` | `600`              | Requests per client IP per minute, across all routes (429 beyond)                                                                                                                                          |
 | `LOG_LEVEL`             | `info`             | pino log level                                                                                                                                                                                             |
 
-Auth settings (`PUBLIC_ORIGIN`, `RP_ID`, `SESSION_TTL_DAYS`, `SETUP_TOKEN_FILE`, …) are listed in [`docs/auth.md`](docs/auth.md) → Configuration. Set `NODE_ENV=production` in production: it requires an https `PUBLIC_ORIGIN` and refuses `AUTH_DEV_BYPASS`.
+Auth settings (`PUBLIC_ORIGIN`, `RP_ID`, `SESSION_TTL_DAYS`, `SETUP_TOKEN_FILE`, …) are listed in [`docs/auth.md`](docs/auth.md) → Configuration, and catalogue settings (`CATALOG_LANGUAGES`, `CATALOG_REFRESH_HOURS`, …) in [`docs/catalog.md`](docs/catalog.md) → Configuration. Set `NODE_ENV=production` in production: it requires an https `PUBLIC_ORIGIN` and refuses `AUTH_DEV_BYPASS`.
 
 Invalid values fail startup with a clear error. Backups use SQLite's online backup API, so the server keeps serving while a snapshot is written; each snapshot gets a fresh sync epoch, so restoring one makes clients re-sync from scratch (see [`docs/sync.md`](docs/sync.md)).
 

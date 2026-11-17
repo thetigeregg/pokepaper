@@ -2,6 +2,35 @@ import { resolve } from 'node:path';
 import { loadConfig } from './config.js';
 
 describe('loadConfig', () => {
+  it('imports every catalogue language on a daily schedule by default', () => {
+    expect(loadConfig({}).catalog).toEqual({
+      syncEnabled: true,
+      languages: ['en', 'fr', 'it', 'de', 'ja', 'zh-tw', 'zh-cn'],
+      refreshHours: 24,
+      fullRefreshDays: 7,
+    });
+  });
+
+  it('reads catalogue overrides, keeping languages in display order', () => {
+    expect(
+      loadConfig({
+        CATALOG_SYNC_ENABLED: 'false',
+        CATALOG_LANGUAGES: ' JA, en ,fr',
+        CATALOG_REFRESH_HOURS: '6',
+        CATALOG_FULL_REFRESH_DAYS: '30',
+      }).catalog
+    ).toEqual({
+      syncEnabled: false,
+      languages: ['en', 'fr', 'ja'],
+      refreshHours: 6,
+      fullRefreshDays: 30,
+    });
+  });
+
+  it.each(['en,xx', ',', 'english'])('rejects CATALOG_LANGUAGES=%s', (value) => {
+    expect(() => loadConfig({ CATALOG_LANGUAGES: value })).toThrow(/CATALOG_LANGUAGES/);
+  });
+
   it('uses defaults when nothing is set', () => {
     const config = loadConfig({});
 
