@@ -1,5 +1,5 @@
 # PokePaper API server: Fastify + better-sqlite3, run with tsx (no build step).
-FROM node:24.22.2-slim
+FROM node:24.22.3-slim
 WORKDIR /app
 ENV NODE_ENV=production HUSKY=0 TZ=UTC
 
