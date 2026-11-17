@@ -45,3 +45,7 @@
 ## v0.5.0 - 2026-11-17
 
 - 3481e2b feat(catalog): keep the card catalog offline on the device (#19)
+
+## v0.6.0 - 2026-11-17
+
+- bca97cf feat(catalog): cache card images on the device, with offline sets (#20)
