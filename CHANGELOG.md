@@ -24,3 +24,7 @@
 ## v0.2.0 - 2026-11-17
 
 - 968599e feat(deploy): add optional override to join NPM's Docker network (#13)
+
+## v0.2.1 - 2026-11-17
+
+- 651bfe2 fix(deploy): stop exposing edge on the LAN when it shares NPM's network (#15)
