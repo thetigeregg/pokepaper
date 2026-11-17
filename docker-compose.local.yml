@@ -12,6 +12,9 @@ services:
     build:
       context: .
       dockerfile: server/Dockerfile
+    # The Docker volumes below are owned by the image's `node` user, so pin
+    # it: a PUID/PGID left in your shell or .env for the NAS must not apply.
+    user: "1000:1000"
     volumes:
       # Docker-managed volumes inherit the image's ownership (uid 1000), so
       # nothing needs chown-ing; these replace the NAS bind mounts.
