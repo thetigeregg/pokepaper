@@ -12,3 +12,7 @@
 - 240f9b7 "Claude Code Review workflow"
 - 20dcdb7 "Claude PR Assistant workflow"
 - 247bf40 chore: bootstrap repo tooling and conventions
+
+## v0.1.1 - 2026-11-17
+
+- 41f3f3d fix(deploy): let the server run as a host user (PUID/PGID) (#12)
