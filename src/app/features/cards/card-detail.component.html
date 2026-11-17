@@ -1,0 +1,51 @@
+<ion-header>
+  <ion-toolbar>
+    <ion-buttons slot="start">
+      <ion-button (click)="close()" data-testid="card-close">Close</ion-button>
+    </ion-buttons>
+    <ion-title>{{ title() }}</ion-title>
+    <ion-buttons slot="end">
+      <app-language-button
+        [languages]="set().languages"
+        [value]="language()"
+        (changed)="pickLanguage($event)"
+      />
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <div class="swiper">
+    <div class="swiper-wrapper">
+      @for (card of window().slides; track card.id; let i = $index) {
+        <div
+          class="swiper-slide"
+          [style.left.px]="window().offset"
+          [attr.data-swiper-slide-index]="window().from + i"
+        >
+          <app-card-details [card]="card" [set]="set()" [language]="language()" />
+        </div>
+      }
+    </div>
+  </div>
+</ion-content>
+
+<ion-footer>
+  <ion-toolbar>
+    <ion-buttons slot="start">
+      <ion-button (click)="previous()" [disabled]="index() === 0" aria-label="Previous card">
+        <ion-icon slot="icon-only" name="chevron-back"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+    <ion-title class="counter">{{ index() + 1 }} / {{ cards().length }}</ion-title>
+    <ion-buttons slot="end">
+      <ion-button
+        (click)="next()"
+        [disabled]="index() === cards().length - 1"
+        aria-label="Next card"
+      >
+        <ion-icon slot="icon-only" name="chevron-forward"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-footer>

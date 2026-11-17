@@ -1,0 +1,10 @@
+.counter {
+  font-size: 0.9rem;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+/* One background behind the scan and the details list. */
+ion-content {
+  --background: var(--ion-item-background, var(--ion-background-color));
+}

@@ -2,7 +2,7 @@
 
 PokePaper's card data comes from [TCGdex](https://tcgdex.dev), a community-maintained, open-source Pokémon TCG database. The server imports it into its own SQLite file on a schedule. Clients will download it from the server (never from TCGdex directly), so the app keeps working if TCGdex is slow, down, or changes its API.
 
-Status: the server import, download API and image cache (`server/src/catalog/`), the app's offline copy (`CatalogSyncService`) and the app's image cache (`ImageCacheService`, `ImageDownloadService`) are implemented. The browsing screens come next.
+Status: the server import, download API and image cache (`server/src/catalog/`), the app's offline copy (`CatalogSyncService`) and the app's image cache (`ImageCacheService`, `ImageDownloadService`) are implemented. The browsing screens are implemented too (see [Browsing](#browsing)).
 
 ## Data model
 
@@ -120,6 +120,15 @@ Card scans aren't part of the catalog download (every grid-size scan in all seve
 `ImageCacheService` stores images by their same-origin URL: as blobs in IndexedDB on the web, and as files under the iOS app's cache folder (`ImageFileStore`). The cache folder keeps gigabytes of re-downloadable scans out of iCloud backups; if iOS purges it when storage runs low, an image is simply downloaded again when next shown. Images the server doesn't have (`404`) aren't requested again during the session. Pins live in their own table (`imagePins`), so the size cap only ever counts and evicts unpinned images.
 
 In testing, a full set in two languages (516 scans) plus a Japanese set (210 scans) took about 7 seconds and 14 MB.
+
+## Browsing
+
+The Cards tab browses the catalog on the device, so it works offline (layout and components: `docs/ui.md` → Cards):
+
+- **Catalogs:** an `IonSegment` switches between the international and the Asian catalog. Sets are grouped by series, newest first. On desktop the list stays beside the selected set (`IonSplitPane`).
+- **Set page:** a card grid in the current language; images load as they scroll into view and are cached ([Images on the device](#images-on-the-device)). The header has the language switch and "Download images" (this set's language, or all its languages), plus Remove.
+- **Card detail:** a modal paging through the set (Swiper with virtual slides, ‹ / ›, arrow keys), with the large scan and the full card text in the current language. Energy symbols in costs and rules text (`{P}`, `{R}`, …) are icons.
+- **Language:** the language picked in a set or card is remembered per catalog (`UserSettings.catalogLanguages`, synced across devices), and every set and card opens in it; a set that lacks it opens in its first language. Without a scan in that language, another language's is shown with a badge (`displayImage()`). Without any scan, a type-tinted card with the name, HP · stage and set number stands in.
 
 ## Storage
 

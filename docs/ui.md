@@ -2,6 +2,14 @@
 
 Standards for PokePaper's screens, so new pages look and behave like existing ones. When a screen needs something these don't cover, add the decision here.
 
+## Components
+
+- **Stock Ionic first.** Build screens from Ionic components with their default styling. Add custom CSS only where Ionic has no equivalent, and keep it small. When proposing UI, describe it by component (`IonSplitPane`, `IonItem`, `IonModal`, …).
+- **Agreed exceptions:**
+  - **Swiper**, for paging through cards in the card detail modal.
+  - **The energy symbol icons** (`EnergyIconComponent`). Currently a temporary stand-in: colored circles with the type's letter. TCG-accurate artwork with a usable license still needs to be found.
+  - **The type tint** on cards without a scan.
+
 ## Platforms
 
 - **iOS phone and desktop web are equal targets.** Design every page, modal and component for both, and check both before calling UI work done: a phone viewport (about 390×844) and a desktop one (about 1440×900).
@@ -39,7 +47,23 @@ Standards for PokePaper's screens, so new pages look and behave like existing on
 - **Confirm bulk or hard-to-undo removals** (a whole series, everything, a passkey) with an alert: "Cancel" plus a red "Remove". Removing a single item that's easy to redo (one downloaded set) doesn't ask.
 - **A screen's single main call to action outside any list** (e.g. the sign-in button) is an `ion-button expand="block"`.
 
+## Cards
+
+- **Catalogs:** an `IonSegment` ("International | Japan & Asia") in a second header `IonToolbar`, remembered on the device.
+- **Desktop layout:** `IonSplitPane when="lg"`. An `IonMenu` holds the segment and the sets list, and the selected set opens beside it; picking another set replaces it rather than stacking. Phones push pages: sets, then set.
+- **Sets list:** an `IonItemGroup` per series under a sticky `IonItemDivider`, newest first. Each row is an `IonItem` with the set logo in an `IonThumbnail`, name, "date · N cards", and an `IonIcon` (cloud-done) when downloaded.
+- **Set page:**
+  - The header's end slot has two icon `IonButton`s: language (code shown, opening an `IonPopover` with an `IonRadioGroup`) and download (an `IonActionSheet`). An `IonProgressBar` shows while downloading.
+  - Cards in an `IonGrid` with `IonCol size="4" sizeMd="3" sizeLg="2"`: the image plus a "001 · Pineco" caption.
+- **Card detail:**
+  - An `IonModal`: a sheet on phones (`[breakpoints]="[0, 1]"`, handle), a centered dialog on desktop (`.card-detail-modal`, image beside the text).
+  - Swiper with virtual slides; ‹ / › and "4 / 258" in an `IonFooter`; ←/→ keys.
+  - Full card text in `IonList` sections.
+- **Card images:** a fallback-language scan gets an `IonBadge` with the language code. A card without any scan is a type-tinted `IonCard` (name, HP · stage, energy icon, set number) at card proportions (63:88).
+- **Language:** switched in context with the header button, and remembered per catalog in synced settings. Every set and card opens in it.
+
 ## Tests
 
 - Elements that tests or checks look up carry a `data-testid`.
 - Component specs test the component's state (signals) with the template replaced. Real rendering is checked in the browser at both viewport sizes.
+- **Known limit:** Vitest here runs without Angular's compiler plugin, so a component's signal `input()`s and signal queries can't be set or resolved in tests. Keep logic in tested services and pure functions. For `ModalController` components, take `componentProps` as plain properties: Ionic assigns them directly and would overwrite signal inputs (and `modal` is a reserved name).

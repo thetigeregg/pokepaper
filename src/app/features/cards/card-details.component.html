@@ -1,0 +1,128 @@
+<div class="layout">
+  <div class="image">
+    <app-card-image [card]="card()" [language]="language()" quality="high" [setLine]="setLine()" />
+  </div>
+
+  <ion-list class="details">
+    <ion-item>
+      <ion-label class="ion-text-wrap">
+        <h2>{{ text()?.name }}</h2>
+        <p>{{ subtitle() }}</p>
+        @if (text()?.evolveFrom; as from) {
+          <p>Evolves from {{ from }}</p>
+        }
+      </ion-label>
+      @if (card().types.length) {
+        <div slot="end" class="types">
+          @for (type of card().types; track $index) {
+            <app-energy-icon [type]="type" />
+          }
+        </div>
+      }
+    </ion-item>
+
+    @if (text()?.abilities?.length) {
+      <ion-list-header><ion-label>Abilities</ion-label></ion-list-header>
+      @for (ability of text()?.abilities; track $index) {
+        <ion-item>
+          <ion-label class="ion-text-wrap">
+            <h3>{{ ability.type }}: {{ ability.name }}</h3>
+            <p><app-card-text [text]="ability.effect" /></p>
+          </ion-label>
+        </ion-item>
+      }
+    }
+
+    @if (attacks().length) {
+      <ion-list-header><ion-label>Attacks</ion-label></ion-list-header>
+      @for (attack of attacks(); track $index) {
+        <ion-item>
+          <div slot="start" class="cost" [attr.aria-label]="attack.cost.join(', ') || 'No cost'">
+            @for (type of attack.cost; track $index) {
+              <app-energy-icon [type]="type" />
+            }
+          </div>
+          <ion-label class="ion-text-wrap">
+            <h3>{{ attack.name }}</h3>
+            @if (attack.effect) {
+              <p><app-card-text [text]="attack.effect" /></p>
+            }
+          </ion-label>
+          @if (attack.damage) {
+            <ion-note slot="end" class="damage">{{ attack.damage }}</ion-note>
+          }
+        </ion-item>
+      }
+    }
+
+    @if (text()?.effect; as effect) {
+      <ion-list-header><ion-label>Effect</ion-label></ion-list-header>
+      <ion-item>
+        <ion-label class="ion-text-wrap"><app-card-text [text]="effect" /></ion-label>
+      </ion-item>
+    }
+
+    @if (card().category === 'Pokemon') {
+      <ion-item>
+        <ion-label class="ion-text-wrap">
+          <p class="stats">
+            <span>
+              Weakness
+              @for (weakness of card().weaknesses; track $index) {
+                <app-energy-icon [type]="weakness.type" />
+                {{ weakness.value }}
+              } @empty {
+                none
+              }
+            </span>
+            <span>
+              Resistance
+              @for (resistance of card().resistances; track $index) {
+                <app-energy-icon [type]="resistance.type" />
+                {{ resistance.value }}
+              } @empty {
+                none
+              }
+            </span>
+            <span>Retreat {{ card().retreat ?? 0 }}</span>
+          </p>
+        </ion-label>
+      </ion-item>
+    }
+
+    <ion-list-header><ion-label>Details</ion-label></ion-list-header>
+    <ion-item>
+      <ion-label>Set</ion-label>
+      <ion-note slot="end">{{ setLine() }}</ion-note>
+    </ion-item>
+    @if (card().rarity) {
+      <ion-item>
+        <ion-label>Rarity</ion-label>
+        <ion-note slot="end">{{ card().rarity }}</ion-note>
+      </ion-item>
+    }
+    @if (card().illustrator) {
+      <ion-item>
+        <ion-label>Illustrator</ion-label>
+        <ion-note slot="end">{{ card().illustrator }}</ion-note>
+      </ion-item>
+    }
+    @if (card().regulationMark) {
+      <ion-item>
+        <ion-label>Regulation mark</ion-label>
+        <ion-note slot="end">{{ card().regulationMark }}</ion-note>
+      </ion-item>
+    }
+    <ion-item>
+      <ion-label>Legal in</ion-label>
+      <ion-note slot="end">{{ legal() || 'Not legal' }}</ion-note>
+    </ion-item>
+    @if (text()?.description; as description) {
+      <ion-item>
+        <ion-label class="ion-text-wrap">
+          <p class="hint">{{ description }}</p>
+        </ion-label>
+      </ion-item>
+    }
+  </ion-list>
+</div>

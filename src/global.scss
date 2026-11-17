@@ -60,3 +60,16 @@ ion-header.page-column-header ion-toolbar {
 ion-item.child-row {
   --padding-start: 32px;
 }
+
+/* Swiper (card detail modal; the agreed non-stock exception). */
+@import 'swiper/css';
+@import 'swiper/css/virtual';
+
+/* Card detail modal: a centered dialog on desktop (a full-height sheet on
+   phones, set where it opens). */
+@media (min-width: 992px) {
+  ion-modal.card-detail-modal {
+    --width: min(960px, 92vw);
+    --height: min(780px, 90vh);
+  }
+}

@@ -19,6 +19,8 @@ export const DEFAULT_IMAGE_CACHE_LIMIT_MB = 500;
 export const IMAGE_CACHE_LIMIT_OPTIONS_MB = [250, 500, 1000, 2000] as const;
 /** After evicting, recently viewed images take at most this share of the limit. */
 const EVICT_TO = 0.9;
+/** Object URLs kept for display (web); older ones are released. */
+export const MAX_OBJECT_URLS = 400;
 /** A cached image's last-viewed time is refreshed at most this often. */
 const TOUCH_INTERVAL_MS = 60 * 60 * 1000;
 
@@ -227,11 +229,25 @@ export class ImageCacheService {
     return record.filePath ? this.fileStore.exists(record.filePath) : false;
   }
 
+  /**
+   * An object URL for a cached blob. At most MAX_OBJECT_URLS are kept: the
+   * least recently used are released, so browsing thousands of scans doesn't
+   * pin their blobs in memory. (An image already on screen keeps showing.)
+   */
   private objectUrl(key: string, blob: Blob): string {
     let url = this.objectUrls.get(key);
-    if (!url) {
+    if (url) {
+      this.objectUrls.delete(key); // Re-inserted below as most recently used.
+    } else {
       url = URL.createObjectURL(blob);
-      this.objectUrls.set(key, url);
+    }
+    this.objectUrls.set(key, url);
+    for (const [oldKey, oldUrl] of this.objectUrls) {
+      if (this.objectUrls.size <= MAX_OBJECT_URLS) {
+        break;
+      }
+      URL.revokeObjectURL(oldUrl);
+      this.objectUrls.delete(oldKey);
     }
     return url;
   }

@@ -23,7 +23,19 @@ describe('isUserSettings', () => {
     ['an empty language', { cardLanguage: '' }],
     ['a non-string language', { cardLanguage: 3 }],
     ['an oversized language', { cardLanguage: 'x'.repeat(17) }],
+    ['catalog languages that are not an object', { cardLanguage: 'en', catalogLanguages: 'de' }],
+    ['an unknown catalog region', { cardLanguage: 'en', catalogLanguages: { eu: 'de' } }],
+    ['an unsupported language', { cardLanguage: 'en', catalogLanguages: { intl: 'es' } }],
+    ['a language from the other region', { cardLanguage: 'en', catalogLanguages: { intl: 'ja' } }],
   ])('rejects %s', (_label, value) => {
     expect(isUserSettings(value)).toBe(false);
+  });
+
+  it('accepts per-catalog languages, and older payloads without them', () => {
+    expect(
+      isUserSettings({ cardLanguage: 'en', catalogLanguages: { intl: 'de', asia: 'zh-tw' } })
+    ).toBe(true);
+    expect(isUserSettings({ cardLanguage: 'en', catalogLanguages: { asia: 'ja' } })).toBe(true);
+    expect(isUserSettings({ cardLanguage: 'ko' })).toBe(true);
   });
 });
