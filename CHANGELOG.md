@@ -28,3 +28,7 @@
 ## v0.2.1 - 2026-11-17
 
 - 651bfe2 fix(deploy): stop exposing edge on the LAN when it shares NPM's network (#15)
+
+## v0.2.2 - 2026-11-17
+
+- 296f7be fix(deploy): tidy leftover deployment doc and config issues (#16)
