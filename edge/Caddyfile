@@ -1,0 +1,75 @@
+{
+	# TLS terminates upstream (Cloudflare -> cloudflared -> Nginx Proxy
+	# Manager); edge only ever serves plain HTTP inside the NAS.
+	auto_https off
+	admin off
+}
+
+:8080 {
+	encode zstd gzip
+
+	# Security headers for every response. HSTS is honored by browsers only
+	# over HTTPS, i.e. on the public hostname. CSP notes:
+	# - style-src 'unsafe-inline': Ionic components inject inline styles.
+	# - no inline scripts: Angular's critical-CSS inlining (which adds an
+	#   inline onload handler) is disabled in angular.json for this reason.
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+		Permissions-Policy "camera=(self), microphone=(), geolocation=(), payment=(), usb=()"
+		Cross-Origin-Opener-Policy "same-origin"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		-Server
+	}
+
+	# API and cached images are served by the server container.
+	handle /api/* {
+		reverse_proxy server:3000
+	}
+
+	handle /images/* {
+		reverse_proxy server:3000
+	}
+
+	# Passkeys in the iOS app: Apple fetches this (via its CDN) to verify
+	# the app may use passkeys for this domain. Must be JSON, at this exact
+	# path, with no redirect.
+	handle /.well-known/apple-app-site-association {
+		root * /srv-well-known
+		rewrite * /apple-app-site-association
+		header Content-Type "application/json"
+		header Cache-Control "public, max-age=3600"
+		file_server
+	}
+
+	handle {
+		root * /srv
+
+		# Content-hashed build output (main-<hash>.js, chunk-<hash>.js,
+		# styles-<hash>.css): a rebuild emits new names, so a file that
+		# exists under such a name never changes. `file` keeps a stale hashed
+		# URL from an older build, which falls back to index.html below, from
+		# being cached as immutable.
+		@hashed {
+			path_regexp -[A-Za-z0-9_-]{8}\.(js|css)$
+			file
+		}
+		header @hashed Cache-Control "public, max-age=31536000, immutable"
+
+		# Everything else (index.html, the SPA fallback, ngsw.json,
+		# ngsw-worker.js, the manifest, assets) must revalidate (cheap 304
+		# via ETag) so new deploys and service worker updates are picked up.
+		@revalidate {
+			not {
+				path_regexp -[A-Za-z0-9_-]{8}\.(js|css)$
+				file
+			}
+		}
+		header @revalidate Cache-Control "no-cache"
+
+		try_files {path} /index.html
+		file_server
+	}
+}
