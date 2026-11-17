@@ -208,7 +208,7 @@ Lost every passkey? See `docs/auth.md` → Recovering access.
 
 The server writes a consistent snapshot to `server-backups/` at startup (unless one is less than `BACKUP_INTERVAL_HOURS` old) and every `BACKUP_INTERVAL_HOURS` (default 24), keeping the newest `BACKUP_KEEP` (default 14). Include `server-backups` (or `server-data`) in your regular NAS backups (Hyper Backup, snapshots, …).
 
-The card catalogue (`server-data/catalog.db`) isn't in these snapshots: it holds no user data and is rebuilt from TCGdex. To rebuild it, stop the server, delete `catalog.db` and any `catalog.db-wal` / `catalog.db-shm`, and start it again ([`docs/catalog.md`](catalog.md)).
+The card catalogue (`server-data/catalog.db`) and the card image cache (`server-data/images/`) aren't in these snapshots: they hold no user data and are rebuilt from TCGdex, so you can also exclude them from your NAS backups. To rebuild it, stop the server, delete `catalog.db` and any `catalog.db-wal` / `catalog.db-shm`, and start it again ([`docs/catalog.md`](catalog.md)).
 
 To restore:
 

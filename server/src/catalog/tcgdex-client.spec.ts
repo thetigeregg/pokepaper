@@ -46,6 +46,22 @@ describe('TcgdexClient', () => {
     expect(fake.calls).toEqual(['/en/sets', '/zh-tw/sets/SV2a', '/en/cards/sv03.5-001']);
   });
 
+  it('checks whether an asset exists with HEAD requests', async () => {
+    const requests: { url: string; method: string | undefined }[] = [];
+    const fetchFn = (url: string, init?: RequestInit) => {
+      requests.push({ url, method: init?.method });
+      return Promise.resolve(new Response(null, { status: url.includes('/001/') ? 200 : 404 }));
+    };
+    const tcgdex = new TcgdexClient({ fetch: fetchFn as typeof fetch });
+
+    await expect(tcgdex.assetExists('ja/SV/SV2a/001/low.webp')).resolves.toBe(true);
+    await expect(tcgdex.assetExists('ja/SV/SV2a/999/low.webp')).resolves.toBe(false);
+    expect(requests[0]).toEqual({
+      url: 'https://assets.tcgdex.net/ja/SV/SV2a/001/low.webp',
+      method: 'HEAD',
+    });
+  });
+
   it('returns null for 404', async () => {
     const { client: tcgdex } = client({});
 

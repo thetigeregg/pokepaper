@@ -1,5 +1,13 @@
 import { createHash } from 'node:crypto';
-import type { CatalogCard, CatalogRegion, CatalogSeries, CatalogSet } from '@pokepaper/shared';
+import type {
+  CatalogCard,
+  CatalogLanguage,
+  CatalogManifest,
+  CatalogRegion,
+  CatalogSeries,
+  CatalogSet,
+  CatalogSetPack,
+} from '@pokepaper/shared';
 import type { Db } from '../db.js';
 
 export type CatalogRunKind = 'light' | 'full';
@@ -63,6 +71,61 @@ export class CatalogStore {
         )
         .all(region, setId) as { payload: string }[]
     ).map((row) => JSON.parse(row.payload) as CatalogCard);
+  }
+
+  getCard(region: CatalogRegion, id: string): CatalogCard | undefined {
+    const row = this.db
+      .prepare('SELECT payload FROM catalog_cards WHERE region = ? AND id = ?')
+      .get(region, id) as { payload: string } | undefined;
+    return row ? (JSON.parse(row.payload) as CatalogCard) : undefined;
+  }
+
+  /** Everything a client needs to decide which sets to download. */
+  manifest(languages: CatalogLanguage[]): CatalogManifest {
+    // One read transaction: a consistent snapshot even while an import writes.
+    return this.db.transaction(() => this.readManifest(languages))();
+  }
+
+  private readManifest(languages: CatalogLanguage[]): CatalogManifest {
+    const series = (
+      this.db.prepare('SELECT payload FROM catalog_series ORDER BY region, id').all() as {
+        payload: string;
+      }[]
+    ).map((row) => JSON.parse(row.payload) as CatalogSeries);
+    const sets = this.db
+      .prepare(
+        'SELECT region, id, content_hash AS hash, card_count AS cardCount FROM catalog_sets ORDER BY region, release_date, id'
+      )
+      .all() as CatalogManifest['sets'];
+    return { version: this.version(), languages, series, sets };
+  }
+
+  /** A set with its cards in display order, or undefined if unknown. */
+  getSetPack(region: CatalogRegion, id: string): CatalogSetPack | undefined {
+    // One read transaction, so the hash always matches the cards returned.
+    return this.db.transaction(() => {
+      const stored = this.getSet(region, id);
+      return stored
+        ? { hash: stored.hash, set: stored.set, cards: this.listSetCards(region, id) }
+        : undefined;
+    })();
+  }
+
+  /** What an earlier check found at an asset path, if it was checked. */
+  getImageProbe(path: string): { found: boolean; checkedAt: Date } | undefined {
+    const row = this.db
+      .prepare('SELECT found, checked_at FROM catalog_image_probes WHERE path = ?')
+      .get(path) as { found: number; checked_at: string } | undefined;
+    return row ? { found: row.found === 1, checkedAt: new Date(row.checked_at) } : undefined;
+  }
+
+  saveImageProbe(path: string, found: boolean, now = new Date()): void {
+    this.db
+      .prepare(
+        `INSERT INTO catalog_image_probes (path, found, checked_at) VALUES (?, ?, ?)
+         ON CONFLICT (path) DO UPDATE SET found = excluded.found, checked_at = excluded.checked_at`
+      )
+      .run(path, found ? 1 : 0, now.toISOString());
   }
 
   /**

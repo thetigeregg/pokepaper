@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { buildApp } from './app.js';
 import { startBackupSchedule } from './backup.js';
 import { CATALOG_DB_FILENAME, openCatalogDatabase } from './catalog/db.js';
+import { CatalogImageCache } from './catalog/image-cache.js';
 import { startCatalogSchedule, type CatalogSchedule } from './catalog/schedule.js';
 import { CatalogStore } from './catalog/store.js';
 import { loadConfig } from './config.js';
@@ -10,6 +11,7 @@ import { DB_FILENAME, openDatabase } from './db.js';
 const config = loadConfig();
 const db = openDatabase(join(config.dataDir, DB_FILENAME));
 const catalogDb = openCatalogDatabase(join(config.dataDir, CATALOG_DB_FILENAME));
+const catalogStore = new CatalogStore(catalogDb);
 const app = buildApp({
   db,
   auth: config.auth,
@@ -17,6 +19,11 @@ const app = buildApp({
   clientIpHeader: config.clientIpHeader,
   logLevel: config.logLevel,
   rateLimitPerMinute: config.rateLimitPerMinute,
+  catalog: {
+    store: catalogStore,
+    images: new CatalogImageCache({ dir: join(config.dataDir, 'images', 'catalog') }),
+    languages: config.catalog.languages,
+  },
 });
 
 const stopBackups = startBackupSchedule({
@@ -30,7 +37,7 @@ const stopBackups = startBackupSchedule({
 // The catalogue (catalog.db) is rebuilt from TCGdex rather than backed up.
 const catalogSchedule: CatalogSchedule | null = config.catalog.syncEnabled
   ? startCatalogSchedule({
-      store: new CatalogStore(catalogDb),
+      store: catalogStore,
       languages: config.catalog.languages,
       refreshHours: config.catalog.refreshHours,
       fullRefreshDays: config.catalog.fullRefreshDays,

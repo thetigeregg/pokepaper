@@ -2,7 +2,7 @@
 
 PokePaper's card data comes from [TCGdex](https://tcgdex.dev), a community-maintained, open-source Pokémon TCG database. The server imports it into its own SQLite file on a schedule. Clients will download it from the server (never from TCGdex directly), so the app keeps working if TCGdex is slow, down, or changes its API.
 
-Status: the server import is implemented (`server/src/catalog/`). The download API, image cache and app screens come next.
+Status: the server import, download API and image cache are implemented (`server/src/catalog/`). The app's offline copy and screens come next.
 
 ## Data model
 
@@ -24,16 +24,16 @@ Payload shapes are the shared `CatalogSeries`, `CatalogSet` and `CatalogCard` ty
 | Language            | Sets with cards | Cards  | With a scan in this language  |
 | ------------------- | --------------- | ------ | ----------------------------- |
 | English             | 217             | 23,912 | 93%                           |
-| French              | 198             | 22,333 | 83%                           |
+| French              | 198             | 22,333 | 84%                           |
 | Italian             | 115             | 15,867 | 93%                           |
-| German              | 149             | 20,534 | 74% (almost none before 2010) |
-| Japanese            | 121             | 13,156 | 30% (none before 2020)        |
-| Traditional Chinese | 83              | 7,436  | 29%                           |
+| German              | 149             | 20,534 | 76% (almost none before 2010) |
+| Japanese            | 121             | 13,156 | 57% (30% linked by TCGdex)    |
+| Traditional Chinese | 83              | 7,436  | 30%                           |
 | Simplified Chinese  | 8               | 877    | none                          |
 
 In all, 24,005 international and 16,611 Asian cards. TCGdex's own set totals claim more (e.g. 21.5k Italian, 19.3k Japanese cards), but many sets are listed with a name and no cards (79 Italian, 83 Japanese, 49 of 57 Simplified Chinese). The import stores every card TCGdex actually lists.
 
-**Scans.** Only 6% of international cards have no scan in any of the four languages, so a missing German or French scan can usually be replaced by another language's. 71% of Asian cards have none in any Asian language. Some scans exist on TCGdex's image server without being linked from the card data (about 38% of the missing Japanese ones), so the image route will also try a card's expected path.
+**Scans.** Coverage includes scans the import found unlinked (see [Unlinked scans](#unlinked-scans)), which raised Japanese from 30% to 57%. Only 6% of international cards have no scan in any of the four languages, so a missing German or French scan can usually be replaced by another language's. 51% of Asian cards have none in any Asian language.
 
 Sets TCGdex lists without any cards are skipped, and they appear automatically if TCGdex fills them in later.
 
@@ -55,7 +55,16 @@ The client is polite to the free API: 4 requests at a time, a 20-second timeout,
 
 Only a database error or shutdown ends a run early. Every run is recorded in `catalog_runs` with its stats, and logged as `catalog.ingest_started`, `catalog.ingest_progress` and `catalog.ingest_finished`.
 
-Each set is written in one transaction together with a **content hash** (SHA-256 of the set and its cards as canonical JSON), and a catalogue **version** is bumped whenever anything changes. Clients will compare these to download only the sets that changed.
+Each set is written in one transaction together with a **content hash** (SHA-256 of the set and its cards as canonical JSON), and a catalogue **version** is bumped whenever anything changes. Clients compare these to download only the sets that changed.
+
+### Unlinked scans
+
+For each card language without a linked scan, the import checks, with one HEAD request to TCGdex's image server, the path the scan would have:
+
+- the card's linked path in another language, with the language swapped in (`en/sv/sv01/172` → `fr/sv/sv01/172`);
+- otherwise `{language}/{serie}/{set}/{number}`.
+
+A hit becomes the card's image, so downloaded data always says exactly which languages have a scan. Answers are kept in `catalog_image_probes`: hits for good, misses for 30 days. A check that fails is retried next run. The first run with this feature made 25,705 checks in about 15 minutes and found 4,505 scans; later runs only check new cards and expired misses.
 
 ### Running it by hand
 
@@ -66,9 +75,27 @@ npm run catalog:sync --workspace server -- --full   # full refresh
 
 It uses the server's configuration (`DATA_DIR`, `CATALOG_LANGUAGES`, …) and can run while the server is up. Locally, `CATALOG_LANGUAGES=zh-tw npm run catalog:sync --workspace server` builds a small catalogue in seconds.
 
+## Download API
+
+All routes need a session, like the rest of the API. Wire types are in `shared/src/catalog.ts`.
+
+| Route                                                     | Response                                                                                                                     |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/catalog/manifest`                               | `CatalogManifest`: catalogue version, languages, every series, and each set's `hash` and card count. `ETag` from the version |
+| `GET /api/catalog/sets/:region/:setId`                    | `CatalogSetPack`: the set and all its cards in display order. `ETag` = the set's hash                                        |
+| `GET /images/catalog/cards/:region/:cardId/:lang/:q.webp` | Card scan, `q` = `low` (grids, ~18 KB) or `high` (detail, ~75 KB). Use `catalogCardImageUrl()`                               |
+| `GET /images/catalog/sets/:region/:setId/logo/:lang.webp` | Set logo in a language                                                                                                       |
+| `GET /images/catalog/sets/:region/:setId/symbol.webp`     | Set symbol                                                                                                                   |
+
+- **Revalidation:** the manifest and packs are sent with `Cache-Control: private, no-cache` and an `ETag`. Sending it back in `If-None-Match` gets an empty `304` when nothing changed, so checking for updates costs almost nothing. Both are read in one transaction, so a pack's hash always matches its cards, even mid-import.
+- **Images** are served only when the catalogue links them: the server looks up the card or set, so the routes can't be used to fetch arbitrary TCGdex files. Unknown cards, languages without a scan and unsupported names get `404` without contacting TCGdex. An image is fetched from TCGdex the first time it's requested, checked to be WebP by its file signature (TCGdex labels some as `application/octet-stream`), capped at 2 MB, and stored in `DATA_DIR/images/catalog/` under a hash of its path. Concurrent requests share one fetch. If TCGdex fails, the response is `502` and nothing is cached. Responses carry `Cache-Control: private, max-age=604800`.
+- **Rate limit:** image routes allow 3,000 requests per minute per client, above the global 600, because a set grid or an offline download loads hundreds at once (the app caches every image it gets).
+
 ## Storage
 
 The catalogue lives in **`catalog.db`**, next to `pokepaper.db` in `DATA_DIR`, with its own migrations in `server/src/catalog/migrations/`. It holds no user data and can be rebuilt from TCGdex, so it's **not included in the server's backups** (it would add about 90 MB to each). To rebuild it from scratch, stop the server, delete `catalog.db` (and any `catalog.db-wal` / `catalog.db-shm`), and start it again: the first run is a full refresh.
+
+Cached images live in `DATA_DIR/images/catalog/` and are also rebuildable (delete the folder any time). The folder only grows with images someone actually viewed or downloaded: about 18 KB per grid image and 75 KB per detail image. Every grid image in all seven languages would be about 2 GB.
 
 ## Configuration
 

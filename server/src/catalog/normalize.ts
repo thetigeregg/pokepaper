@@ -13,13 +13,12 @@ import {
   type CatalogVariants,
   type Localized,
 } from '@pokepaper/shared';
+import { TCGDEX_ASSET_BASE } from './tcgdex-client.js';
 
 /**
  * TCGdex responses are untrusted input: everything here is checked and
  * bounded before it reaches the database. Unknown fields are dropped.
  */
-
-export const TCGDEX_ASSET_BASE = 'https://assets.tcgdex.net/';
 
 const MAX_NAME = 200;
 const MAX_TEXT = 4000;

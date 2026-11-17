@@ -136,3 +136,58 @@ export interface CatalogCard {
   attacks: CatalogAttack[];
   text: Localized<CatalogCardText>;
 }
+
+// ---------------------------------------------------------------------------
+// Download API (server → app)
+// ---------------------------------------------------------------------------
+
+/** One set as listed in the manifest: enough to tell whether a local copy is current. */
+export interface CatalogManifestSet {
+  region: CatalogRegion;
+  id: string;
+  /** Changes exactly when the set's pack does. */
+  hash: string;
+  cardCount: number;
+}
+
+/**
+ * `GET /api/catalog/manifest`. `version` changes whenever anything in the
+ * catalogue does, so a client that has seen it can skip the set diff
+ * (the response's ETag is derived from it).
+ */
+export interface CatalogManifest {
+  version: number;
+  languages: CatalogLanguage[];
+  series: CatalogSeries[];
+  sets: CatalogManifestSet[];
+}
+
+/** `GET /api/catalog/sets/:region/:setId`: a set with all its cards, in display order. */
+export interface CatalogSetPack {
+  hash: string;
+  set: CatalogSet;
+  cards: CatalogCard[];
+}
+
+export type CatalogImageQuality = 'low' | 'high';
+
+/**
+ * Same-origin URL of a card scan, served (and cached) by the PokePaper
+ * server. Only valid when `card.text[language].image` is set.
+ */
+export function catalogCardImageUrl(
+  card: Pick<CatalogCard, 'region' | 'id'>,
+  language: CatalogLanguage,
+  quality: CatalogImageQuality
+): string {
+  return `/images/catalog/cards/${card.region}/${encodeURIComponent(card.id)}/${language}/${quality}.webp`;
+}
+
+/** Same-origin URL of a set's logo (per language) or symbol. */
+export function catalogSetImageUrl(
+  set: Pick<CatalogSet, 'region' | 'id'>,
+  image: { kind: 'logo'; language: CatalogLanguage } | { kind: 'symbol' }
+): string {
+  const base = `/images/catalog/sets/${set.region}/${encodeURIComponent(set.id)}`;
+  return image.kind === 'logo' ? `${base}/logo/${image.language}.webp` : `${base}/symbol.webp`;
+}

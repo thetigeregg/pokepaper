@@ -3,6 +3,7 @@ import rateLimit from '@fastify/rate-limit';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { registerAuth } from './auth/plugin.js';
 import { AuthStore } from './auth/store.js';
+import { registerCatalogRoutes, type CatalogRoutesOptions } from './catalog/routes.js';
 import { clientIp } from './client-ip.js';
 import type { AuthConfig } from './config.js';
 import type { Db } from './db.js';
@@ -23,6 +24,8 @@ export interface BuildAppOptions {
   logLevel?: string | false;
   /** Requests per client IP per minute, across all routes. */
   rateLimitPerMinute?: number;
+  /** Card catalogue download API and image cache; omitted, those routes don't exist. */
+  catalog?: CatalogRoutesOptions;
 }
 
 /**
@@ -36,6 +39,7 @@ export function buildApp({
   clientIpHeader = null,
   logLevel = 'info',
   rateLimitPerMinute = DEFAULT_RATE_LIMIT_PER_MINUTE,
+  catalog,
 }: BuildAppOptions): FastifyInstance {
   const app = Fastify({
     logger: logLevel === false ? false : { level: logLevel },
@@ -66,6 +70,9 @@ export function buildApp({
     registerAuth(instance, { store: new AuthStore(db, auth.sessionTtlDays), config: auth });
     registerHealthRoute(instance, db, clientIpHeader);
     registerSyncRoutes(instance, new SyncStore(db));
+    if (catalog) {
+      registerCatalogRoutes(instance, catalog);
+    }
     done();
   });
 

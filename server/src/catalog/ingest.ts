@@ -62,6 +62,8 @@ export interface CatalogIngestStats {
     removed: number;
   };
   cards: { fetched: number; skipped: number };
+  /** Checks for scans TCGdex has but doesn't link (see `resolveUnlinkedImages`). */
+  images: { probed: number; found: number };
   /** Regions whose listings couldn't be loaded, so their sets weren't touched. */
   skippedRegions: CatalogRegion[];
   requests: number;
@@ -72,6 +74,8 @@ export interface CatalogIngestStats {
 const PROGRESS_EVERY = 50;
 /** Consecutive failed sets after which the rest of a region is skipped. */
 const MAX_CONSECUTIVE_SET_FAILURES = 3;
+/** How long a "no scan at the expected path" answer is trusted. */
+const IMAGE_MISS_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
  * Imports the catalogue from TCGdex into `catalog.db`. Failures are
@@ -89,6 +93,7 @@ export async function runCatalogIngest(options: CatalogIngestOptions): Promise<C
     status: 'ok',
     sets: { seen: 0, written: 0, unchanged: 0, empty: 0, failed: 0, skipped: 0, removed: 0 },
     cards: { fetched: 0, skipped: 0 },
+    images: { probed: 0, found: 0 },
     skippedRegions: [],
     requests: 0,
     durationMs: 0,
@@ -348,7 +353,66 @@ async function ingestSet(
   if (cards.length === 0) {
     return 'empty';
   }
+  await resolveUnlinkedImages(context, set.serieId, cards);
   return store.writeSet(set, cards) ? 'written' : 'unchanged';
+}
+
+/**
+ * TCGdex's asset host has scans its card data doesn't link (measured: about
+ * 38% of the unlinked Japanese ones). For each card language without an
+ * image, check the path the scan would have: the card's linked path in
+ * another language with this language swapped in, else
+ * `{lang}/{serie}/{set}/{localId}`. Answers are remembered (hits forever,
+ * misses for IMAGE_MISS_TTL_MS), so each path is checked about once. A check
+ * that fails is simply retried next run.
+ */
+async function resolveUnlinkedImages(
+  context: RegionContext,
+  serieId: string,
+  cards: CatalogCard[]
+): Promise<void> {
+  const { store, client, stats } = context;
+  const now = Date.now();
+  const checks: Promise<void>[] = [];
+
+  for (const card of cards) {
+    const linked = Object.values(card.text).find((text) => text.image)?.image;
+    for (const [language, text] of Object.entries(card.text)) {
+      if (text.image) {
+        continue;
+      }
+      const path = linked
+        ? `${language}/${linked.split('/').slice(1).join('/')}`
+        : `${language}/${serieId}/${card.setId}/${card.localId}`;
+      const known = store.getImageProbe(path);
+      if (known?.found) {
+        text.image = path;
+        continue;
+      }
+      if (known && now - known.checkedAt.getTime() < IMAGE_MISS_TTL_MS) {
+        continue;
+      }
+      checks.push(
+        client.assetExists(`${path}/low.webp`).then(
+          (found) => {
+            stats.images.probed += 1;
+            store.saveImageProbe(path, found);
+            if (found) {
+              stats.images.found += 1;
+              text.image = path;
+            }
+          },
+          (error: unknown) => {
+            if (!isContainedFailure(error)) {
+              throw error;
+            }
+          }
+        )
+      );
+    }
+  }
+
+  await Promise.all(checks);
 }
 
 /**
