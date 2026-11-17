@@ -38,7 +38,7 @@ export function nextRunKind(
 }
 
 /**
- * Keeps the catalogue current: one import shortly after startup, then one
+ * Keeps the catalog current: one import shortly after startup, then one
  * every `refreshHours` after the previous finished, so runs never overlap.
  * Failures are logged and retried at the next interval.
  */

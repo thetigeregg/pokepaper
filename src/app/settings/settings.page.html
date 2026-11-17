@@ -11,47 +11,26 @@
     </ion-toolbar>
   </ion-header>
 
-  <ion-list inset="true">
-    <ion-list-header>
-      <ion-label>Cards</ion-label>
-    </ion-list-header>
-    <ion-item>
-      <ion-select
-        label="Card language"
-        interface="popover"
-        [value]="settings().cardLanguage"
-        (ionChange)="onCardLanguageChange($event.detail.value)"
-      >
-        @for (language of languages; track language.code) {
-          <ion-select-option [value]="language.code">{{ language.label }}</ion-select-option>
-        }
-      </ion-select>
-    </ion-item>
-    @if (saveError()) {
-      <ion-item lines="none">
-        <ion-note color="danger" data-testid="save-error">
-          Couldn't save on this device. Please try again.
-        </ion-note>
-      </ion-item>
-    }
-  </ion-list>
+  <div class="settings-column">
+    <app-catalog-section></app-catalog-section>
 
-  <ion-list inset="true">
-    <ion-list-header>
-      <ion-label>Sync</ion-label>
-    </ion-list-header>
-    <ion-item>
-      <ion-label>Status</ion-label>
-      <ion-note slot="end" data-testid="sync-status">{{ syncStatusLabel() }}</ion-note>
-    </ion-item>
-    @if (rejectedOperations() > 0) {
-      <ion-item lines="none">
-        <ion-note color="warning" data-testid="rejected-operations">
-          {{ rejectedOperations() }} change(s) were rejected by the server and reverted.
-        </ion-note>
+    <ion-list>
+      <ion-list-header>
+        <ion-label>Sync</ion-label>
+      </ion-list-header>
+      <ion-item>
+        <ion-label>Status</ion-label>
+        <ion-note slot="end" data-testid="sync-status">{{ syncStatusLabel() }}</ion-note>
       </ion-item>
-    }
-  </ion-list>
+      @if (rejectedOperations() > 0) {
+        <ion-item lines="none">
+          <ion-note color="warning" data-testid="rejected-operations">
+            {{ rejectedOperations() }} change(s) were rejected by the server and reverted.
+          </ion-note>
+        </ion-item>
+      }
+    </ion-list>
 
-  <app-account-section></app-account-section>
+    <app-account-section></app-account-section>
+  </div>
 </ion-content>

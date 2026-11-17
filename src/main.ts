@@ -18,6 +18,7 @@ import { STORAGE_ENGINE } from './app/core/data/storage-engine';
 import { StorageEngineFactory } from './app/core/data/storage-engine.factory';
 import { SYNC_ENTITY_APPLIERS } from './app/core/data/sync-entity-applier';
 import { SYNC_OUTBOX_WRITER } from './app/core/data/sync-outbox-writer';
+import { CatalogSyncService } from './app/core/services/catalog-sync.service';
 import { SyncService } from './app/core/services/sync.service';
 import { isNativePlatform } from './app/core/utils/native-platform.util';
 import { environment } from './environments/environment';
@@ -45,12 +46,16 @@ bootstrapApplication(AppComponent, {
       const storageEngineFactory = inject(StorageEngineFactory);
       const authService = inject(AuthService);
       const syncService = inject(SyncService);
+      const catalogSync = inject(CatalogSyncService);
 
       // The local signed-in marker must be loaded before the router's first
       // navigation (so the guards pick the right screen, offline too) and
       // before sync starts (sync stays paused while signed out).
       return Promise.all([storageEngineFactory.initialize(), authService.initialize()]).then(() => {
         syncService.initialize();
+        // The card catalog downloads in the background and never blocks
+        // startup; the app works with whatever is already on the device.
+        catalogSync.initialize();
       });
     }),
     {

@@ -2,7 +2,7 @@ import { resolve } from 'node:path';
 import { loadConfig } from './config.js';
 
 describe('loadConfig', () => {
-  it('imports every catalogue language on a daily schedule by default', () => {
+  it('imports every catalog language on a daily schedule by default', () => {
     expect(loadConfig({}).catalog).toEqual({
       syncEnabled: true,
       languages: ['en', 'fr', 'it', 'de', 'ja', 'zh-tw', 'zh-cn'],
@@ -11,7 +11,7 @@ describe('loadConfig', () => {
     });
   });
 
-  it('reads catalogue overrides, keeping languages in display order', () => {
+  it('reads catalog overrides, keeping languages in display order', () => {
     expect(
       loadConfig({
         CATALOG_SYNC_ENABLED: 'false',

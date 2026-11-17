@@ -1,15 +1,50 @@
 import { InjectionToken } from '@angular/core';
-import type { SyncEntityType, SyncOperation, UserSettings } from '@pokepaper/shared';
+import type {
+  CatalogCard,
+  CatalogRegion,
+  CatalogSeries,
+  CatalogSet,
+  CatalogSetPack,
+  SyncEntityType,
+  SyncOperation,
+  UserSettings,
+} from '@pokepaper/shared';
 
 /**
  * Logical stores that can participate in a storage transaction.
  *
- * Domain stores (card catalog, collection, decks) are added by their feature
- * phases. Each one gets a scope here, a Dexie table in `app-db.ts`, a SQLite
- * migration in `sqlite-connection.ts`, and coverage in the shared contract
- * suite (`storage-engine.contract.ts`).
+ * Domain stores are added by their feature phases. Each one gets a scope
+ * here, a Dexie table in `app-db.ts`, a SQLite migration in
+ * `sqlite-connection.ts`, and coverage in the shared contract suite
+ * (`storage-engine.contract.ts`).
  */
-export type StorageScope = 'settings' | 'imageCache' | 'syncMeta' | 'outbox';
+export type StorageScope =
+  | 'settings'
+  | 'imageCache'
+  | 'syncMeta'
+  | 'outbox'
+  | 'catalogSeries'
+  | 'catalogSets'
+  | 'catalogCards';
+
+/** Catalog rows are keyed `region:id` (IDs repeat across regions; docs/catalog.md). */
+export function catalogKey(region: CatalogRegion, id: string): string {
+  return `${region}:${id}`;
+}
+
+/** A downloaded set and the hash it was downloaded at (compared with the manifest). */
+export interface StoredCatalogSet {
+  key: string;
+  region: CatalogRegion;
+  hash: string;
+  set: CatalogSet;
+}
+
+/** Counts for the catalog on this device. */
+export interface CatalogStats {
+  sets: number;
+  cards: number;
+}
 
 /**
  * A queued local write awaiting push-sync to the backend. The backend is the
@@ -78,6 +113,21 @@ export interface StorageEngine {
   // Sync metadata
   getSyncMeta(key: string): Promise<SyncMetaEntry | undefined>;
   putSyncMeta(entry: SyncMetaEntry): Promise<void>;
+
+  // Card catalog (read-only reference data; never in the outbox)
+  /** Makes the stored series exactly `series` (all regions). */
+  replaceCatalogSeries(series: readonly CatalogSeries[]): Promise<void>;
+  listCatalogSeries(): Promise<CatalogSeries[]>;
+  /** Stores a downloaded set: its row and its cards replace any earlier copy, atomically. */
+  replaceCatalogSet(pack: CatalogSetPack): Promise<void>;
+  /** Removes a set and its cards. */
+  deleteCatalogSet(region: CatalogRegion, setId: string): Promise<void>;
+  /** All stored sets, or one region's. */
+  listCatalogSets(region?: CatalogRegion): Promise<StoredCatalogSet[]>;
+  /** A set's cards in display order. */
+  listCatalogCards(region: CatalogRegion, setId: string): Promise<CatalogCard[]>;
+  getCatalogCard(region: CatalogRegion, cardId: string): Promise<CatalogCard | undefined>;
+  catalogStats(): Promise<CatalogStats>;
 
   // Outbox
   getOutboxEntry(opId: string): Promise<OutboxEntry | undefined>;

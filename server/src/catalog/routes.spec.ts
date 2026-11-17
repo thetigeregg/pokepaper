@@ -10,7 +10,7 @@ import {
 import { testApp } from '../test-helpers.js';
 import { CatalogImageCache } from './image-cache.js';
 import { runCatalogIngest } from './ingest.js';
-import { CATALOG_IMAGE_RATE_LIMIT } from './routes.js';
+import { CATALOG_RATE_LIMIT } from './routes.js';
 import {
   Bytes,
   fakeClient,
@@ -42,7 +42,7 @@ async function catalogApp() {
   return { app, headers, store, fake };
 }
 
-describe('catalogue routes', () => {
+describe('catalog routes', () => {
   it('require a session', async () => {
     const { app } = await catalogApp();
 
@@ -165,7 +165,7 @@ describe('catalogue routes', () => {
     expect(pack).not.toHaveBeenCalled();
   });
 
-  it('send a fresh manifest once the catalogue changes', async () => {
+  it('send a fresh manifest once the catalog changes', async () => {
     const { app, headers, store } = await catalogApp();
     const stale = (await app.inject({ method: 'GET', url: '/api/catalog/manifest', headers }))
       .headers.etag as string;
@@ -275,6 +275,15 @@ describe('catalogue routes', () => {
     expect(failing.json()).toEqual({ error: 'image_unavailable' });
   });
 
+  it('allow catalog downloads beyond the global rate limit', async () => {
+    const { app, headers } = await catalogApp();
+
+    for (const url of ['/api/catalog/manifest', '/api/catalog/sets/intl/sv01']) {
+      const response = await app.inject({ method: 'GET', url, headers });
+      expect(response.headers['x-ratelimit-limit']).toBe(String(CATALOG_RATE_LIMIT));
+    }
+  });
+
   it('allow image bursts beyond the global rate limit', async () => {
     const { app, headers, fake } = await catalogApp();
     fake.routes.set('asset:en/sv/sv01/001/low.webp', new Bytes(webp()));
@@ -282,6 +291,6 @@ describe('catalogue routes', () => {
 
     const response = await app.inject({ method: 'GET', url, headers });
 
-    expect(response.headers['x-ratelimit-limit']).toBe(String(CATALOG_IMAGE_RATE_LIMIT));
+    expect(response.headers['x-ratelimit-limit']).toBe(String(CATALOG_RATE_LIMIT));
   });
 });

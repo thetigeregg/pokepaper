@@ -35,3 +35,14 @@
 /* @import "@ionic/angular/css/palettes/dark.always.css"; */
 /* @import "@ionic/angular/css/palettes/dark.class.css"; */
 @import '@ionic/angular/css/palettes/dark.system.css';
+
+/* Lists end without a divider under their last row (docs/ui.md). */
+ion-list > ion-item:last-of-type {
+  --border-width: 0;
+  --inner-border-width: 0;
+}
+
+/* Hint text under a row's label (docs/ui.md). */
+ion-label p.hint {
+  padding-top: 4px;
+}

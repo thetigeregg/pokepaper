@@ -1,9 +1,6 @@
-<ion-list inset="true">
+<ion-list>
   <ion-list-header>
     <ion-label>Passkeys</ion-label>
-    <ion-button (click)="addPasskey()" [disabled]="busy() || !loaded()" data-testid="add-passkey">
-      Add
-    </ion-button>
   </ion-list-header>
   @for (passkey of passkeys(); track passkey.id) {
     <ion-item>
@@ -32,9 +29,18 @@
       </ion-button>
     </ion-item>
   }
+  <ion-item
+    button="true"
+    detail="false"
+    [disabled]="busy() || !loaded()"
+    (click)="addPasskey()"
+    data-testid="add-passkey"
+  >
+    <ion-label color="primary">Add passkey</ion-label>
+  </ion-item>
 </ion-list>
 
-<ion-list inset="true">
+<ion-list>
   <ion-list-header>
     <ion-label>Signed-in devices</ion-label>
   </ion-list-header>
@@ -66,7 +72,7 @@
 </ion-list>
 
 @if (error()) {
-  <ion-list inset="true">
+  <ion-list>
     <ion-item lines="none">
       <ion-note color="danger" role="alert">{{ error() }}</ion-note>
       <ion-button slot="end" fill="clear" (click)="load()">Retry</ion-button>

@@ -1,5 +1,5 @@
 /**
- * Runs one catalogue import by hand: `npm run catalog:sync --workspace server
+ * Runs one catalog import by hand: `npm run catalog:sync --workspace server
  * [-- --full]`. Uses the same configuration as the server (DATA_DIR,
  * CATALOG_LANGUAGES). Safe while the server runs: SQLite serializes writes.
  */

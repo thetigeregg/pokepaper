@@ -1,10 +1,27 @@
 import Dexie, { Table } from 'dexie';
 import { Injectable } from '@angular/core';
-import type { UserSettings } from '@pokepaper/shared';
-import type { ImageCacheRecord, OutboxEntry, SyncMetaEntry } from './storage-engine';
+import type { CatalogCard, CatalogSeries, UserSettings } from '@pokepaper/shared';
+import type {
+  ImageCacheRecord,
+  OutboxEntry,
+  StoredCatalogSet,
+  SyncMetaEntry,
+} from './storage-engine';
 
 /** The single `settings` row is always keyed `id: 1`. */
 export type SettingsRow = { id: 1 } & UserSettings;
+
+export interface CatalogSeriesRow {
+  key: string;
+  series: CatalogSeries;
+}
+
+export interface CatalogCardRow {
+  key: string;
+  setKey: string;
+  sortIndex: number;
+  card: CatalogCard;
+}
 
 /**
  * IndexedDB schema for the web storage engine. Add a new `this.version(n)`
@@ -17,6 +34,9 @@ export class AppDb extends Dexie {
   imageCache!: Table<ImageCacheRecord, string>;
   syncMeta!: Table<SyncMetaEntry, string>;
   outbox!: Table<OutboxEntry, string>;
+  catalogSeries!: Table<CatalogSeriesRow, string>;
+  catalogSets!: Table<StoredCatalogSet, string>;
+  catalogCards!: Table<CatalogCardRow, string>;
 
   constructor() {
     super('pokepaper');
@@ -26,6 +46,13 @@ export class AppDb extends Dexie {
       imageCache: 'key',
       syncMeta: 'key',
       outbox: 'opId, createdAt',
+    });
+
+    // Card catalog (docs/catalog.md). Matches SQLite schema version 2.
+    this.version(2).stores({
+      catalogSeries: 'key',
+      catalogSets: 'key, region',
+      catalogCards: 'key, setKey, [setKey+sortIndex]',
     });
   }
 }

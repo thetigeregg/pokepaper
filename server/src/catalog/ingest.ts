@@ -82,7 +82,7 @@ const MAX_CONSECUTIVE_SET_FAILURES = 3;
 const IMAGE_MISS_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
- * Imports the catalogue from TCGdex into `catalog.db`. Failures are
+ * Imports the catalog from TCGdex into `catalog.db`. Failures are
  * contained: a set that can't be fetched keeps its previous data (the run
  * ends `partial`), and a card TCGdex can't serve (404, malformed) is skipped.
  * Only an abort or a database error ends the run early.
