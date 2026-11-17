@@ -13,13 +13,12 @@ import {
   type CatalogVariants,
   type Localized,
 } from '@pokepaper/shared';
+import { TCGDEX_ASSET_BASE } from './tcgdex-client.js';
 
 /**
  * TCGdex responses are untrusted input: everything here is checked and
  * bounded before it reaches the database. Unknown fields are dropped.
  */
-
-export const TCGDEX_ASSET_BASE = 'https://assets.tcgdex.net/';
 
 const MAX_NAME = 200;
 const MAX_TEXT = 4000;
@@ -62,6 +61,11 @@ function strings(value: unknown, max = MAX_SHORT): string[] {
 
 const ASSET_PATH = /^[A-Za-z0-9._~%!-]+(?:\/[A-Za-z0-9._~%!-]+){1,6}$/;
 
+/** A safe relative path on TCGdex's asset host (`fr/sv/sv01/001`): plain segments, no `..`. */
+export function isAssetPath(path: string): boolean {
+  return path.length <= 300 && ASSET_PATH.test(path) && !path.split('/').includes('..');
+}
+
 /** `https://assets.tcgdex.net/fr/sv/sv01/001` → `fr/sv/sv01/001`; null for anything else. */
 export function assetPath(value: unknown): AssetPath | null {
   const url = text(value, 300);
@@ -69,7 +73,7 @@ export function assetPath(value: unknown): AssetPath | null {
     return null;
   }
   const path = url.slice(TCGDEX_ASSET_BASE.length);
-  return ASSET_PATH.test(path) && !path.split('/').includes('..') ? path : null;
+  return isAssetPath(path) ? path : null;
 }
 
 // ---------------------------------------------------------------------------

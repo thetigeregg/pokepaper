@@ -7,6 +7,7 @@ import {
 } from '@pokepaper/shared';
 import {
   inLanguageOrder,
+  isAssetPath,
   learnVocabulary,
   mergeCard,
   mergeSeries,
@@ -62,6 +63,11 @@ export interface CatalogIngestStats {
     removed: number;
   };
   cards: { fetched: number; skipped: number };
+  /**
+   * Checks for scans TCGdex has but doesn't link (see `resolveUnlinkedImages`).
+   * `failed`: checks that couldn't complete (retried next run).
+   */
+  images: { probed: number; found: number; failed: number };
   /** Regions whose listings couldn't be loaded, so their sets weren't touched. */
   skippedRegions: CatalogRegion[];
   requests: number;
@@ -72,6 +78,8 @@ export interface CatalogIngestStats {
 const PROGRESS_EVERY = 50;
 /** Consecutive failed sets after which the rest of a region is skipped. */
 const MAX_CONSECUTIVE_SET_FAILURES = 3;
+/** How long a "no scan at the expected path" answer is trusted. */
+const IMAGE_MISS_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
  * Imports the catalogue from TCGdex into `catalog.db`. Failures are
@@ -89,6 +97,7 @@ export async function runCatalogIngest(options: CatalogIngestOptions): Promise<C
     status: 'ok',
     sets: { seen: 0, written: 0, unchanged: 0, empty: 0, failed: 0, skipped: 0, removed: 0 },
     cards: { fetched: 0, skipped: 0 },
+    images: { probed: 0, found: 0, failed: 0 },
     skippedRegions: [],
     requests: 0,
     durationMs: 0,
@@ -99,6 +108,8 @@ export async function runCatalogIngest(options: CatalogIngestOptions): Promise<C
     stats.durationMs = Date.now() - startedAt;
   };
 
+  // Shared by both regions: they use the same asset host.
+  const imageChecks: ImageCheckState = { failedSetsInARow: 0, paused: false };
   log.info({ kind, languages: options.languages }, 'catalog.ingest_started');
   try {
     for (const region of CATALOG_REGIONS) {
@@ -106,7 +117,7 @@ export async function runCatalogIngest(options: CatalogIngestOptions): Promise<C
         options.languages.filter((language) => CATALOG_LANGUAGE_REGION[language] === region)
       );
       if (languages.length > 0) {
-        await ingestRegion({ ...options, region, languages, stats });
+        await ingestRegion({ ...options, region, languages, stats, imageChecks });
       }
     }
   } catch (error: unknown) {
@@ -125,7 +136,12 @@ export async function runCatalogIngest(options: CatalogIngestOptions): Promise<C
     throw error;
   }
 
-  if (stats.sets.failed > 0 || stats.sets.skipped > 0 || stats.skippedRegions.length > 0) {
+  if (
+    stats.sets.failed > 0 ||
+    stats.sets.skipped > 0 ||
+    stats.skippedRegions.length > 0 ||
+    stats.images.failed > 0
+  ) {
     stats.status = 'partial';
   }
   measure();
@@ -139,6 +155,13 @@ interface RegionContext extends CatalogIngestOptions {
   region: CatalogRegion;
   languages: CatalogLanguage[];
   stats: CatalogIngestStats;
+  imageChecks: ImageCheckState;
+}
+
+/** Image checks pause for the rest of a run once the asset host looks down. */
+interface ImageCheckState {
+  failedSetsInARow: number;
+  paused: boolean;
 }
 
 async function ingestRegion(context: RegionContext): Promise<void> {
@@ -348,7 +371,105 @@ async function ingestSet(
   if (cards.length === 0) {
     return 'empty';
   }
+  await resolveUnlinkedImages(context, set.serieId, cards);
   return store.writeSet(set, cards) ? 'written' : 'unchanged';
+}
+
+/**
+ * TCGdex's asset host has scans its card data doesn't link (measured: about
+ * 38% of the unlinked Japanese ones). For each card language without an
+ * image, check the path the scan would have: the card's linked path in
+ * another language with this language swapped in, else
+ * `{lang}/{serie}/{set}/{localId}`. A path counts only when both `low.webp`
+ * and `high.webp` exist. Answers are remembered (hits forever, misses for
+ * IMAGE_MISS_TTL_MS), so each path is checked about once.
+ *
+ * Remembered hits always apply. New checks are best effort: the first one
+ * that fails cancels the set's others (retried next run), and after
+ * MAX_CONSECUTIVE_SET_FAILURES sets in a row with failures, checking pauses
+ * for the rest of the run.
+ */
+async function resolveUnlinkedImages(
+  context: RegionContext,
+  serieId: string,
+  cards: CatalogCard[]
+): Promise<void> {
+  const { store, client, stats, imageChecks, log } = context;
+  const now = Date.now();
+  const toCheck: { path: string; apply: () => void }[] = [];
+
+  for (const card of cards) {
+    const linked = Object.values(card.text).find((text) => text.image)?.image;
+    for (const [language, text] of Object.entries(card.text)) {
+      if (text.image) {
+        continue;
+      }
+      const path = linked
+        ? `${language}/${linked.split('/').slice(1).join('/')}`
+        : `${language}/${serieId}/${card.setId}/${card.localId}`;
+      if (!isAssetPath(path)) {
+        continue; // Built from TCGdex IDs, which are only length-checked.
+      }
+      const known = store.getImageProbe(path);
+      if (known?.found) {
+        text.image = path;
+      } else if (!known || now - known.checkedAt.getTime() >= IMAGE_MISS_TTL_MS) {
+        toCheck.push({
+          path,
+          apply: () => {
+            text.image = path;
+          },
+        });
+      }
+    }
+  }
+  if (toCheck.length === 0 || imageChecks.paused) {
+    return;
+  }
+
+  const cancel = new AbortController();
+  const outcomes = await Promise.allSettled(
+    toCheck.map(async ({ path, apply }) => {
+      try {
+        const found =
+          (await client.assetExists(`${path}/low.webp`, cancel.signal)) &&
+          (await client.assetExists(`${path}/high.webp`, cancel.signal));
+        stats.images.probed += 1;
+        store.saveImageProbe(path, found);
+        if (found) {
+          stats.images.found += 1;
+          apply();
+        }
+      } catch (error: unknown) {
+        if (isContainedFailure(error)) {
+          cancel.abort(error);
+        }
+        throw error;
+      }
+    })
+  );
+
+  const failures = outcomes.filter((outcome) => outcome.status === 'rejected');
+  const fatal = failures.find((failure) => !isContainedFailure(failure.reason));
+  if (fatal) {
+    throw fatal.reason; // An abort or a database error.
+  }
+  if (failures.length === 0) {
+    imageChecks.failedSetsInARow = 0;
+    return;
+  }
+
+  stats.images.failed += failures.length;
+  imageChecks.failedSetsInARow += 1;
+  const firstError: unknown = failures[0]?.reason;
+  log.warn(
+    { err: firstError, setId: cards[0]?.setId, failed: failures.length },
+    'catalog.image_checks_failed'
+  );
+  if (imageChecks.failedSetsInARow >= MAX_CONSECUTIVE_SET_FAILURES) {
+    imageChecks.paused = true;
+    log.warn({}, 'catalog.image_checks_paused');
+  }
 }
 
 /**

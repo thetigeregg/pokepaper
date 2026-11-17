@@ -3,15 +3,23 @@ import { runCatalogIngest, type CatalogIngestOptions } from './ingest.js';
 import type { CatalogStore } from './store.js';
 import { TcgdexClient } from './tcgdex-client.js';
 import {
+  Bytes,
   fakeClient,
   fakeTcgdex,
   memoryCatalogStore,
   silentLogger,
   Status,
+  webp,
   type FakeTcgdex,
 } from './test-helpers.js';
 
 const LANGUAGES: CatalogLanguage[] = ['en', 'fr', 'ja', 'zh-tw'];
+
+/** Puts both sizes of a scan on the fake asset host. */
+function hostScan(fake: FakeTcgdex, path: string): void {
+  fake.routes.set(`asset:${path}/low.webp`, new Bytes(webp()));
+  fake.routes.set(`asset:${path}/high.webp`, new Bytes(webp()));
+}
 
 function ingest(
   store: CatalogStore,
@@ -365,6 +373,155 @@ describe('runCatalogIngest', () => {
     expect(stats.skippedRegions).toEqual(['intl']);
     expect(store.listSetIds('intl').sort()).toEqual(['2019sm-fr', 'sv01']);
     expect(store.version()).toBe(version);
+  });
+
+  it('finds scans TCGdex has but does not link, and remembers the answer', async () => {
+    const store = memoryCatalogStore();
+    const fake = fakeTcgdex();
+    // sv01-172 has no French printing, so nothing is checked for it even
+    // though the asset exists. 2019sm-fr-1 links no scan in any language, so
+    // its path is built from serie/set/number.
+    hostScan(fake, 'fr/sv/sv01/172');
+    hostScan(fake, 'fr/misc/2019sm-fr/1');
+
+    const stats = await ingest(store, fake);
+
+    expect(card(store, 'intl', 'sv01', 'sv01-172')?.text.fr).toBeUndefined();
+    expect(card(store, 'intl', '2019sm-fr', '2019sm-fr-1')?.text.fr?.image).toBe(
+      'fr/misc/2019sm-fr/1'
+    );
+    expect(stats.images).toEqual({ probed: 1, found: 1, failed: 0 });
+    expect(store.getImageProbe('fr/misc/2019sm-fr/1')?.found).toBe(true);
+
+    fake.calls.length = 0;
+    await ingest(store, fake, { kind: 'full' });
+    expect(fake.calls.filter((path) => path.startsWith('asset:'))).toEqual([]);
+    expect(card(store, 'intl', '2019sm-fr', '2019sm-fr-1')?.text.fr?.image).toBe(
+      'fr/misc/2019sm-fr/1'
+    );
+  });
+
+  it('swaps the language into another language’s linked path when checking', async () => {
+    const store = memoryCatalogStore();
+    const fake = fakeTcgdex();
+    // A French printing exists for sv01-172, without a linked scan.
+    fake.routes.set('/fr/cards/sv01-172', {
+      id: 'sv01-172',
+      localId: '172',
+      name: 'Recherche d’Énergie',
+      category: 'Dresseur',
+    });
+    hostScan(fake, 'fr/sv/sv01/172');
+
+    await ingest(store, fake);
+
+    expect(card(store, 'intl', 'sv01', 'sv01-172')?.text.fr?.image).toBe('fr/sv/sv01/172');
+  });
+
+  it('re-checks a missing scan only after the miss expires, and retries failed checks', async () => {
+    const store = memoryCatalogStore();
+    const fake = fakeTcgdex();
+    fake.routes.set('asset:fr/misc/2019sm-fr/1/low.webp', new Status(503));
+
+    const failed = await ingest(store, fake);
+    expect(failed.images).toMatchObject({ probed: 0, failed: 1 });
+    expect(failed.status).toBe('partial');
+    expect(store.getImageProbe('fr/misc/2019sm-fr/1')).toBeUndefined();
+
+    fake.routes.delete('asset:fr/misc/2019sm-fr/1/low.webp');
+    await ingest(store, fake);
+    expect(store.getImageProbe('fr/misc/2019sm-fr/1')?.found).toBe(false);
+
+    fake.calls.length = 0;
+    await ingest(store, fake);
+    expect(fake.calls.filter((path) => path.startsWith('asset:'))).toEqual([]);
+
+    store.saveImageProbe(
+      'fr/misc/2019sm-fr/1',
+      false,
+      new Date(Date.now() - 31 * 24 * 3600 * 1000)
+    );
+    hostScan(fake, 'fr/misc/2019sm-fr/1');
+    await ingest(store, fake);
+    expect(card(store, 'intl', '2019sm-fr', '2019sm-fr-1')?.text.fr?.image).toBe(
+      'fr/misc/2019sm-fr/1'
+    );
+  });
+
+  it('links an unlinked scan only when both sizes exist', async () => {
+    const store = memoryCatalogStore();
+    const fake = fakeTcgdex();
+    fake.routes.set('asset:fr/misc/2019sm-fr/1/low.webp', new Bytes(webp()));
+
+    await ingest(store, fake);
+
+    expect(card(store, 'intl', '2019sm-fr', '2019sm-fr-1')?.text.fr?.image).toBeNull();
+    expect(store.getImageProbe('fr/misc/2019sm-fr/1')?.found).toBe(false);
+  });
+
+  it('never checks paths built from unsafe TCGdex IDs', async () => {
+    const store = memoryCatalogStore();
+    const fake = fakeTcgdex();
+    const detail = fake.routes.get('/fr/sets/2019sm-fr') as { cards: { localId: string }[] };
+    const promo = fake.routes.get('/fr/cards/2019sm-fr-1') as { localId: string };
+    for (const target of [...detail.cards, promo]) {
+      target.localId = '..';
+    }
+
+    await ingest(store, fake);
+
+    expect(fake.calls.filter((path) => path.startsWith('asset:'))).toEqual([]);
+  });
+
+  it('cancels a set’s remaining image checks on failure, and pauses checking after 3 such sets', async () => {
+    const store = memoryCatalogStore();
+    const ids = ['s1', 's2', 's3', 's4'];
+    const routes: Record<string, unknown> = {
+      '/en/series': [{ id: 'x', name: 'X' }],
+      '/en/sets': ids.map((id) => ({ id })),
+    };
+    for (const id of ids) {
+      routes[`/en/sets/${id}`] = {
+        id,
+        name: id,
+        serie: { id: 'x' },
+        cards: [1, 2, 3].map((n) => ({ id: `${id}-${String(n)}`, localId: String(n) })),
+      };
+      for (const n of [1, 2, 3]) {
+        routes[`/en/cards/${id}-${String(n)}`] = {
+          id: `${id}-${String(n)}`,
+          localId: String(n),
+          name: id,
+          category: 'Pokemon',
+        };
+        routes[`asset:en/x/${id}/${String(n)}/low.webp`] = new Status(503);
+      }
+    }
+    const fake = fakeTcgdex(routes);
+    const client = new TcgdexClient({
+      fetch: fake.fetch,
+      sleep: () => Promise.resolve(),
+      concurrency: 1,
+    });
+    const log = silentLogger();
+
+    const stats = await ingest(store, fake, { client, languages: ['en'], log });
+
+    const checked = (id: string) =>
+      fake.calls.filter((path) => path.startsWith(`asset:en/x/${id}/`));
+    // One check's four attempts per set; its siblings are cancelled (at most
+    // one slips into the freed slot first).
+    expect(checked('s1').length).toBeLessThanOrEqual(5);
+    expect(checked('s4')).toEqual([]);
+    expect(stats.images.failed).toBe(9);
+    expect(stats.sets.written).toBe(4);
+    expect(stats.status).toBe('partial');
+    expect(log.warnings).toEqual([
+      'catalog.image_checks_failed',
+      'catalog.image_checks_failed',
+      'catalog.image_checks_failed',
+      'catalog.image_checks_paused',
+    ]);
   });
 
   it('records each run', async () => {

@@ -1,7 +1,7 @@
 import { openCatalogDatabase } from './db.js';
 import type { CatalogLogger } from './ingest.js';
 import { CatalogStore } from './store.js';
-import { TcgdexClient, TCGDEX_API_BASE } from './tcgdex-client.js';
+import { TcgdexClient, TCGDEX_API_BASE, TCGDEX_ASSET_BASE } from './tcgdex-client.js';
 
 const ASSETS = 'https://assets.tcgdex.net';
 
@@ -23,17 +23,43 @@ export class Status {
   ) {}
 }
 
-/** Fake TCGdex API keyed by path (`/en/sets/sv01`); unknown paths answer 404. */
+/** Binary answer for a fake route (images). */
+export class Bytes {
+  constructor(
+    readonly data: Uint8Array<ArrayBuffer>,
+    readonly contentType = 'image/webp'
+  ) {}
+}
+
+/** A minimal valid WebP file (RIFF header + WEBP form type), padded to `size` bytes. */
+export function webp(size = 64): Uint8Array<ArrayBuffer> {
+  const bytes = new Uint8Array(Math.max(size, 12));
+  bytes.set(new TextEncoder().encode('RIFF'), 0);
+  bytes.set(new TextEncoder().encode('WEBP'), 8);
+  return bytes;
+}
+
+/**
+ * Fake TCGdex keyed by path: API paths as `/en/sets/sv01`, asset-host paths
+ * as `asset:fr/sv/sv01/001/low.webp`. Unknown paths answer 404.
+ */
 export function fakeTcgdex(initial: Record<string, FakeRoute> = tcgdexFixture()): FakeTcgdex {
   const routes = new Map(Object.entries(initial));
   const calls: string[] = [];
   const fetchFn = (input: RequestInfo | URL): Promise<Response> => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-    const path = decodeURIComponent(url.slice(TCGDEX_API_BASE.length));
+    const path = url.startsWith(TCGDEX_ASSET_BASE)
+      ? `asset:${url.slice(TCGDEX_ASSET_BASE.length)}`
+      : decodeURIComponent(url.slice(TCGDEX_API_BASE.length));
     calls.push(path);
     const route = routes.has(path) ? routes.get(path) : new Status(404);
     if (route instanceof Status) {
       return Promise.resolve(new Response(null, { status: route.status, headers: route.headers }));
+    }
+    if (route instanceof Bytes) {
+      return Promise.resolve(
+        new Response(route.data, { headers: { 'content-type': route.contentType } })
+      );
     }
     return Promise.resolve(
       new Response(JSON.stringify(route), { headers: { 'content-type': 'application/json' } })

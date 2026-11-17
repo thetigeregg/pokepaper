@@ -62,6 +62,8 @@ Fastify 5 + better-sqlite3, run with `tsx` (no build step). It stores data in `s
 | `POST /api/sync/push` | Apply queued client operations (idempotent, last-writer-wins)                                                                                   |
 | `POST /api/sync/pull` | Page through the compacted change log from a cursor                                                                                             |
 | `/api/auth/*`         | Passkey setup, sign-in, sign-out, passkey and device management ([`docs/auth.md`](docs/auth.md))                                                |
+| `/api/catalog/*`      | Card catalogue manifest and per-set packs ([`docs/catalog.md`](docs/catalog.md))                                                                |
+| `/images/catalog/*`   | Card scans and set logos, cached from TCGdex on first request                                                                                   |
 
 Every route except health, auth status, and the passkey ceremonies requires a session.
 

@@ -46,6 +46,22 @@ describe('TcgdexClient', () => {
     expect(fake.calls).toEqual(['/en/sets', '/zh-tw/sets/SV2a', '/en/cards/sv03.5-001']);
   });
 
+  it('checks whether an asset exists with HEAD requests', async () => {
+    const requests: { url: string; method: string | undefined }[] = [];
+    const fetchFn = (url: string, init?: RequestInit) => {
+      requests.push({ url, method: init?.method });
+      return Promise.resolve(new Response(null, { status: url.includes('/001/') ? 200 : 404 }));
+    };
+    const tcgdex = new TcgdexClient({ fetch: fetchFn as typeof fetch });
+
+    await expect(tcgdex.assetExists('ja/SV/SV2a/001/low.webp')).resolves.toBe(true);
+    await expect(tcgdex.assetExists('ja/SV/SV2a/999/low.webp')).resolves.toBe(false);
+    expect(requests[0]).toEqual({
+      url: 'https://assets.tcgdex.net/ja/SV/SV2a/001/low.webp',
+      method: 'HEAD',
+    });
+  });
+
   it('returns null for 404', async () => {
     const { client: tcgdex } = client({});
 
@@ -79,6 +95,30 @@ describe('TcgdexClient', () => {
 
     expect(sleeps).toEqual([500, 3000]);
     expect(tcgdex.requests).toBe(3);
+  });
+
+  it('retries when the connection drops mid-body', async () => {
+    let attempt = 0;
+    const fetchFn = () => {
+      attempt += 1;
+      if (attempt === 1) {
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('[{"id":'));
+            controller.error(new TypeError('terminated'));
+          },
+        });
+        return Promise.resolve(new Response(body));
+      }
+      return Promise.resolve(Response.json([{ id: 'sv' }]));
+    };
+    const tcgdex = new TcgdexClient({
+      fetch: fetchFn,
+      sleep: () => Promise.resolve(),
+    });
+
+    await expect(tcgdex.get('/en/series')).resolves.toEqual([{ id: 'sv' }]);
+    expect(attempt).toBe(2);
   });
 
   it('retries network errors, then gives up as unavailable', async () => {

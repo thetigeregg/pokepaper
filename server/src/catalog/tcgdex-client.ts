@@ -2,6 +2,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import type { CatalogLanguage } from '@pokepaper/shared';
 
 export const TCGDEX_API_BASE = 'https://api.tcgdex.net/v2';
+export const TCGDEX_ASSET_BASE = 'https://assets.tcgdex.net/';
 export const TCGDEX_USER_AGENT = 'PokePaper (+https://github.com/thetigeregg/pokepaper)';
 
 /** Responses larger than this are refused (the biggest set detail is ~100 KB). */
@@ -10,6 +11,8 @@ const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
 export interface TcgdexClientOptions {
   fetch?: typeof fetch;
   baseUrl?: string;
+  /** Asset host for `assetExists` (tests point it elsewhere). */
+  assetBaseUrl?: string;
   /** Requests in flight at once. Kept low: TCGdex is a free community API. */
   concurrency?: number;
   /** Attempts per request, including the first. */
@@ -48,6 +51,7 @@ function anySignal(...signals: (AbortSignal | undefined)[]): AbortSignal | undef
 export class TcgdexClient {
   private readonly fetchFn: typeof fetch;
   private readonly baseUrl: string;
+  private readonly assetBaseUrl: string;
   private readonly concurrency: number;
   private readonly maxAttempts: number;
   private readonly timeoutMs: number;
@@ -61,6 +65,7 @@ export class TcgdexClient {
   constructor(options: TcgdexClientOptions = {}) {
     this.fetchFn = options.fetch ?? fetch;
     this.baseUrl = options.baseUrl ?? TCGDEX_API_BASE;
+    this.assetBaseUrl = options.assetBaseUrl ?? TCGDEX_ASSET_BASE;
     this.concurrency = options.concurrency ?? 4;
     this.maxAttempts = options.maxAttempts ?? 4;
     this.timeoutMs = options.timeoutMs ?? 20_000;
@@ -93,13 +98,50 @@ export class TcgdexClient {
     const combined = anySignal(this.signal, signal);
     await this.acquire();
     try {
-      return await this.getWithRetry(path, combined);
+      return await this.request(`${this.baseUrl}${path}`, 'GET', path, combined, (response) =>
+        readJson(response, path)
+      );
     } finally {
       this.release();
     }
   }
 
-  private async getWithRetry(path: string, signal: AbortSignal | undefined): Promise<unknown> {
+  /**
+   * Whether TCGdex's asset host has `path` (e.g. `ja/SV/SV2a/001/low.webp`),
+   * checked with a HEAD request.
+   */
+  async assetExists(path: string, signal?: AbortSignal): Promise<boolean> {
+    const combined = anySignal(this.signal, signal);
+    await this.acquire();
+    try {
+      const found = await this.request(
+        `${this.assetBaseUrl}${path}`,
+        'HEAD',
+        path,
+        combined,
+        async (response) => {
+          await response.body?.cancel();
+          return true;
+        }
+      );
+      return found ?? false;
+    } finally {
+      this.release();
+    }
+  }
+
+  /**
+   * Sends one request with retries and reads an OK response with `read`,
+   * inside the retry loop: a connection that drops mid-body is retried like
+   * any other network error. Null for 404.
+   */
+  private async request<T>(
+    url: string,
+    method: 'GET' | 'HEAD',
+    path: string,
+    signal: AbortSignal | undefined,
+    read: (response: Response) => Promise<T>
+  ): Promise<T | null> {
     let lastError: unknown;
 
     for (let attempt = 1; attempt <= this.maxAttempts; attempt++) {
@@ -108,7 +150,8 @@ export class TcgdexClient {
 
       try {
         this.requests += 1;
-        const response = await this.fetchFn(`${this.baseUrl}${path}`, {
+        const response = await this.fetchFn(url, {
+          method,
           headers: { accept: 'application/json', 'user-agent': TCGDEX_USER_AGENT },
           signal: anySignal(signal, AbortSignal.timeout(this.timeoutMs)),
         });
@@ -118,7 +161,7 @@ export class TcgdexClient {
           return null;
         }
         if (response.ok) {
-          return await readJson(response, path);
+          return await read(response);
         }
 
         await response.body?.cancel();
