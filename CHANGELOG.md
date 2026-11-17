@@ -37,3 +37,7 @@
 
 - e81009a feat(catalog): import the TCGdex card catalogue on the server (#17)
 - 5585e34 chore(ci): Bump actions/checkout from 4 to 7 (#9)
+
+## v0.4.0 - 2026-11-17
+
+- 65f2d18 feat(catalog): serve catalogue packs and cached card images (#18)
