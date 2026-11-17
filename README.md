@@ -7,7 +7,7 @@ PokePaper is a one-user Ionic + Angular app for the Pokémon Trading Card Game:
 - Build decks
 - Read cards in other languages
 
-It runs as a web app and as a native iOS app (Capacitor). It works offline: data lives on the device and syncs when online. It's served on the public internet behind passkey-only authentication.
+It runs as a web app and as a native iOS app (Capacitor). It works offline: data lives on the device and syncs when online. It's served on the public internet behind passkey-only authentication ([`docs/auth.md`](docs/auth.md)).
 
 > **Status:** early scaffolding. This repo is being built in phases: tooling → app shell → server → passkey auth → Docker/deploy → CI/CD → iOS. Sections marked _(planned)_ describe pieces that haven't landed yet.
 
@@ -17,10 +17,10 @@ It runs as a web app and as a native iOS app (Capacitor). It works offline: data
 - `shared/`: domain and sync wire types shared by the frontend and server (`@pokepaper/shared`, npm workspace)
 - `scripts/`: Node tooling (devx worktree adapter; iOS build/version/environment scripts _(planned)_), each with `*.test.mjs` tests
 - `public/`: static web assets (favicon, web app manifest)
-- `server/`: Fastify API with SQLite storage: sync and health today; auth, card catalog, and image cache _(planned)_ (npm workspace)
+- `server/`: Fastify API with SQLite storage: passkey auth, sync, and health; card catalog and image cache _(planned)_ (npm workspace)
 - `edge/`: Caddy container serving the web app and proxying `/api` to `server` _(planned)_
 - `ios/`: Capacitor iOS project with App DEV / App PROD targets _(planned)_
-- `docs/`: sync rules ([`docs/sync.md`](docs/sync.md)); deployment, auth, and iOS docs _(planned)_
+- `docs/`: [`auth.md`](docs/auth.md) (passkeys, sessions, setup, recovery), [`sync.md`](docs/sync.md) (sync rules); deployment and iOS docs _(planned)_
 - `.github/`: PR/issue templates, Dependabot, and (planned) CI, release, TestFlight, and security workflows
 
 ## Prerequisites
@@ -42,13 +42,13 @@ npm ci
 npm start
 ```
 
-3. Run the API server (separate terminal):
+3. Run the API server (separate terminal). The setup token lets you create the first passkey:
 
 ```bash
-npm run start:server
+SETUP_TOKEN=dev-setup-token-0123456789 npm run start:server
 ```
 
-The app opens at `http://localhost:4200`. `ng serve` proxies `/api` and `/images` to `http://127.0.0.1:3000` (`proxy.conf.json`), so the app and API share one origin in dev, matching production behind `edge`. Without the server running, Settings shows "Sync failed: will retry" and everything else still works from local storage.
+The app opens at `http://localhost:4200`. `ng serve` proxies `/api` and `/images` to `http://127.0.0.1:3000` (`proxy.conf.json`), so the app and API share one origin in dev, matching production behind `edge`. On first launch the app shows the sign-in screen: enter the setup token and create a passkey (Chrome DevTools → WebAuthn can emulate an authenticator). See [`docs/auth.md`](docs/auth.md) → Local development. Once signed in, everything works from local storage even with the server stopped.
 
 > Port 3000 is a common default. If another local project already listens on `127.0.0.1:3000`, the PokePaper server can still bind `0.0.0.0:3000` while the proxy reaches the other project. Free the port, or run the server with `PORT=3001 npm run start:server` and point `proxy.conf.json` at it.
 
@@ -56,11 +56,14 @@ The app opens at `http://localhost:4200`. `ng serve` proxies `/api` and `/images
 
 Fastify 5 + better-sqlite3, run with `tsx` (no build step). It stores data in `server/data/pokepaper.db` (WAL mode) and applies the checksummed migrations in `server/src/migrations/` on startup.
 
-| Route                 | Purpose                                                       |
-| --------------------- | ------------------------------------------------------------- |
-| `GET /api/health`     | 200 `{ status: 'ok' }` when the database answers, else 503    |
-| `POST /api/sync/push` | Apply queued client operations (idempotent, last-writer-wins) |
-| `POST /api/sync/pull` | Page through the compacted change log from a cursor           |
+| Route                 | Purpose                                                                                          |
+| --------------------- | ------------------------------------------------------------------------------------------------ |
+| `GET /api/health`     | 200 `{ status: 'ok' }` when the database answers, else 503                                       |
+| `POST /api/sync/push` | Apply queued client operations (idempotent, last-writer-wins)                                    |
+| `POST /api/sync/pull` | Page through the compacted change log from a cursor                                              |
+| `/api/auth/*`         | Passkey setup, sign-in, sign-out, passkey and device management ([`docs/auth.md`](docs/auth.md)) |
+
+Every route except health, auth status, and the passkey ceremonies requires a session.
 
 Configuration (environment variables, all optional):
 
@@ -75,6 +78,8 @@ Configuration (environment variables, all optional):
 | `CLIENT_IP_HEADER`      | _(unset)_          | Header holding the real client IP for rate limiting, e.g. `cf-connecting-ip` behind Cloudflare (Cloudflare overwrites it, so clients can't spoof it). Falls back to the connection IP when unset or absent |
 | `RATE_LIMIT_PER_MINUTE` | `600`              | Requests per client IP per minute, across all routes (429 beyond)                                                                                                                                          |
 | `LOG_LEVEL`             | `info`             | pino log level                                                                                                                                                                                             |
+
+Auth settings (`PUBLIC_ORIGIN`, `RP_ID`, `SESSION_TTL_DAYS`, `SETUP_TOKEN_FILE`, …) are listed in [`docs/auth.md`](docs/auth.md) → Configuration. Set `NODE_ENV=production` in production: it requires an https `PUBLIC_ORIGIN` and refuses `AUTH_DEV_BYPASS`.
 
 Invalid values fail startup with a clear error. Backups use SQLite's online backup API, so the server keeps serving while a snapshot is written; each snapshot gets a fresh sync epoch, so restoring one makes clients re-sync from scratch (see [`docs/sync.md`](docs/sync.md)).
 

@@ -8,6 +8,7 @@ const config = loadConfig();
 const db = openDatabase(join(config.dataDir, DB_FILENAME));
 const app = buildApp({
   db,
+  auth: config.auth,
   trustProxyHops: config.trustProxyHops,
   clientIpHeader: config.clientIpHeader,
   logLevel: config.logLevel,
@@ -21,6 +22,12 @@ const stopBackups = startBackupSchedule({
   intervalHours: config.backupIntervalHours,
   log: app.log,
 });
+
+if (config.auth.devBypass) {
+  app.log.warn(
+    'AUTH_DEV_BYPASS is on: every request is treated as signed in (local development only)'
+  );
+}
 
 try {
   await app.listen({ host: config.host, port: config.port });

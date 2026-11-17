@@ -1,5 +1,5 @@
 import { buildApp } from './app.js';
-import { memoryDb } from './test-helpers.js';
+import { memoryDb, testAuthConfig } from './test-helpers.js';
 
 const PROXY = '172.18.0.2';
 
@@ -9,7 +9,12 @@ function viaProxy(headers: Record<string, string>) {
 
 describe('buildApp rate limiting', () => {
   it('limits requests per client IP across routes', async () => {
-    const app = buildApp({ db: memoryDb(), logLevel: false, rateLimitPerMinute: 2 });
+    const app = buildApp({
+      db: memoryDb(),
+      auth: testAuthConfig(),
+      logLevel: false,
+      rateLimitPerMinute: 2,
+    });
 
     const statuses: number[] = [];
     for (let index = 0; index < 3; index++) {
@@ -22,7 +27,12 @@ describe('buildApp rate limiting', () => {
   });
 
   it('counts each client IP separately', async () => {
-    const app = buildApp({ db: memoryDb(), logLevel: false, rateLimitPerMinute: 1 });
+    const app = buildApp({
+      db: memoryDb(),
+      auth: testAuthConfig(),
+      logLevel: false,
+      rateLimitPerMinute: 1,
+    });
 
     const first = await app.inject({
       method: 'GET',
@@ -41,6 +51,7 @@ describe('buildApp rate limiting', () => {
   it('keys on the configured client-IP header, which a client cannot rotate', async () => {
     const app = buildApp({
       db: memoryDb(),
+      auth: testAuthConfig(),
       logLevel: false,
       clientIpHeader: 'cf-connecting-ip',
       rateLimitPerMinute: 1,
@@ -59,7 +70,12 @@ describe('buildApp rate limiting', () => {
   });
 
   it('ignores X-Forwarded-For entirely with zero trusted hops', async () => {
-    const app = buildApp({ db: memoryDb(), logLevel: false, rateLimitPerMinute: 1 });
+    const app = buildApp({
+      db: memoryDb(),
+      auth: testAuthConfig(),
+      logLevel: false,
+      rateLimitPerMinute: 1,
+    });
 
     await app.inject(viaProxy({ 'x-forwarded-for': '1.1.1.1' }));
     const spoofed = await app.inject(viaProxy({ 'x-forwarded-for': '2.2.2.2' }));
@@ -70,6 +86,7 @@ describe('buildApp rate limiting', () => {
   it('with N trusted hops, only the Nth-from-nearest forwarded address counts', async () => {
     const app = buildApp({
       db: memoryDb(),
+      auth: testAuthConfig(),
       logLevel: false,
       trustProxyHops: 1,
       rateLimitPerMinute: 1,
@@ -87,6 +104,7 @@ describe('buildApp rate limiting', () => {
   it('falls back to the socket address when the client-IP header is missing or oversized', async () => {
     const app = buildApp({
       db: memoryDb(),
+      auth: testAuthConfig(),
       logLevel: false,
       clientIpHeader: 'cf-connecting-ip',
       rateLimitPerMinute: 1,
