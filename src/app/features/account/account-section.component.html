@@ -1,0 +1,75 @@
+<ion-list inset="true">
+  <ion-list-header>
+    <ion-label>Passkeys</ion-label>
+    <ion-button (click)="addPasskey()" [disabled]="busy() || !loaded()" data-testid="add-passkey">
+      Add
+    </ion-button>
+  </ion-list-header>
+  @for (passkey of passkeys(); track passkey.id) {
+    <ion-item>
+      <ion-label>
+        <h3>
+          {{ passkey.label }}
+          @if (passkey.deviceType === 'multiDevice') {
+            <ion-badge color="medium">Synced</ion-badge>
+          }
+        </h3>
+        <p>
+          Added {{ passkey.createdAt | date: 'mediumDate' }}
+          @if (passkey.lastUsedAt) {
+            · last used {{ passkey.lastUsedAt | date: 'mediumDate' }}
+          }
+        </p>
+      </ion-label>
+      <ion-button
+        slot="end"
+        fill="clear"
+        color="danger"
+        (click)="removePasskey(passkey)"
+        [disabled]="busy() || passkeys().length <= 1"
+      >
+        Remove
+      </ion-button>
+    </ion-item>
+  }
+</ion-list>
+
+<ion-list inset="true">
+  <ion-list-header>
+    <ion-label>Signed-in devices</ion-label>
+  </ion-list-header>
+  @for (session of sessions(); track session.id) {
+    <ion-item>
+      <ion-label>
+        <h3>
+          {{ session.client === 'ios' ? 'iOS app' : 'Web browser' }}
+          @if (session.current) {
+            <ion-badge color="primary">This device</ion-badge>
+          }
+        </h3>
+        <p>Last active {{ session.lastSeenAt | date: 'medium' }}</p>
+      </ion-label>
+      <ion-button
+        slot="end"
+        fill="clear"
+        color="danger"
+        (click)="revokeSession(session)"
+        [disabled]="busy()"
+      >
+        Sign out
+      </ion-button>
+    </ion-item>
+  }
+  <ion-item button="true" detail="false" (click)="signOut()" data-testid="sign-out">
+    <ion-label color="danger">Sign out of this device</ion-label>
+  </ion-item>
+</ion-list>
+
+@if (error()) {
+  <ion-list inset="true">
+    <ion-item lines="none">
+      <ion-note color="danger" role="alert">{{ error() }}</ion-note>
+      <ion-button slot="end" fill="clear" (click)="load()">Retry</ion-button>
+    </ion-item>
+  </ion-list>
+}

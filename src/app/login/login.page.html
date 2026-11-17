@@ -1,0 +1,89 @@
+<ion-header [translucent]="true">
+  <ion-toolbar>
+    <ion-title>PokePaper</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content [fullscreen]="true" class="ion-padding">
+  @switch (mode()) {
+    @case ('loading') {
+      <div class="ion-text-center ion-padding">
+        <ion-spinner name="crescent"></ion-spinner>
+      </div>
+    }
+
+    @case ('sign-in') {
+      <h1>Welcome back</h1>
+      <p>Sign in with your passkey (Face ID, Touch ID, or your device PIN).</p>
+      <ion-button expand="block" (click)="signIn()" [disabled]="busy()" data-testid="sign-in">
+        @if (busy()) {
+          <ion-spinner name="crescent"></ion-spinner>
+        } @else {
+          Sign in with passkey
+        }
+      </ion-button>
+    }
+
+    @case ('setup') {
+      <h1>Set up PokePaper</h1>
+      <p>
+        Create the passkey that protects your account. Enter the one-time setup token from the
+        server (
+        <code>setup_token</code>
+        in the server's secrets).
+      </p>
+      <ion-list inset="true">
+        <ion-item>
+          <ion-input
+            label="Setup token"
+            labelPlacement="stacked"
+            type="password"
+            autocomplete="off"
+            [(ngModel)]="setupToken"
+            data-testid="setup-token"
+          ></ion-input>
+        </ion-item>
+        <ion-item>
+          <ion-input
+            label="Passkey name"
+            labelPlacement="stacked"
+            [(ngModel)]="passkeyLabel"
+            maxlength="60"
+          ></ion-input>
+        </ion-item>
+      </ion-list>
+      <ion-button expand="block" (click)="setUp()" [disabled]="busy()" data-testid="set-up">
+        @if (busy()) {
+          <ion-spinner name="crescent"></ion-spinner>
+        } @else {
+          Create passkey
+        }
+      </ion-button>
+    }
+
+    @case ('setup-disabled') {
+      <h1>Setup isn't enabled</h1>
+      <p>
+        No passkey exists yet, and the server has no setup token configured. Add one (see
+        <code>docs/auth.md</code>
+        ), then try again.
+      </p>
+      <ion-button expand="block" fill="outline" (click)="refresh()">Try again</ion-button>
+    }
+
+    @case ('unreachable') {
+      <h1>Can't reach PokePaper</h1>
+      <p>{{ unreachableMessage() }}</p>
+      <p>
+        <ion-note>Signing in needs a connection. Once signed in, PokePaper works offline.</ion-note>
+      </p>
+      <ion-button expand="block" fill="outline" (click)="refresh()">Try again</ion-button>
+    }
+  }
+
+  @if (error()) {
+    <ion-text color="danger">
+      <p role="alert" data-testid="auth-error">{{ error() }}</p>
+    </ion-text>
+  }
+</ion-content>

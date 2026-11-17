@@ -18,7 +18,8 @@ Before suggesting any commit, classify the diff, then scope validation according
 - **Writes are local + outbox in one transaction** (`LocalUserDataRepository`), then `SyncService` pushes the outbox and pulls the server change log. Wire types live in `shared/src/sync.ts`.
 - **Adding a syncable entity:** extend `SyncEntityType` in `shared/`, add a storage scope (Dexie version + SQLite migration + contract tests), add repository write methods, and register a `SyncEntityApplier` via `SYNC_ENTITY_APPLIERS` in `main.ts`.
 - **Schema changes are append-only:** add a new Dexie `version(n)` and a new `SQLITE_UPGRADE_STATEMENTS` entry; never edit shipped ones. Server migrations (`server/src/migrations/NNNN_name.sql`) are checksummed: editing an applied one fails startup, so fix forward with a new file.
-- **Server:** `buildApp({ db })` (`server/src/app.ts`) takes its database as an argument; tests use `openDatabase(':memory:')` and `app.inject()`. Adding a syncable entity also needs validation rules in `server/src/sync/validation.ts` (type-checked to cover every `SyncEntityType`).
+- **Auth:** every server route requires a session unless it sets `config: { auth: 'public' }` (`server/src/auth/plugin.ts`). The client gates routes on a local signed-in marker (`signedInGuard`) so the app opens offline; never make navigation depend on reaching the server. See `docs/auth.md`.
+- **Server:** `buildApp({ db, auth })` (`server/src/app.ts`) takes its database as an argument; tests use `openDatabase(':memory:')` and `app.inject()`. Adding a syncable entity also needs validation rules in `server/src/sync/validation.ts` (type-checked to cover every `SyncEntityType`).
 
 # Code Quality
 

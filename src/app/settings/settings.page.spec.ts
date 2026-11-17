@@ -30,7 +30,7 @@ describe('SettingsPage', () => {
         },
       ],
     });
-    TestBed.overrideComponent(SettingsPage, { set: { template: '<div></div>' } });
+    TestBed.overrideComponent(SettingsPage, { set: { template: '<div></div>', imports: [] } });
     await TestBed.compileComponents();
 
     const fixture = TestBed.createComponent(SettingsPage);

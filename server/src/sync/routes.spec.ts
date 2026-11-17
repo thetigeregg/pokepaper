@@ -3,12 +3,13 @@ import { MAX_PUSH_OPERATIONS } from './routes.js';
 
 describe('sync routes', () => {
   it('push applies operations and pull returns them', async () => {
-    const { app } = testApp();
+    const { app, headers } = testApp();
     const op = settingsOp({ payload: { cardLanguage: 'ko' } });
 
     const push = await app.inject({
       method: 'POST',
       url: '/api/sync/push',
+      headers,
       payload: { operations: [op] },
     });
     expect(push.statusCode).toBe(200);
@@ -17,6 +18,7 @@ describe('sync routes', () => {
     const pull = await app.inject({
       method: 'POST',
       url: '/api/sync/pull',
+      headers,
       payload: { cursor: '0' },
     });
     expect(pull.statusCode).toBe(200);
@@ -28,16 +30,16 @@ describe('sync routes', () => {
   });
 
   it('pull without a cursor starts from the beginning', async () => {
-    const { app } = testApp();
+    const { app, headers } = testApp();
 
-    const pull = await app.inject({ method: 'POST', url: '/api/sync/pull', payload: {} });
+    const pull = await app.inject({ method: 'POST', url: '/api/sync/pull', headers, payload: {} });
 
     expect(pull.statusCode).toBe(200);
     expect(pull.json()).toMatchObject({ changes: [], hasMore: false });
   });
 
   it('fails only the malformed operation, not the whole push', async () => {
-    const { app } = testApp();
+    const { app, headers } = testApp();
     const good = settingsOp();
     const malformed = {
       opId: 'malformed',
@@ -48,6 +50,7 @@ describe('sync routes', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/api/sync/push',
+      headers,
       payload: { operations: [good, malformed] },
     });
 
@@ -69,21 +72,27 @@ describe('sync routes', () => {
   ])(
     'push rejects %s with 400 (nothing can be answered per operation)',
     async (_label, payload) => {
-      const { app } = testApp();
+      const { app, headers } = testApp();
 
-      const response = await app.inject({ method: 'POST', url: '/api/sync/push', payload });
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/sync/push',
+        headers,
+        payload,
+      });
 
       expect(response.statusCode).toBe(400);
     }
   );
 
   it('pull rejects a missing body or non-string cursor with 400', async () => {
-    const { app } = testApp();
+    const { app, headers } = testApp();
 
-    const missing = await app.inject({ method: 'POST', url: '/api/sync/pull' });
+    const missing = await app.inject({ method: 'POST', url: '/api/sync/pull', headers });
     const oversized = await app.inject({
       method: 'POST',
       url: '/api/sync/pull',
+      headers,
       payload: { cursor: 'x'.repeat(65) },
     });
 
@@ -91,11 +100,12 @@ describe('sync routes', () => {
   });
 
   it('pull rewinds an unrecognized cursor instead of failing', async () => {
-    const { app } = testApp();
+    const { app, headers } = testApp();
 
     const response = await app.inject({
       method: 'POST',
       url: '/api/sync/pull',
+      headers,
       payload: { cursor: 'someone-elses:7' },
     });
 

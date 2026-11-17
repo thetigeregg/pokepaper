@@ -12,6 +12,7 @@ import { IonicRouteStrategy, provideIonicAngular } from '@ionic/angular';
 
 import { AppComponent } from './app/app.component';
 import { routes } from './app/app.routes';
+import { AuthService } from './app/core/auth/auth.service';
 import { SettingsSyncApplier } from './app/core/data/settings-sync-applier';
 import { STORAGE_ENGINE } from './app/core/data/storage-engine';
 import { StorageEngineFactory } from './app/core/data/storage-engine.factory';
@@ -48,6 +49,9 @@ bootstrapApplication(AppComponent, {
         syncService.initialize();
       });
     }),
+    // The local signed-in marker must be loaded before the router's first
+    // navigation so the guards send the user to the right screen (offline too).
+    provideAppInitializer(() => inject(AuthService).initialize()),
     {
       provide: STORAGE_ENGINE,
       useFactory: (engineFactory: StorageEngineFactory) => engineFactory.getEngine(),

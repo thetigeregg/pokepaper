@@ -27,9 +27,14 @@ describe('tab routes', () => {
     expect(routes.find((route) => route.path === '')?.redirectTo).toBe('/tabs/cards');
   });
 
-  it('app routes lazy-load the tab routes', async () => {
-    const loaded = await appRoutes[0]?.loadChildren?.();
+  it('app routes guard and lazy-load the tab routes, and offer a guarded login route', async () => {
+    const app = appRoutes.find((route) => route.path === '');
+    const login = appRoutes.find((route) => route.path === 'login');
 
-    expect(loaded).toBe(routes);
+    expect(await app?.loadChildren?.()).toBe(routes);
+    expect(app?.canActivate).toHaveLength(1);
+    expect(login?.canActivate).toHaveLength(1);
+    expect(await login?.loadComponent?.()).toBeDefined();
+    expect(appRoutes.at(-1)).toMatchObject({ path: '**', redirectTo: '' });
   });
 });

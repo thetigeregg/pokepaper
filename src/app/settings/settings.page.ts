@@ -23,6 +23,7 @@ import {
 } from '@ionic/angular';
 import { DEFAULT_SETTINGS, type UserSettings } from '@pokepaper/shared';
 import { LocalUserDataRepository } from '../core/data/local-user-data-repository';
+import { AccountSectionComponent } from '../features/account/account-section.component';
 import { SyncService, type SyncStatus } from '../core/services/sync.service';
 
 /** Card languages offered in Settings. Codes follow TCGdex; the list is
@@ -52,6 +53,7 @@ const SYNC_STATUS_LABELS: Record<SyncStatus, string> = {
   templateUrl: 'settings.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    AccountSectionComponent,
     IonHeader,
     IonToolbar,
     IonTitle,
