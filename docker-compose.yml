@@ -66,6 +66,10 @@ services:
       - "${EDGE_PORT:-8080}:8080"
     environment:
       TZ: ${TZ:-Europe/Zurich}
+      # Proxies allowed to set CF-Connecting-IP (the client IP the server
+      # rate-limits on). The default trusts any private address; narrow it to
+      # Nginx Proxy Manager's address as seen by edge (docs/nas-deployment.md).
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-private_ranges}
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
       interval: 30s

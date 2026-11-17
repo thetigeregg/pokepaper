@@ -31,26 +31,29 @@ sudo cat "$ROOT/secrets/setup_token"   # you'll paste this into the app once
 ```
 
 - `server-data`: the SQLite database (`pokepaper.db`, `-wal`, `-shm`).
-- `server-backups`: database snapshots (see section 7).
+- `server-backups`: database snapshots (see section 8).
 - `secrets`: one file per secret, mounted read-only at `/run/secrets`.
 
 If the server logs `EACCES` or `SQLITE_CANTOPEN`, the data directories aren't writable by uid 1000. If the sign-in screen says "Setup isn't enabled", the setup token file is missing or not readable by uid 1000.
 
 ## 2. Images
 
-CI publishes `ghcr.io/thetigeregg/pokepaper-server` and `ghcr.io/thetigeregg/pokepaper-edge` (`:main`) on pushes to `main` that change them. Both are **amd64**, matching the DS920+ (x86_64). Check they're reachable:
+The release workflow publishes `ghcr.io/thetigeregg/pokepaper-server` and `ghcr.io/thetigeregg/pokepaper-edge` (`:main`) on merges to `main` that change them. Both are **amd64**, matching the DS920+ (x86_64). These are the compose file's default images.
+
+> Until that workflow exists in the repo (it's added with CI/CD), the `:main` images aren't published: build them yourself (below) and set `SERVER_IMAGE`/`EDGE_IMAGE` to your tags, or the stack fails with "manifest unknown".
+
+Check the published images are reachable:
 
 ```bash
 docker manifest inspect ghcr.io/thetigeregg/pokepaper-server:main
 docker manifest inspect ghcr.io/thetigeregg/pokepaper-edge:main
 ```
 
-To build locally instead (e.g. before CI exists), from a repo checkout:
+To build them yourself, from a repo checkout on an amd64 machine (or with `docker buildx build --platform linux/amd64`):
 
 ```bash
 docker build -f server/Dockerfile -t pokepaper-server:local .
 docker build -f edge/Dockerfile -t pokepaper-edge:local .
-# then set SERVER_IMAGE / EDGE_IMAGE to these tags
 ```
 
 ## 3. Deploy the stack (Portainer)
@@ -63,6 +66,7 @@ Create a stack from `docker-compose.yml` (upload it or point Portainer at the re
 | `NAS_DATA_ROOT`    | `/volume1/docker/pokepaper`         | Parent of `server-data` and `server-backups`                              |
 | `SECRETS_HOST_DIR` | `/volume1/docker/pokepaper/secrets` | Holds `setup_token`                                                       |
 | `EDGE_PORT`        | `8080`                              | Host port Nginx Proxy Manager forwards to. Pick a free one                |
+| `TRUSTED_PROXIES`  | _(default `private_ranges`)_        | Proxies allowed to set `CF-Connecting-IP`; see section 4                  |
 | `TZ`               | `Europe/Zurich`                     |                                                                           |
 | `SERVER_IMAGE`     | _(default `…-server:main`)_         | Override to pin a version                                                 |
 | `EDGE_IMAGE`       | _(default `…-edge:main`)_           | Override to pin a version                                                 |
@@ -83,6 +87,17 @@ Add a **Proxy Host**:
 - **SSL:** follow your existing tunnel pattern for other services (cloudflared → NPM). TLS to the browser is Cloudflare's.
 
 NPM passes request headers through unchanged, including Cloudflare's `CF-Connecting-IP`, which the server uses for rate limiting.
+
+**Narrowing `TRUSTED_PROXIES` (recommended).** Edge only accepts `CF-Connecting-IP` from trusted proxies. From anything else, it overwrites the header with the connection's own address, so a spoofed header can't dodge the rate limits. The default trusts every private address, which includes other devices on your LAN that can reach `EDGE_PORT` directly. To trust only NPM:
+
+1. Find the address NPM's requests arrive from. If NPM runs in Docker on the NAS and forwards to `<nas-ip>:EDGE_PORT`, that's usually the Docker bridge gateway (e.g. `172.17.0.1`) or NPM's container IP:
+
+   ```bash
+   docker inspect <npm-container> --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{.Gateway}} {{end}}'
+   ```
+
+2. Set `TRUSTED_PROXIES` to that address or a small CIDR (space-separated for several), e.g. `172.17.0.1/32`, and redeploy.
+3. Confirm sign-in still works through the public URL. If the address is wrong, nothing breaks, but every visitor shares one rate-limit bucket (NPM's address) instead of being counted separately.
 
 ## 5. Cloudflare
 

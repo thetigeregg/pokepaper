@@ -107,11 +107,10 @@ Commits are checked by husky: `lint-staged` (Prettier and `eslint --fix` on stag
 
 Two Docker images, `server` (`server/Dockerfile`) and `edge` (`edge/Dockerfile`), run as a Portainer stack on the Synology NAS from `docker-compose.yml`. Public traffic goes Cloudflare → cloudflared tunnel → Nginx Proxy Manager → `edge` → `server`; only `edge` is published on the host. The full walkthrough (directories and permissions, Portainer variables, NPM and Cloudflare settings, verification, first sign-in, backups, updates) is in [`docs/nas-deployment.md`](docs/nas-deployment.md).
 
-To try the production stack locally:
+To try the production stack locally (builds both images, runs in development mode with Docker volumes, so nothing needs creating or `chown`-ing):
 
 ```bash
-docker build -f server/Dockerfile -t pokepaper-server:local .
-docker build -f edge/Dockerfile -t pokepaper-edge:local .
+PUBLIC_ORIGIN=http://localhost:8080 docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
 ```
 
-Then run `docker-compose.yml` with `SERVER_IMAGE`/`EDGE_IMAGE` set to those tags. A localhost `PUBLIC_ORIGIN` also needs `NODE_ENV=development` (production mode requires a public https origin).
+Open http://localhost:8080 and set up with `local-setup-token-0123456789` (override with `SETUP_TOKEN`). `docker compose … down -v` resets the data.

@@ -32,30 +32,16 @@ updates:
     commit-message:
       prefix: "chore(ci)"
 
+  # Both Dockerfiles pin the same Node base image as .nvmrc;
+  # scripts/node-version.test.mjs fails CI until all three agree.
   - package-ecosystem: "docker"
-    directory: "/server"
+    directories:
+      - "/server"
+      - "/edge"
     schedule:
       interval: "weekly"
       day: "monday"
       time: "05:50"
-      timezone: "Europe/Zurich"
-    labels:
-      - "dependencies"
-      - "docker"
-    open-pull-requests-limit: 3
-    commit-message:
-      prefix: "chore(docker)"
-    ignore:
-      - dependency-name: "*"
-        update-types:
-          - "version-update:semver-major"
-
-  - package-ecosystem: "docker"
-    directory: "/edge"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "06:00"
       timezone: "Europe/Zurich"
     labels:
       - "dependencies"

@@ -1,0 +1,35 @@
+# Try the production stack locally: builds both images and runs them in
+# development mode on localhost (production mode refuses a localhost origin).
+#
+#   PUBLIC_ORIGIN=http://localhost:8080 \
+#     docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
+#
+# Then open http://localhost:8080 and use the setup token below. Data lives
+# in Docker volumes (`down -v` resets it).
+services:
+  server:
+    image: pokepaper-server:local
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    volumes:
+      # Docker-managed volumes inherit the image's ownership (uid 1000), so
+      # nothing needs chown-ing; these replace the NAS bind mounts.
+      - server-data:/app/server/data
+      - server-backups:/app/server/backups
+      - local-secrets:/run/secrets
+    environment:
+      NODE_ENV: development
+      SETUP_TOKEN_FILE: ""
+      SETUP_TOKEN: ${SETUP_TOKEN:-local-setup-token-0123456789}
+
+  edge:
+    image: pokepaper-edge:local
+    build:
+      context: .
+      dockerfile: edge/Dockerfile
+
+volumes:
+  server-data:
+  server-backups:
+  local-secrets:

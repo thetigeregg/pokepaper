@@ -3,10 +3,12 @@ FROM node:24.22.2-slim AS builder
 WORKDIR /app
 ENV HUSKY=0
 
+# Only the root app and the shared workspace are needed for ng build; the
+# server workspace's runtime dependencies are skipped.
 COPY package.json package-lock.json ./
 COPY shared ./shared
 COPY server/package.json ./server/package.json
-RUN npm ci --ignore-scripts
+RUN npm ci --ignore-scripts --include-workspace-root --workspace @pokepaper/shared
 
 COPY angular.json tsconfig.json tsconfig.app.json ionic.config.json ngsw-config.json .browserslistrc ./
 COPY public ./public

@@ -3,6 +3,16 @@
 	# Manager); edge only ever serves plain HTTP inside the NAS.
 	auto_https off
 	admin off
+
+	# The real client IP arrives in Cloudflare's CF-Connecting-IP header, but
+	# only requests from a trusted proxy (Nginx Proxy Manager) may set it.
+	# From anyone else, {client_ip} is the connection's own address, so a
+	# spoofed header can't dodge the server's rate limits. Narrow
+	# TRUSTED_PROXIES to NPM's address (docs/nas-deployment.md).
+	servers {
+		trusted_proxies static {$TRUSTED_PROXIES:private_ranges}
+		client_ip_headers CF-Connecting-IP
+	}
 }
 
 :8080 {
@@ -24,13 +34,14 @@
 		-Server
 	}
 
-	# API and cached images are served by the server container.
-	handle /api/* {
-		reverse_proxy server:3000
-	}
-
-	handle /images/* {
-		reverse_proxy server:3000
+	# API and cached images are served by the server container, which keys
+	# rate limits on CF-Connecting-IP: always overwritten with the vetted
+	# client IP (see trusted_proxies above).
+	@server path /api/* /images/*
+	handle @server {
+		reverse_proxy server:3000 {
+			header_up CF-Connecting-IP {client_ip}
+		}
 	}
 
 	# Passkeys in the iOS app: Apple fetches this (via its CDN) to verify
@@ -48,28 +59,27 @@
 		root * /srv
 
 		# Content-hashed build output (main-<hash>.js, chunk-<hash>.js,
-		# styles-<hash>.css): a rebuild emits new names, so a file that
-		# exists under such a name never changes. `file` keeps a stale hashed
-		# URL from an older build, which falls back to index.html below, from
-		# being cached as immutable.
+		# styles-<hash>.css) never changes under the same name. `file` keeps a
+		# missing hashed URL (e.g. an older build's chunk) from being marked
+		# immutable. Everything else (index.html, ngsw.json, ngsw-worker.js,
+		# the manifest, assets) gets the deferred default and revalidates
+		# (cheap 304 via ETag), so deploys and service worker updates show up.
 		@hashed {
 			path_regexp -[A-Za-z0-9_-]{8}\.(js|css)$
 			file
 		}
 		header @hashed Cache-Control "public, max-age=31536000, immutable"
+		header ?Cache-Control "no-cache"
 
-		# Everything else (index.html, the SPA fallback, ngsw.json,
-		# ngsw-worker.js, the manifest, assets) must revalidate (cheap 304
-		# via ETag) so new deploys and service worker updates are picked up.
-		@revalidate {
-			not {
-				path_regexp -[A-Za-z0-9_-]{8}\.(js|css)$
-				file
-			}
+		# App routes (no file extension, no such file) are served the SPA. A
+		# missing *file* is a real 404 rather than index.html, so a stale tab
+		# requesting a removed chunk fails cleanly instead of parsing HTML as
+		# JavaScript.
+		@spa {
+			not path_regexp \.[A-Za-z0-9]+$
+			not file
 		}
-		header @revalidate Cache-Control "no-cache"
-
-		try_files {path} /index.html
+		rewrite @spa /index.html
 		file_server
 	}
 }
