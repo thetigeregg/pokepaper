@@ -5,8 +5,11 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import {
+  diffLines,
   listChangedFiles,
   listVersionTags,
+  manifestDiffHasNonVersionChanges,
+  readManifestDiff,
   resolvePreviousTag,
   writeGithubOutput,
 } from './release-diff.mjs';
@@ -59,4 +62,33 @@ test('writeGithubOutput appends key=value lines', () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('readManifestDiff diffs the given paths over a range, or the head commit alone', () => {
+  const ranged = fakeGit('diff');
+  assert.equal(
+    readManifestDiff({ base: 'v1', head: 'v2', paths: ['package.json'], ...ranged }),
+    'diff'
+  );
+  assert.deepEqual(ranged.calls[0][1], ['diff', 'v1..v2', '--', 'package.json']);
+
+  const single = fakeGit('');
+  readManifestDiff({ base: null, head: 'v1', paths: ['a', 'b'], ...single });
+  assert.deepEqual(single.calls[0][1], ['diff', 'v1^..v1', '--', 'a', 'b']);
+});
+
+test('diffLines keeps changed lines and drops file headers', () => {
+  assert.deepEqual(diffLines('--- a/x\n+++ b/x\n@@\n-old\n+new\n context\n'), ['-old', '+new']);
+  assert.deepEqual(diffLines(''), []);
+  assert.deepEqual(diffLines(undefined), []);
+});
+
+test('manifestDiffHasNonVersionChanges ignores version bumps only', () => {
+  assert.equal(
+    manifestDiffHasNonVersionChanges('-  "version": "1.0.0",\n+  "version": "1.1.0",\n'),
+    false
+  );
+  assert.equal(manifestDiffHasNonVersionChanges('+    "fastify": "^5.13.0",\n'), true);
+  assert.equal(manifestDiffHasNonVersionChanges('+      "integrity": "sha512-x",\n'), true);
+  assert.equal(manifestDiffHasNonVersionChanges(''), false);
 });

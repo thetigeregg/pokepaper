@@ -14,15 +14,20 @@ on:
 permissions:
   contents: read
 
+# Runs queue rather than overlap. A queued run that GitHub replaces with a
+# newer one is fine: every run releases the latest main, which includes
+# everything merged before it.
 concurrency:
-  group: pokepaper-release-${{ github.ref }}
+  group: pokepaper-release
   cancel-in-progress: false
 
 jobs:
   release:
     name: Bump Version and Tag
-    # The release commit itself is pushed with [skip ci]; never re-release it.
-    if: ${{ !(startsWith(github.event.head_commit.message, 'chore(release):') && contains(github.event.head_commit.message, '[skip ci]')) }}
+    # Only main is ever released (a manual run from another branch must not
+    # push that branch to main), and the [skip ci] release commit itself is
+    # never re-released.
+    if: ${{ github.ref == 'refs/heads/main' && !(startsWith(github.event.head_commit.message, 'chore(release):') && contains(github.event.head_commit.message, '[skip ci]')) }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -32,6 +37,8 @@ jobs:
       minor: ${{ steps.version.outputs.minor }}
       tag: ${{ steps.version.outputs.tag }}
       release_sha: ${{ steps.push.outputs.release_sha }}
+      # true only when this run pushed a new release commit and tag.
+      released: ${{ steps.push.outputs.released }}
     steps:
       # A GitHub App token (not GITHUB_TOKEN) so the release commit can be
       # pushed to the protected main branch: the app is a ruleset bypass actor.
@@ -42,10 +49,13 @@ jobs:
           client-id: ${{ vars.AUTOCOMMIT_CLIENT_ID }}
           private-key: ${{ secrets.AUTOCOMMIT_APP_PRIVATE_KEY }}
 
+      # The latest main, not the triggering commit: if more merges landed
+      # since this run was queued, they're released together.
       - name: Checkout
         uses: actions/checkout@v7
         with:
           token: ${{ steps.app_token.outputs.token }}
+          ref: main
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -71,25 +81,33 @@ jobs:
         env:
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: |
+          set -euo pipefail
           git add package.json package-lock.json CHANGELOG.md
           if git diff --cached --quiet; then
-            echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+            echo "Nothing to release (no releasable commits since the last tag)."
+            { echo "released=false"; echo "release_sha=$(git rev-parse HEAD)"; } >> "$GITHUB_OUTPUT"
             exit 0
+          fi
+          if git rev-parse -q --verify "refs/tags/${RELEASE_TAG}" >/dev/null; then
+            echo "::error::Tag ${RELEASE_TAG} already exists but package.json is behind it. Sync package.json with the latest tag before releasing."
+            exit 1
           fi
           git commit -m "chore(release): ${RELEASE_TAG} [skip ci]"
-          if git rev-parse -q --verify "refs/tags/${RELEASE_TAG}" >/dev/null; then
-            git push origin HEAD:main
-            echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          git tag "${RELEASE_TAG}"
+          # Branch and tag land together or not at all. If main moved since
+          # checkout, this run is superseded: the queued next run releases
+          # the newer main (including these commits).
+          if ! git push --atomic origin HEAD:main "refs/tags/${RELEASE_TAG}"; then
+            echo "::warning::main moved during the release; superseded by the next run."
+            { echo "released=false"; echo "release_sha=$(git rev-parse HEAD)"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          git tag "${RELEASE_TAG}"
-          git push origin HEAD:main
-          git push origin "${RELEASE_TAG}"
-          echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          { echo "released=true"; echo "release_sha=$(git rev-parse HEAD)"; } >> "$GITHUB_OUTPUT"
 
   detect_changes:
     name: Detect image changes
     needs: release
+    if: needs.release.outputs.released == 'true' || inputs.force_publish
     runs-on: ubuntu-latest
     outputs:
       server: ${{ steps.server.outputs.should_publish }}
@@ -130,30 +148,19 @@ jobs:
       fail-fast: false
       matrix:
         image: [server, edge]
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/pokepaper-${{ matrix.image }}
+      CHANGED: ${{ matrix.image == 'server' && needs.detect_changes.outputs.server || needs.detect_changes.outputs.edge }}
     steps:
-      - name: Check whether ${{ matrix.image }} changed
-        id: gate
-        env:
-          SHOULD_PUBLISH: ${{ matrix.image == 'server' && needs.detect_changes.outputs.server || needs.detect_changes.outputs.edge }}
-        run: |
-          echo "publish=${SHOULD_PUBLISH}" >> "$GITHUB_OUTPUT"
-          if [ "$SHOULD_PUBLISH" != "true" ]; then
-            echo "## ${{ matrix.image }} image unchanged" >> "$GITHUB_STEP_SUMMARY"
-            echo "No ${{ matrix.image }} image inputs changed since the previous release; nothing published." >> "$GITHUB_STEP_SUMMARY"
-          fi
-
       - name: Checkout
-        if: steps.gate.outputs.publish == 'true'
         uses: actions/checkout@v7
         with:
           ref: ${{ needs.release.outputs.release_sha }}
 
       - name: Set up Docker Buildx
-        if: steps.gate.outputs.publish == 'true'
         uses: docker/setup-buildx-action@v4
 
       - name: Login to GHCR
-        if: steps.gate.outputs.publish == 'true'
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -161,11 +168,10 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract Docker metadata
-        if: steps.gate.outputs.publish == 'true'
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ghcr.io/${{ github.repository_owner }}/pokepaper-${{ matrix.image }}
+          images: ${{ env.IMAGE }}
           tags: |
             type=raw,value=main
             type=raw,value=${{ needs.release.outputs.tag }}
@@ -174,8 +180,8 @@ jobs:
             type=raw,value=${{ needs.release.outputs.major }}
             type=sha,format=short
 
-      - name: Build and push
-        if: steps.gate.outputs.publish == 'true'
+      - name: Build and push (inputs changed)
+        if: env.CHANGED == 'true'
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -186,3 +192,23 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=pokepaper-${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=pokepaper-${{ matrix.image }}
+
+      # Unchanged image: no rebuild, but every release still gets every
+      # version tag on both images (so pinning SERVER_IMAGE/EDGE_IMAGE to a
+      # version always works). The current :main image is re-tagged.
+      - name: Re-tag current image (inputs unchanged)
+        if: env.CHANGED != 'true'
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          args=()
+          while IFS= read -r tag; do
+            if [ -n "$tag" ]; then args+=(--tag "$tag"); fi
+          done <<< "$TAGS"
+          docker buildx imagetools create "${args[@]}" "${IMAGE}:main"
+          {
+            echo "## ${{ matrix.image }} image unchanged"
+            echo
+            echo "No ${{ matrix.image }} image inputs changed since the previous release: \`${IMAGE}:main\` was re-tagged for ${{ needs.release.outputs.tag }} instead of rebuilt."
+          } >> "$GITHUB_STEP_SUMMARY"

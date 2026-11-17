@@ -16,8 +16,10 @@ permissions:
   contents: read
   security-events: write
 
+# Superseded PR runs are cancelled. Push and scheduled runs each get their own
+# group (run id), so scans of main never cancel or replace each other.
 concurrency:
-  group: pokepaper-codeql-${{ github.event.pull_request.number || github.ref }}
+  group: pokepaper-codeql-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:

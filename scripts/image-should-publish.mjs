@@ -8,13 +8,24 @@
  *
  * One script for both images (go-gather has a near-copy per image). Each rule
  * lists every input of that image's Dockerfile, including the lockfile and
- * .nvmrc (whose version the Dockerfile base images must match).
+ * .nvmrc (whose version the Dockerfile base images must match). The root
+ * package.json / package-lock.json only count when something other than the
+ * `version` changed: every release bumps the version, which isn't an input.
  */
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { listChangedFiles, resolvePreviousTag, writeGithubOutput } from './release-diff.mjs';
+import {
+  listChangedFiles,
+  manifestDiffHasNonVersionChanges,
+  readManifestDiff,
+  resolvePreviousTag,
+  writeGithubOutput,
+} from './release-diff.mjs';
+
+/** Root manifests whose `version` field every release bumps. */
+export const VERSIONED_MANIFESTS = ['package.json', 'package-lock.json'];
 
 const SHARED_ROOT_FILES = ['package.json', 'package-lock.json', '.nvmrc'];
 
@@ -27,6 +38,8 @@ export const IMAGE_RULES = {
     prefixes: ['edge/', 'src/', 'public/', 'shared/'],
     files: new Set([
       ...SHARED_ROOT_FILES,
+      // edge/Dockerfile copies it so npm ci sees the workspace layout.
+      'server/package.json',
       'angular.json',
       'tsconfig.json',
       'tsconfig.app.json',
@@ -84,7 +97,7 @@ export function parseArgs(argv) {
     };
 
     if (value === '--image') args.image = next();
-    else if (value === '--head') args.head = next() ?? 'HEAD';
+    else if (value === '--head') args.head = next();
     else if (value === '--base') args.base = next();
     else if (value === '--github-output') args.githubOutput = next();
     else if (value === '--force') args.force = true;
@@ -93,6 +106,9 @@ export function parseArgs(argv) {
 
   if (!args.image) {
     throw new Error('--image is required');
+  }
+  if (typeof args.head !== 'string' || args.head.trim().length === 0) {
+    throw new Error('--head must be a non-empty ref (e.g. the release tag)');
   }
   return args;
 }
@@ -112,14 +128,19 @@ export function decide({
   }
 
   const previous = base === undefined ? resolvePreviousTag(head, { execFileSyncFn, cwd }) : base;
-  const hasPreviousTag = typeof previous === 'string' && previous.trim().length > 0;
-  const changedFiles = listChangedFiles({
-    base: hasPreviousTag ? previous : null,
-    head,
-    execFileSyncFn,
-    cwd,
-  });
-  return evaluateImagePublish({ image, changedFiles, hasPreviousTag });
+  if (typeof previous !== 'string' || previous.trim().length === 0) {
+    // First release: publish without diffing (the first tag may sit on a root commit).
+    return evaluateImagePublish({ image, hasPreviousTag: false });
+  }
+
+  const changedFiles = listChangedFiles({ base: previous, head, execFileSyncFn, cwd }).filter(
+    (filePath) =>
+      !VERSIONED_MANIFESTS.includes(filePath) ||
+      manifestDiffHasNonVersionChanges(
+        readManifestDiff({ base: previous, head, paths: [filePath], execFileSyncFn, cwd })
+      )
+  );
+  return evaluateImagePublish({ image, changedFiles, hasPreviousTag: true });
 }
 
 function main() {

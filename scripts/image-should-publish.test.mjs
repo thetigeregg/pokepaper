@@ -33,6 +33,7 @@ test('edge image inputs', () => {
     'ngsw-config.json',
     'package-lock.json',
     '.browserslistrc',
+    'server/package.json',
   ]) {
     assert.equal(matchesImagePath('edge', path), true, path);
   }
@@ -88,6 +89,11 @@ test('parses arguments', () => {
     }
   );
   assert.throws(() => parseArgs(['--head', 'v1']), /--image is required/);
+  assert.throws(
+    () => parseArgs(['--image', 'edge', '--head', '']),
+    /--head must be a non-empty ref/
+  );
+  assert.throws(() => parseArgs(['--image', 'edge', '--head']), /--head must be a non-empty ref/);
   assert.throws(() => parseArgs(['--image', 'edge', '--bogus']), /Unknown argument/);
 });
 
@@ -107,10 +113,62 @@ test('decide resolves the previous tag and diffs against it', () => {
   assert.deepEqual(calls[1], ['diff', '--name-only', 'v1.0.0..v1.1.0']);
 });
 
-test('decide publishes everything on the first release', () => {
-  const execFileSyncFn = (_cmd, args) => (args[0] === 'tag' ? 'v0.1.0\n' : 'README.md\n');
+test('decide publishes everything on the first release, without diffing', () => {
+  const calls = [];
+  const execFileSyncFn = (_cmd, args) => {
+    calls.push(args);
+    if (args[0] === 'tag') return 'v0.1.0\n';
+    throw new Error('v0.1.0^ does not exist (root commit)');
+  };
 
-  assert.equal(decide({ image: 'server', head: 'v0.1.0', execFileSyncFn }).shouldPublish, true);
+  const decision = decide({ image: 'server', head: 'v0.1.0', execFileSyncFn });
+
+  assert.equal(decision.shouldPublish, true);
+  assert.deepEqual(decision.matchedPaths, ['no-previous-tag']);
+  assert.deepEqual(
+    calls.map((args) => args[0]),
+    ['tag']
+  );
+});
+
+function releaseGit({ changed, manifestDiffs }) {
+  return (_cmd, args) => {
+    if (args[0] === 'tag') return 'v1.1.0\nv1.0.0\n';
+    if (args.includes('--name-only')) return changed.join('\n');
+    return manifestDiffs[args.at(-1)] ?? '';
+  };
+}
+
+const VERSION_ONLY_PKG =
+  '--- a/package.json\n+++ b/package.json\n-  "version": "1.0.0",\n+  "version": "1.1.0",\n';
+const VERSION_ONLY_LOCK =
+  '--- a/package-lock.json\n+++ b/package-lock.json\n-  "version": "1.0.0",\n+  "version": "1.1.0",\n-      "version": "1.0.0",\n+      "version": "1.1.0",\n';
+
+test('a release that only bumps the version publishes nothing', () => {
+  const execFileSyncFn = releaseGit({
+    changed: ['docs/auth.md', 'package.json', 'package-lock.json', 'CHANGELOG.md'],
+    manifestDiffs: { 'package.json': VERSION_ONLY_PKG, 'package-lock.json': VERSION_ONLY_LOCK },
+  });
+
+  assert.equal(decide({ image: 'server', head: 'v1.1.0', execFileSyncFn }).shouldPublish, false);
+  assert.equal(decide({ image: 'edge', head: 'v1.1.0', execFileSyncFn }).shouldPublish, false);
+});
+
+test('a dependency change in the manifests publishes both images', () => {
+  const execFileSyncFn = releaseGit({
+    changed: ['package.json', 'package-lock.json'],
+    manifestDiffs: {
+      'package.json': VERSION_ONLY_PKG,
+      'package-lock.json':
+        VERSION_ONLY_LOCK +
+        '-      "resolved": "https://r/x-1.tgz",\n+      "resolved": "https://r/x-2.tgz",\n',
+    },
+  });
+
+  assert.deepEqual(decide({ image: 'server', head: 'v1.1.0', execFileSyncFn }).matchedPaths, [
+    'package-lock.json',
+  ]);
+  assert.equal(decide({ image: 'edge', head: 'v1.1.0', execFileSyncFn }).shouldPublish, true);
 });
 
 test('decide honors an explicit base and force, and validates the image first', () => {
