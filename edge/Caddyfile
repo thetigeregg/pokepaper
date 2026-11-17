@@ -7,8 +7,9 @@
 	# The real client IP arrives in Cloudflare's CF-Connecting-IP header, but
 	# only requests from a trusted proxy (Nginx Proxy Manager) may set it.
 	# From anyone else, {client_ip} is the connection's own address, so a
-	# spoofed header can't dodge the server's rate limits. Narrow
-	# TRUSTED_PROXIES to NPM's address (docs/nas-deployment.md).
+	# spoofed header can't dodge the server's rate limits. Which values of
+	# TRUSTED_PROXIES are safe depends on the network setup: see
+	# docs/nas-deployment.md, section 4.
 	servers {
 		trusted_proxies static {$TRUSTED_PROXIES:private_ranges}
 		client_ip_headers CF-Connecting-IP
@@ -36,10 +37,13 @@
 
 	# API and cached images are served by the server container, which keys
 	# rate limits on CF-Connecting-IP: always overwritten with the vetted
-	# client IP (see trusted_proxies above).
+	# client IP (see trusted_proxies above). The upstream is the server's
+	# container name, not the bare service name `server`: when edge also
+	# joins another network (docker-compose.npm.yml), a different container
+	# there could answer to `server` and receive cookies and passkey traffic.
 	@server path /api/* /images/*
 	handle @server {
-		reverse_proxy server:3000 {
+		reverse_proxy pokepaper-server:3000 {
 			header_up CF-Connecting-IP {client_ip}
 		}
 	}

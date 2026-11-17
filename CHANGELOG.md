@@ -12,3 +12,19 @@
 - 240f9b7 "Claude Code Review workflow"
 - 20dcdb7 "Claude PR Assistant workflow"
 - 247bf40 chore: bootstrap repo tooling and conventions
+
+## v0.1.1 - 2026-11-17
+
+- 41f3f3d fix(deploy): let the server run as a host user (PUID/PGID) (#12)
+
+## v0.1.2 - 2026-11-17
+
+- d0412b7 fix(deploy): correct NAS setup steps for ROOT, token, and PGID (#14)
+
+## v0.2.0 - 2026-11-17
+
+- 968599e feat(deploy): add optional override to join NPM's Docker network (#13)
+
+## v0.2.1 - 2026-11-17
+
+- 651bfe2 fix(deploy): stop exposing edge on the LAN when it shares NPM's network (#15)

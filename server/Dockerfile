@@ -15,9 +15,10 @@ RUN npm ci --omit=dev --ignore-scripts --workspace @pokepaper/server \
 
 COPY server/src ./server/src
 
-# Runs as the unprivileged `node` user (uid 1000). The data and backup
-# directories are bind mounts on the NAS: they must be writable by uid 1000
-# (see docs/nas-deployment.md).
+# Runs as the unprivileged `node` user (uid 1000) by default; compose can
+# run it as another user (PUID/PGID). The data and backup directories are
+# bind mounts on the NAS and must be writable by whichever uid:gid runs it
+# (see docs/nas-deployment.md, section 1).
 RUN mkdir -p /app/server/data /app/server/backups \
   && chown -R node:node /app/server/data /app/server/backups
 USER node

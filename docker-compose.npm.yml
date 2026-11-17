@@ -1,0 +1,22 @@
+# Optional: put edge on Nginx Proxy Manager's Docker network, so NPM
+# forwards to http://pokepaper-edge:8080 from its own address and
+# TRUSTED_PROXIES can be narrowed to it. Behind Docker's port proxy (the
+# published EDGE_PORT) every source looks the same, so that isn't possible
+# otherwise. Requires a user-defined network; set NPM_NETWORK, and also set
+# EDGE_BIND / TRUSTED_PROXIES as described in docs/nas-deployment.md,
+# section 4 (the safe combinations are documented there, not here).
+#
+# Use it as an extra compose file (Portainer Git stack: "Additional paths"),
+# and in every manual compose command:
+#   docker compose -f docker-compose.yml -f docker-compose.npm.yml up -d
+
+services:
+  edge:
+    networks:
+      - default
+      - npm
+
+networks:
+  npm:
+    name: ${NPM_NETWORK:?Set NPM_NETWORK to the name of Nginx Proxy Manager's Docker network}
+    external: true

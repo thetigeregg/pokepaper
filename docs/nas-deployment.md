@@ -15,26 +15,64 @@ TLS terminates at Cloudflare. Everything is protected by passkeys (`docs/auth.md
 
 ## 1. Directories, permissions, and the setup token
 
-On the NAS, pick a root (e.g. `/volume1/docker/pokepaper`) and create:
+The server container runs unprivileged as **PUID:PGID** (default `1000:1000`, the image's `node` user). Its data folders and the setup token must be accessible to that uid.
+
+Pick a folder for the stack. Every command in this section uses `ROOT`, so run them in the same shell:
 
 ```bash
-ROOT=/volume1/docker/pokepaper
+ROOT=/path/to/pokepaper   # Synology: inside a shared folder you can write, e.g. /volumeN/<shared-folder>/pokepaper
+```
+
+The setup token lets whoever holds it register the first passkey, which makes them the owner. Keep it private, and delete it once setup is done (section 7).
+
+**On a Synology shared folder, use your own DSM user.** Shared folders carry ACLs that override `chown`/`chmod`: a uid the ACL doesn't list (like 1000) is denied even when it owns the folder. Run the container as a DSM user the share already allows instead:
+
+```bash
+id <dsm-user>   # prints uid=<puid>(<dsm-user>) gid=<pgid>(…) groups=…
 mkdir -p "$ROOT/server-data" "$ROOT/server-backups" "$ROOT/secrets"
+```
 
-# The server container runs as the unprivileged `node` user (uid 1000).
+Set `PUID` to that uid in the stack variables (section 3). The container gets **only** `PGID`, none of the user's other groups, so `PGID` must be a group the share's ACL allows to read and write. That's usually your primary gid. If the share grants you access only through another group (e.g. `administrators`), set `PGID` to that group's gid from the `groups=` list.
+
+`chmod` can't protect the token here: new files inherit the share's ACL, so other DSM users who can read the share could read the token too. Before creating it, lock down the `secrets` folder in File Station: right-click it → **Properties** → **Permission**, stop it inheriting the shared folder's permissions, and leave only your DSM user. Then create the token:
+
+```bash
+openssl rand -base64 32 > "$ROOT/secrets/setup_token"
+cat "$ROOT/secrets/setup_token"   # you'll paste this into the app once
+```
+
+**Elsewhere (plain Linux permissions, no ACLs):** keep the default 1000:1000 and give the folders to that uid:
+
+```bash
+sudo mkdir -p "$ROOT/server-data" "$ROOT/server-backups" "$ROOT/secrets"
 sudo chown -R 1000:1000 "$ROOT/server-data" "$ROOT/server-backups"
-
-# One-time token for registering the first passkey (readable by uid 1000).
 openssl rand -base64 32 | sudo tee "$ROOT/secrets/setup_token" > /dev/null
 sudo chown 1000:1000 "$ROOT/secrets/setup_token" && sudo chmod 400 "$ROOT/secrets/setup_token"
 sudo cat "$ROOT/secrets/setup_token"   # you'll paste this into the app once
 ```
 
+**Check access before deploying.** Run the real image as the configured user with the real mounts. Like the stack, it runs with exactly `PUID:PGID` and no other groups, so it also catches a wrong `PGID`. Set `PUID` / `PGID` to the values you'll use for the stack. Expect three `OK` lines:
+
+```bash
+PUID=<puid> PGID=<pgid>
+IMAGE=ghcr.io/thetigeregg/pokepaper-server:main   # or the SERVER_IMAGE you deploy
+sudo docker run --rm --entrypoint sh --user "$PUID:$PGID" \
+  -v "$ROOT/server-data:/app/server/data" \
+  -v "$ROOT/server-backups:/app/server/backups" \
+  -v "$ROOT/secrets:/run/secrets:ro" \
+  "$IMAGE" -c '
+    touch /app/server/data/.t && rm /app/server/data/.t && echo "server-data: OK"
+    touch /app/server/backups/.t && rm /app/server/backups/.t && echo "server-backups: OK"
+    cat /run/secrets/setup_token > /dev/null && echo "setup_token: OK"'
+```
+
+The folders hold:
+
 - `server-data`: the SQLite database (`pokepaper.db`, `-wal`, `-shm`).
 - `server-backups`: database snapshots (see section 8).
 - `secrets`: one file per secret, mounted read-only at `/run/secrets`.
 
-If the server logs `EACCES` or `SQLITE_CANTOPEN`, the data directories aren't writable by uid 1000. If the sign-in screen says "Setup isn't enabled", the setup token file is missing or not readable by uid 1000.
+If the server logs `EACCES` or `SQLITE_CANTOPEN`, the data folders aren't writable by PUID:PGID. If the sign-in screen says "Setup isn't enabled", the setup token is missing or not readable by PUID:PGID.
 
 ## 2. Images
 
@@ -62,27 +100,30 @@ docker build -f edge/Dockerfile -t pokepaper-edge:local .
 
 Create a stack from `docker-compose.yml` (upload it or point Portainer at the repo) with these environment variables:
 
-| Variable           | Example                             | Notes                                                                     |
-| ------------------ | ----------------------------------- | ------------------------------------------------------------------------- |
-| `PUBLIC_ORIGIN`    | `https://pokepaper.example.com`     | **Required.** The public HTTPS origin. Passkeys are bound to its hostname |
-| `NAS_DATA_ROOT`    | `/volume1/docker/pokepaper`         | Parent of `server-data` and `server-backups`                              |
-| `SECRETS_HOST_DIR` | `/volume1/docker/pokepaper/secrets` | Holds `setup_token`                                                       |
-| `EDGE_PORT`        | `8080`                              | Host port Nginx Proxy Manager forwards to. Pick a free one                |
-| `TRUSTED_PROXIES`  | _(default `private_ranges`)_        | Proxies allowed to set `CF-Connecting-IP`; see section 4                  |
-| `TZ`               | `Europe/Zurich`                     |                                                                           |
-| `SERVER_IMAGE`     | _(default `…-server:main`)_         | Override to pin a version                                                 |
-| `EDGE_IMAGE`       | _(default `…-edge:main`)_           | Override to pin a version                                                 |
+| Variable           | Example                                           | Notes                                                                                                                |
+| ------------------ | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `PUBLIC_ORIGIN`    | `https://pokepaper.example.com`                   | **Required.** The public HTTPS origin. Passkeys are bound to its hostname                                            |
+| `NAS_DATA_ROOT`    | `/path/to/pokepaper` (your `ROOT` from section 1) | Parent of `server-data` and `server-backups`                                                                         |
+| `SECRETS_HOST_DIR` | `/path/to/pokepaper/secrets`                      | Holds `setup_token`                                                                                                  |
+| `EDGE_PORT`        | `8080`                                            | Host port Nginx Proxy Manager forwards to. Pick a free one                                                           |
+| `EDGE_BIND`        | _(unset: all interfaces, IPv4 and IPv6)_          | Host address the edge port listens on, e.g. `127.0.0.1` once edge shares NPM's network (section 4). IPv6 in brackets |
+| `PUID` / `PGID`    | `<puid>` / `<pgid>`                               | User the server runs as (default `1000`/`1000`); see section 1                                                       |
+| `TRUSTED_PROXIES`  | _(default `private_ranges`)_                      | Proxies allowed to set `CF-Connecting-IP`; see section 4                                                             |
+| `NPM_NETWORK`      | _(only with `docker-compose.npm.yml`)_            | Nginx Proxy Manager's Docker network; see section 4                                                                  |
+| `TZ`               | `Europe/Zurich`                                   |                                                                                                                      |
+| `SERVER_IMAGE`     | _(default `…-server:main`)_                       | Override to pin a version                                                                                            |
+| `EDGE_IMAGE`       | _(default `…-edge:main`)_                         | Override to pin a version                                                                                            |
 
 The compose file already sets `NODE_ENV=production`, `SETUP_TOKEN_FILE`, `CLIENT_IP_HEADER=cf-connecting-ip`, and `TRUST_PROXY_HOPS=1`. Optional server settings (session lifetime, backups, rate limits) are listed, commented, in `docker-compose.yml`. All server settings are in `README.md` → Server and `docs/auth.md` → Configuration.
 
-`edge` waits for `server` to report healthy. Both have healthchecks, so `docker compose ps` / Portainer shows `healthy` once they're up.
+`edge` waits for `server` to report healthy. Both have healthchecks, so `docker compose ps` / Portainer shows `healthy` once they're up. If you use `docker-compose.npm.yml` (section 4), add `-f docker-compose.yml -f docker-compose.npm.yml` to manual `docker compose` commands that recreate containers (`up`, `pull`); `ps`, `logs`, `stop` and `start` work either way.
 
 ## 4. Nginx Proxy Manager
 
 Add a **Proxy Host**:
 
 - **Domain:** `pokepaper.<your-domain>`
-- **Scheme / Forward host / port:** `http` / the NAS's LAN IP (or the Docker host gateway) / `EDGE_PORT`
+- **Scheme / Forward host / port:** `http` / the NAS's LAN IP / `EDGE_PORT` to start with. Once edge shares NPM's network (below): `pokepaper-edge` / `8080`.
 - **Cache Assets:** **off**. Edge already sends the right caching headers (immutable hashed assets, revalidated `index.html` and service worker files). NPM's asset cache would override them and can serve stale app versions.
 - **Block Common Exploits:** optional.
 - **Websockets Support:** not needed.
@@ -90,16 +131,36 @@ Add a **Proxy Host**:
 
 NPM passes request headers through unchanged, including Cloudflare's `CF-Connecting-IP`, which the server uses for rate limiting.
 
-**Narrowing `TRUSTED_PROXIES` (recommended).** Edge only accepts `CF-Connecting-IP` from trusted proxies. From anything else, it overwrites the header with the connection's own address, so a spoofed header can't dodge the rate limits. The default trusts every private address, which includes other devices on your LAN that can reach `EDGE_PORT` directly. To trust only NPM:
+**Recommended: share NPM's Docker network** (`docker-compose.npm.yml`). Edge only accepts `CF-Connecting-IP` from trusted proxies; from anything else it overwrites the header with the connection's own address, so a spoofed header can't dodge the rate limits. But when NPM reaches edge through the published `EDGE_PORT`, Docker's port proxy rewrites **every** connection's source to the bridge gateway, so NPM and any other LAN device look identical and `TRUSTED_PROXIES` can't be narrowed usefully. If NPM runs in Docker on the same NAS, put edge on NPM's network instead. Do the steps in this order, so NPM's traffic is never left untrusted in between.
 
-1. Find the address NPM's requests arrive from. If NPM runs in Docker on the NAS and forwards to `<nas-ip>:EDGE_PORT`, that's usually the Docker bridge gateway (e.g. `172.17.0.1`) or NPM's container IP:
+1. **Find NPM's network.** Match on NPM's image (the container may have any name):
 
    ```bash
-   docker inspect <npm-container> --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{.Gateway}} {{end}}'
+   sudo docker ps --filter ancestor=jc21/nginx-proxy-manager --format '{{.Names}}\t{{.Networks}}'
+   sudo docker network inspect <npm-network> --format '{{.Driver}} {{range .IPAM.Config}}{{.Subnet}} {{end}}'
    ```
 
-2. Set `TRUSTED_PROXIES` to that address or a small CIDR (space-separated for several), e.g. `172.17.0.1/32`, and redeploy.
-3. Confirm sign-in still works through the public URL. If the address is wrong, nothing breaks, but every visitor shares one rate-limit bucket (NPM's address) instead of being counted separately.
+   It must be a **user-defined** network (not Docker's default `bridge`). The default bridge has no container-name DNS, so NPM couldn't reach `pokepaper-edge`, and every container without its own network shares it. If NPM is on `bridge`, create a network for it first (`docker network create <name>`) and attach NPM to it. If the network has both IPv4 and IPv6 subnets, use the IPv4 one below.
+
+2. **Join the network.** In the Portainer stack, add `docker-compose.npm.yml` under **Additional paths**, set `NPM_NETWORK` = `<npm-network>` (leave `TRUSTED_PROXIES` unset for now), and update the stack.
+
+3. **Point NPM at edge by name.** Change the proxy host's **Forward Hostname** to `pokepaper-edge` and **Forward Port** to `8080` (the container's port, not `EDGE_PORT`). Check the site still loads through the public URL.
+
+4. **Lock down the trust, in one stack update.** With edge on two networks, Docker may route published-port traffic in through the **NPM network's gateway**, and that gateway is inside the network's subnet. So trusting the subnet is only safe once edge isn't published on the LAN. Pick one path and set both of its variables together:
+   - **No LAN access to edge needed (recommended):** `EDGE_BIND` = `127.0.0.1` and `TRUSTED_PROXIES` = `<npm-network-subnet>`. NPM reaches edge by name, so nothing on the LAN needs `EDGE_PORT`. Survives NPM getting a new address on restart. It trusts **every** container on that network, plus processes on the NAS itself (they reach edge through the gateway), so it's fine when only NPM and its tunnel are on that network.
+   - **Keep `EDGE_PORT` reachable on the LAN:** leave `EDGE_BIND` unset, give NPM a fixed IP on that network in NPM's own stack (`networks: <npm-network>: ipv4_address: …`), and set `TRUSTED_PROXIES` = `<npm-ip>/32`. **Don't** trust the subnet on this path.
+
+   `EDGE_BIND` takes a host address; write IPv6 addresses in brackets (e.g. `[::1]`).
+
+5. **Verify both directions.**
+   - **Public:** from a browser or another machine, open `https://pokepaper.<your-domain>/api/health`. `clientIp` must be **your public IP** (compare with any what-is-my-IP site). A private address (NPM's or a gateway) means the proxy isn't trusted, and every visitor shares one rate-limit bucket. Re-check `TRUSTED_PROXIES` against step 1.
+   - **LAN:** from another machine on your network, try to fake the client IP:
+
+     ```bash
+     curl -s -m 5 -H 'CF-Connecting-IP: 203.0.113.9' http://<nas-ip>:<EDGE_PORT>/api/health
+     ```
+
+     With `EDGE_BIND=127.0.0.1` the connection is refused. Otherwise `clientIp` must **not** be `203.0.113.9`. If it is, `TRUSTED_PROXIES` covers the address the request arrived from: either the NPM network's gateway (the subnet is trusted while the port is on the LAN) or your LAN itself (`TRUSTED_PROXIES` is still the default `private_ranges`). Fix it as in step 4.
 
 ## 5. Cloudflare
 
@@ -116,10 +177,10 @@ NPM passes request headers through unchanged, including Cloudflare's `CF-Connect
 # On the NAS
 docker compose ps                                  # both healthy
 docker compose logs -f server                      # "Server listening", "backup.written"
-curl -s http://127.0.0.1:${EDGE_PORT:-8080}/api/health   # {"status":"ok"}
+curl -s http://127.0.0.1:${EDGE_PORT:-8080}/api/health   # {"status":"ok","clientIp":"…"}
 
 # From anywhere
-curl -s https://pokepaper.<your-domain>/api/health                               # {"status":"ok"}
+curl -s https://pokepaper.<your-domain>/api/health                               # {"status":"ok","clientIp":"<your public IP>"}
 curl -sI https://pokepaper.<your-domain>/ | grep -i content-security-policy      # edge headers present
 curl -s https://pokepaper.<your-domain>/api/auth/status                          # {"registered":false,…,"setupAvailable":true}
 curl -s https://pokepaper.<your-domain>/.well-known/apple-app-site-association   # JSON with the app IDs
@@ -133,7 +194,8 @@ curl -s https://app-site-association.cdn-apple.com/a/v1/pokepaper.<your-domain> 
 3. **Delete the setup token** to close setup (it's re-read on each attempt, so no restart is needed):
 
    ```bash
-   sudo rm /volume1/docker/pokepaper/secrets/setup_token
+   rm "$ROOT/secrets/setup_token"        # Synology (your own DSM user owns it)
+   sudo rm "$ROOT/secrets/setup_token"   # plain Linux (owned by uid 1000)
    ```
 
 4. Add passkeys for your other devices from Settings → Passkeys (synced passkeys, e.g. iCloud Keychain, usually appear on your other devices automatically).
@@ -150,7 +212,7 @@ To restore:
 docker compose stop server
 cp server-backups/pokepaper-<timestamp>.db server-data/pokepaper.db
 rm -f server-data/pokepaper.db-wal server-data/pokepaper.db-shm
-sudo chown 1000:1000 server-data/pokepaper.db
+sudo chown <puid>:<pgid> server-data/pokepaper.db   # plain Linux only, if you copied as another user
 docker compose start server
 ```
 
@@ -158,6 +220,6 @@ Each snapshot carries its own sync epoch, so after a restore every device automa
 
 ## 9. Updating
 
-CI publishes new images on merges to `main`. In Portainer, **Pull and redeploy** the stack (or `docker compose pull && docker compose up -d`). Database migrations run automatically at server start. A migration that was edited after being applied stops the server with a clear error rather than corrupting data.
+CI publishes new images on merges to `main`. In Portainer, **Pull and redeploy** the stack. By hand, pass the same compose files every time, or a plain `up` drops edge off NPM's network and the site returns 502: `docker compose -f docker-compose.yml -f docker-compose.npm.yml pull && docker compose -f docker-compose.yml -f docker-compose.npm.yml up -d` (omit the second file if you don't use it). Database migrations run automatically at server start. A migration that was edited after being applied stops the server with a clear error rather than corrupting data.
 
 Changing `PUBLIC_ORIGIN` (the domain) invalidates every passkey, because they're bound to the hostname. Plan that like a fresh setup.
