@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { UserSettings } from '@pokepaper/shared';
 import { DEFAULT_SETTINGS, SETTINGS_ENTITY_ID } from '@pokepaper/shared';
+import { NestedTransactionScopeError } from './storage-engine';
 import type { ImageCacheRecord, OutboxEntry, StorageEngine, SyncMetaEntry } from './storage-engine';
 
 /**
@@ -211,6 +212,86 @@ export function describeStorageEngineContract(
 
         expect(await engine.getSettings()).toBeUndefined();
         expect(await engine.getSyncMeta('nested')).toBeUndefined();
+      });
+
+      it('rejects a nested transaction whose scope the outer one does not cover, rolling back the outer', async () => {
+        await expect(
+          engine.runInTransaction(['settings', 'syncMeta'], async () => {
+            await engine.putSettings(makeContractSettings({ cardLanguage: 'it' }));
+            await engine.runInTransaction(['settings', 'outbox'], async () => {
+              await engine.putOutboxEntry(makeContractOutboxEntry());
+            });
+          })
+        ).rejects.toBeInstanceOf(NestedTransactionScopeError);
+
+        expect(await engine.getSettings()).toBeUndefined();
+        expect(await engine.listOutboxOrderedByCreatedAt()).toEqual([]);
+      });
+
+      it('a standalone write made while another transaction is open is not rolled back with it', async () => {
+        let releaseTransaction: () => void = () => undefined;
+        const held = new Promise<void>((resolve) => {
+          releaseTransaction = resolve;
+        });
+        let transactionStarted: () => void = () => undefined;
+        const started = new Promise<void>((resolve) => {
+          transactionStarted = resolve;
+        });
+
+        const failing = engine.runInTransaction(['syncMeta', 'outbox'], async () => {
+          await engine.putSyncMeta(makeContractSyncMetaEntry({ key: 'inside', value: 'x' }));
+          transactionStarted();
+          // Keep the transaction alive with storage work until released.
+          const hold = { released: false };
+          void held.then(() => {
+            hold.released = true;
+          });
+          while (!hold.released) {
+            await engine.getSyncMeta('inside');
+          }
+          throw new Error('boom');
+        });
+
+        await started;
+        const standaloneWrite = engine.putOutboxEntry(makeContractOutboxEntry({ opId: 'outside' }));
+        releaseTransaction();
+
+        await expect(failing).rejects.toThrow('boom');
+        await standaloneWrite;
+
+        expect(await engine.getSyncMeta('inside')).toBeUndefined();
+        expect((await engine.getOutboxEntry('outside'))?.opId).toBe('outside');
+      });
+
+      it('a standalone read made while another transaction is open does not see its uncommitted writes', async () => {
+        let releaseTransaction: () => void = () => undefined;
+        const held = new Promise<void>((resolve) => {
+          releaseTransaction = resolve;
+        });
+        let transactionStarted: () => void = () => undefined;
+        const started = new Promise<void>((resolve) => {
+          transactionStarted = resolve;
+        });
+
+        const failing = engine.runInTransaction(['syncMeta'], async () => {
+          await engine.putSyncMeta(makeContractSyncMetaEntry({ key: 'uncommitted', value: 'x' }));
+          transactionStarted();
+          const hold = { released: false };
+          void held.then(() => {
+            hold.released = true;
+          });
+          while (!hold.released) {
+            await engine.getSyncMeta('uncommitted');
+          }
+          throw new Error('boom');
+        });
+
+        await started;
+        const standaloneRead = engine.getSyncMeta('uncommitted');
+        releaseTransaction();
+
+        await expect(failing).rejects.toThrow('boom');
+        expect(await standaloneRead).toBeUndefined();
       });
 
       it('serializes concurrent independent transactions', async () => {

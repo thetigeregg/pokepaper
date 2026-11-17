@@ -20,7 +20,7 @@ It runs as a web app and as a native iOS app (Capacitor). It works offline: data
 - `server/`: Fastify API with SQLite storage (sync, auth, catalog, image cache) _(planned)_
 - `edge/`: Caddy container serving the web app and proxying `/api` to `server` _(planned)_
 - `ios/`: Capacitor iOS project with App DEV / App PROD targets _(planned)_
-- `docs/`: deployment, auth, and iOS docs _(planned)_
+- `docs/`: sync rules ([`docs/sync.md`](docs/sync.md)); deployment, auth, and iOS docs _(planned)_
 - `.github/`: PR/issue templates, Dependabot, and (planned) CI, release, TestFlight, and security workflows
 
 ## Prerequisites
@@ -47,7 +47,7 @@ The app opens at `http://localhost:4200`. `ng serve` proxies `/api` and `/images
 ## App Architecture
 
 - **Local-first storage.** All structured data goes through the `StorageEngine` interface (`src/app/core/data/`): Dexie/IndexedDB on the web, `@capacitor-community/sqlite` on iOS. Both engines run the same contract test suite.
-- **Sync.** Writes update local storage and queue an outbox entry in one transaction. `SyncService` pushes the outbox to `POST /api/sync/push` and pulls the server change log from `POST /api/sync/pull` on startup, every 30 seconds, when the browser comes back online, and after each local write. A 401 pauses sync (outbox kept) until the user signs in again.
+- **Sync.** Writes update local storage and queue an outbox entry in one transaction. `SyncService` pushes the outbox to `POST /api/sync/push` and pulls the server change log from `POST /api/sync/pull` on startup, every 30 seconds, when the browser comes back online, and after each local write. A 401 pauses sync (outbox kept) until the user signs in again. Conflict rules and the server contract are in [`docs/sync.md`](docs/sync.md).
 - **Offline web shell.** Production web builds register an Angular service worker (`ngsw-config.json`) so the app opens with no signal. iOS builds don't need it: the bundle ships inside the app.
 
 ## Testing and Quality

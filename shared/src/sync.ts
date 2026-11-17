@@ -5,8 +5,10 @@
  * applies each operation at most once (keyed by `opId`) and appends it to a
  * change log. Clients then pull the change log from their last cursor.
  *
- * New syncable entities (collection entries, decks, …) extend
- * `SyncEntityType`; the envelope stays the same.
+ * Operations carry full entity state (never partial patches), so the newest
+ * operation per entity supersedes older ones. New syncable entities
+ * (collection entries, decks, …) extend `SyncEntityType`; the envelope stays
+ * the same. Conflict rules and server requirements: docs/sync.md.
  */
 export type SyncEntityType = 'settings';
 

@@ -3,6 +3,7 @@ import Dexie, { Table, Transaction } from 'dexie';
 import type { UserSettings } from '@pokepaper/shared';
 import { AppDb, SettingsRow } from './app-db';
 import {
+  nestedScopeViolation,
   ImageCacheRecord,
   OutboxEntry,
   StorageEngine,
@@ -51,8 +52,10 @@ export class DexieStorageEngine implements StorageEngine {
   }
 
   runInTransaction<T>(scope: readonly StorageScope[], action: () => Promise<T>): Promise<T> {
-    if (this.isNestedTransactionCall()) {
-      return action();
+    const active = this.activeTransaction;
+    if (active && this.isNestedTransactionCall()) {
+      const violation = nestedScopeViolation(active.scope, scope);
+      return violation ? Promise.reject(violation) : action();
     }
 
     const run = (): Promise<T> =>
@@ -143,10 +146,17 @@ export class DexieStorageEngine implements StorageEngine {
     return this.resolveTable('outbox', this.db.outbox);
   }
 
+  /**
+   * Routes a call through the active transaction only when the caller is
+   * running *inside* that transaction's action. Callers outside it (e.g.
+   * SyncService while a repository write is in flight) use the global table,
+   * so IndexedDB gives them their own transaction: they never see
+   * uncommitted rows or commit/abort with someone else's transaction.
+   */
   private resolveTable<T, K>(scopeName: StorageScope, fallback: Table<T, K>): Table<T, K> {
     const active = this.activeTransaction;
 
-    if (active && active.scope.has(scopeName)) {
+    if (active && active.scope.has(scopeName) && isInsideStorageTransaction()) {
       return active.transaction.table<T, K>(SCOPE_TABLE_NAMES[scopeName]);
     }
 

@@ -88,3 +88,28 @@ export interface StorageEngine {
 }
 
 export const STORAGE_ENGINE = new InjectionToken<StorageEngine>('STORAGE_ENGINE');
+
+/**
+ * Thrown when a nested `runInTransaction` asks for a scope the enclosing
+ * transaction doesn't cover. Both engines reject this identically: IndexedDB
+ * can't widen a running transaction, so SQLite (which could) refuses too,
+ * keeping web and native behavior in step.
+ */
+export class NestedTransactionScopeError extends Error {
+  override readonly name = 'NestedTransactionScopeError';
+
+  constructor(missing: readonly StorageScope[]) {
+    super(
+      `Nested runInTransaction needs scope(s) not covered by the outer transaction: ${missing.join(', ')}`
+    );
+  }
+}
+
+/** Returns the error to reject with when `inner` isn't covered by `outer`, else null. */
+export function nestedScopeViolation(
+  outer: ReadonlySet<StorageScope>,
+  inner: readonly StorageScope[]
+): NestedTransactionScopeError | null {
+  const missing = inner.filter((scope) => !outer.has(scope));
+  return missing.length > 0 ? new NestedTransactionScopeError(missing) : null;
+}

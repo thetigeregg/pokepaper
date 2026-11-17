@@ -44,7 +44,7 @@ describe('LocalUserDataRepository', () => {
   it('updateSettings writes settings and an outbox entry atomically, then requests a sync', async () => {
     const syncNow = vi.fn(() => Promise.resolve());
     const onOutboxEntryEnqueued = vi.fn();
-    const writer: SyncOutboxWriter = { enqueueOperation: vi.fn(), syncNow, onOutboxEntryEnqueued };
+    const writer: SyncOutboxWriter = { syncNow, onOutboxEntryEnqueued };
     const repository = await setUp(writer);
 
     await repository.updateSettings({ cardLanguage: 'ja' });
@@ -64,7 +64,6 @@ describe('LocalUserDataRepository', () => {
 
   it('a failing observability hook or sync trigger does not break the write', async () => {
     const writer: SyncOutboxWriter = {
-      enqueueOperation: vi.fn(),
       syncNow: vi.fn(() => {
         throw new Error('sync exploded');
       }),

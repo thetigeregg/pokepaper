@@ -10,7 +10,14 @@ import { SettingsSyncApplier } from '../data/settings-sync-applier';
 import { makeContractOutboxEntry } from '../data/storage-engine.contract';
 import { StorageEngineFactory } from '../data/storage-engine.factory';
 import { SYNC_ENTITY_APPLIERS } from '../data/sync-entity-applier';
-import { PULL_CURSOR_KEY, SyncService } from './sync.service';
+import {
+  MAX_PUSH_ATTEMPTS,
+  PULL_CURSOR_KEY,
+  PUSH_BATCH_SIZE,
+  SYNC_ENTITY_TYPES_KEY,
+  SyncService,
+  type SyncStatus,
+} from './sync.service';
 
 vi.mock(
   '../data/storage-transaction-context',
@@ -21,10 +28,14 @@ const PUSH_URL = '/api/sync/push';
 const PULL_URL = '/api/sync/pull';
 
 /** Dexie/fake-indexeddb operations resolve via the real event loop, so poll
- * until the request appears instead of guessing a fixed number of ticks
- * (same helper as go-gather's sync spec). */
+ * until the request appears. Bounded by time rather than tick count: under
+ * full-suite load (and with large outboxes) the number of ticks a sync step
+ * needs varies, which made a fixed tick budget flaky. */
+const WAIT_TIMEOUT_MS = 3_000;
+
 async function waitForRequest(httpMock: HttpTestingController, url: string) {
-  for (let attempt = 0; attempt < 50; attempt++) {
+  const deadline = Date.now() + WAIT_TIMEOUT_MS;
+  while (Date.now() < deadline) {
     const matches = httpMock.match(url);
     if (matches.length > 0) {
       return matches[0];
@@ -34,6 +45,20 @@ async function waitForRequest(httpMock: HttpTestingController, url: string) {
 
   throw new Error(`Timed out waiting for request to ${url}`);
 }
+
+async function waitForStatus(service: SyncService, status: SyncStatus) {
+  const deadline = Date.now() + WAIT_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (service.status() === status) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  throw new Error(`Timed out waiting for status ${status}`);
+}
+
+const EMPTY_PULL = { cursor: '0', changes: [], hasMore: false };
 
 function settingsChange(overrides: Partial<SyncChange> = {}): SyncChange {
   return {
@@ -83,10 +108,18 @@ describe('SyncService', () => {
 
   it('pushes queued outbox entries in order and clears acknowledged ones', async () => {
     await engine.putOutboxEntry(
-      makeContractOutboxEntry({ opId: 'op-2', createdAt: '2026-01-02T00:00:00.000Z' })
+      makeContractOutboxEntry({
+        opId: 'op-2',
+        entityId: 'entity-b',
+        createdAt: '2026-01-02T00:00:00.000Z',
+      })
     );
     await engine.putOutboxEntry(
-      makeContractOutboxEntry({ opId: 'op-1', createdAt: '2026-01-01T00:00:00.000Z' })
+      makeContractOutboxEntry({
+        opId: 'op-1',
+        entityId: SETTINGS_ENTITY_ID,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      })
     );
 
     const syncPromise = syncService.syncNow();
@@ -123,6 +156,175 @@ describe('SyncService', () => {
     const [entry] = await engine.listOutboxOrderedByCreatedAt();
     expect(entry.attemptCount).toBe(1);
     expect(entry.lastError).toBe('invalid payload');
+    expect(syncService.status()).toBe('error');
+  });
+
+  it('pushes only the newest queued operation per entity and drops superseded ones', async () => {
+    await engine.putOutboxEntry(
+      makeContractOutboxEntry({
+        opId: 'old',
+        payload: { cardLanguage: 'fr' },
+        attemptCount: 2,
+        lastError: 'temporary',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      })
+    );
+    await engine.putOutboxEntry(
+      makeContractOutboxEntry({
+        opId: 'new',
+        payload: { cardLanguage: 'de' },
+        createdAt: '2026-01-02T00:00:00.000Z',
+      })
+    );
+
+    const syncPromise = syncService.syncNow();
+    const push = await waitForRequest(httpMock, PUSH_URL);
+    const operations = (push.request.body as { operations: { opId: string }[] }).operations;
+    expect(operations.map((op) => op.opId)).toEqual(['new']);
+    expect(await engine.getOutboxEntry('old')).toBeUndefined();
+    push.flush({ results: [{ opId: 'new', status: 'applied' }] });
+    (await waitForRequest(httpMock, PULL_URL)).flush(EMPTY_PULL);
+    await syncPromise;
+
+    expect(await engine.listOutboxOrderedByCreatedAt()).toEqual([]);
+  });
+
+  it('splits large outboxes into batches', async () => {
+    const total = PUSH_BATCH_SIZE + 5;
+    for (let index = 0; index < total; index++) {
+      await engine.putOutboxEntry(
+        makeContractOutboxEntry({
+          opId: `op-${String(index).padStart(4, '0')}`,
+          entityId: `entity-${String(index)}`,
+          createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(),
+        })
+      );
+    }
+
+    const syncPromise = syncService.syncNow();
+    for (const expectedSize of [PUSH_BATCH_SIZE, 5]) {
+      const push = await waitForRequest(httpMock, PUSH_URL);
+      const operations = (push.request.body as { operations: { opId: string }[] }).operations;
+      expect(operations).toHaveLength(expectedSize);
+      push.flush({ results: operations.map((op) => ({ opId: op.opId, status: 'applied' })) });
+    }
+    (await waitForRequest(httpMock, PULL_URL)).flush(EMPTY_PULL);
+    await syncPromise;
+
+    expect(await engine.listOutboxOrderedByCreatedAt()).toEqual([]);
+  });
+
+  it('drops an operation rejected MAX_PUSH_ATTEMPTS times and re-pulls from cursor 0', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await engine.putSyncMeta({ key: PULL_CURSOR_KEY, value: '42' });
+    await engine.putSyncMeta({ key: SYNC_ENTITY_TYPES_KEY, value: 'settings' });
+    await engine.putOutboxEntry(
+      makeContractOutboxEntry({ opId: 'doomed', attemptCount: MAX_PUSH_ATTEMPTS - 1 })
+    );
+
+    const syncPromise = syncService.syncNow();
+    (await waitForRequest(httpMock, PUSH_URL)).flush({
+      results: [{ opId: 'doomed', status: 'failed', message: 'invalid payload' }],
+    });
+    const pull = await waitForRequest(httpMock, PULL_URL);
+    expect(pull.request.body).toEqual({ cursor: '0' });
+    pull.flush({
+      cursor: '43',
+      changes: [settingsChange({ payload: { cardLanguage: 'en' } })],
+      hasMore: false,
+    });
+    await syncPromise;
+
+    expect(await engine.listOutboxOrderedByCreatedAt()).toEqual([]);
+    expect((await engine.getSettings())?.cardLanguage).toBe('en');
+    expect(syncService.rejectedOperations()).toBe(1);
+    expect(syncService.status()).toBe('idle');
+    expect(consoleError).toHaveBeenCalledWith('sync.operation_rejected', expect.anything());
+    consoleError.mockRestore();
+  });
+
+  it('does not overwrite an entity that still has a queued local operation', async () => {
+    await engine.putSettings({ cardLanguage: 'ja' });
+    await engine.putOutboxEntry(
+      makeContractOutboxEntry({ opId: 'pending', payload: { cardLanguage: 'ja' } })
+    );
+
+    const syncPromise = syncService.syncNow();
+    // The push fails transiently (5xx), so the local op stays queued...
+    (await waitForRequest(httpMock, PUSH_URL)).flush(null, { status: 503, statusText: 'Busy' });
+    await syncPromise;
+
+    // ...and the next cycle pulls older server state for the same entity.
+    const retry = syncService.syncNow();
+    (await waitForRequest(httpMock, PUSH_URL)).flush({
+      results: [{ opId: 'pending', status: 'failed', message: 'temporary' }],
+    });
+    (await waitForRequest(httpMock, PULL_URL)).flush({
+      cursor: '7',
+      changes: [settingsChange({ payload: { cardLanguage: 'en' } })],
+      hasMore: false,
+    });
+    await retry;
+
+    expect((await engine.getSettings())?.cardLanguage).toBe('ja');
+    expect((await engine.getSyncMeta(PULL_CURSOR_KEY))?.value).toBe('7');
+  });
+
+  it('a sync requested mid-cycle runs one more cycle so new writes are pushed promptly', async () => {
+    const first = syncService.syncNow();
+    const pull = await waitForRequest(httpMock, PULL_URL);
+
+    // A local write lands while the first cycle is already past its push.
+    await engine.putOutboxEntry(makeContractOutboxEntry({ opId: 'mid-cycle' }));
+    const second = syncService.syncNow();
+    expect(second).toBe(first);
+    pull.flush(EMPTY_PULL);
+
+    const push = await waitForRequest(httpMock, PUSH_URL);
+    push.flush({ results: [{ opId: 'mid-cycle', status: 'applied' }] });
+    (await waitForRequest(httpMock, PULL_URL)).flush(EMPTY_PULL);
+    await first;
+
+    expect(await engine.listOutboxOrderedByCreatedAt()).toEqual([]);
+  });
+
+  it('re-pulls from cursor 0 when the set of entity types with appliers changes', async () => {
+    await engine.putSyncMeta({ key: PULL_CURSOR_KEY, value: '99' });
+    await engine.putSyncMeta({ key: SYNC_ENTITY_TYPES_KEY, value: '' });
+
+    const syncPromise = syncService.syncNow();
+    const pull = await waitForRequest(httpMock, PULL_URL);
+    expect(pull.request.body).toEqual({ cursor: '0' });
+    pull.flush({ cursor: '100', changes: [], hasMore: false });
+    await syncPromise;
+
+    expect((await engine.getSyncMeta(SYNC_ENTITY_TYPES_KEY))?.value).toBe('settings');
+
+    const next = syncService.syncNow();
+    const nextPull = await waitForRequest(httpMock, PULL_URL);
+    expect(nextPull.request.body).toEqual({ cursor: '100' });
+    nextPull.flush({ cursor: '100', changes: [], hasMore: false });
+    await next;
+  });
+
+  it('announces which entity types a pull changed', async () => {
+    const emitted: string[][] = [];
+    const subscription = syncService.dataChanged$.subscribe((types) => emitted.push([...types]));
+
+    const syncPromise = syncService.syncNow();
+    (await waitForRequest(httpMock, PULL_URL)).flush({
+      cursor: '1',
+      changes: [settingsChange()],
+      hasMore: false,
+    });
+    await syncPromise;
+
+    const quiet = syncService.syncNow();
+    (await waitForRequest(httpMock, PULL_URL)).flush({ cursor: '1', changes: [], hasMore: false });
+    await quiet;
+
+    expect(emitted).toEqual([['settings']]);
+    subscription.unsubscribe();
   });
 
   it('skips the push request when the outbox is empty', async () => {
@@ -249,32 +451,19 @@ describe('SyncService', () => {
     expect(syncService.status()).toBe('offline');
   });
 
-  it('shares one in-flight cycle between concurrent callers', async () => {
+  it('coalesces concurrent callers into the in-flight cycle plus at most one follow-up', async () => {
     const first = syncService.syncNow();
     const second = syncService.syncNow();
+    const third = syncService.syncNow();
 
     expect(second).toBe(first);
+    expect(third).toBe(first);
 
-    (await waitForRequest(httpMock, PULL_URL)).flush({ cursor: '0', changes: [], hasMore: false });
-    await Promise.all([first, second]);
-  });
+    (await waitForRequest(httpMock, PULL_URL)).flush(EMPTY_PULL);
+    (await waitForRequest(httpMock, PULL_URL)).flush(EMPTY_PULL);
+    await first;
 
-  it('enqueueOperation stores an outbox entry and triggers a sync', async () => {
-    const enqueued = syncService.enqueueOperation({
-      entityType: 'settings',
-      entityId: SETTINGS_ENTITY_ID,
-      operation: 'upsert',
-      payload: { ...DEFAULT_SETTINGS },
-    });
-    await enqueued;
-
-    const push = await waitForRequest(httpMock, PUSH_URL);
-    const [operation] = (push.request.body as { operations: { opId: string }[] }).operations;
-    push.flush({ results: [{ opId: operation.opId, status: 'applied' }] });
-    (await waitForRequest(httpMock, PULL_URL)).flush({ cursor: '0', changes: [], hasMore: false });
-    await syncService.syncNow();
-
-    expect(await engine.listOutboxOrderedByCreatedAt()).toEqual([]);
+    httpMock.expectNone(PULL_URL);
   });
 
   it('initialize starts one sync and is idempotent', async () => {
@@ -284,8 +473,8 @@ describe('SyncService', () => {
     syncService.initialize();
 
     expect(setIntervalSpy).toHaveBeenCalledTimes(1);
-    (await waitForRequest(httpMock, PULL_URL)).flush({ cursor: '0', changes: [], hasMore: false });
-    await syncService.syncNow();
+    (await waitForRequest(httpMock, PULL_URL)).flush(EMPTY_PULL);
+    await waitForStatus(syncService, 'idle');
 
     window.dispatchEvent(new Event('offline'));
     expect(syncService.status()).toBe('offline');

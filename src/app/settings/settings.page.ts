@@ -1,11 +1,13 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   OnInit,
   computed,
   inject,
   signal,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   IonContent,
   IonHeader,
@@ -66,13 +68,24 @@ const SYNC_STATUS_LABELS: Record<SyncStatus, string> = {
 export class SettingsPage implements OnInit {
   private readonly repository = inject(LocalUserDataRepository);
   private readonly syncService = inject(SyncService);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly languages = CARD_LANGUAGES;
   readonly settings = signal<UserSettings>({ ...DEFAULT_SETTINGS });
   readonly syncStatusLabel = computed(() => SYNC_STATUS_LABELS[this.syncService.status()]);
+  readonly rejectedOperations = this.syncService.rejectedOperations;
+  readonly saveError = signal(false);
 
   ngOnInit(): void {
     void this.loadSettings();
+
+    // Ionic keeps tab pages alive, so reload when a pull changes settings
+    // (e.g. edited on another device) rather than only on first init.
+    this.syncService.dataChanged$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((types) => {
+      if (types.has('settings')) {
+        void this.loadSettings();
+      }
+    });
   }
 
   async loadSettings(): Promise<void> {
@@ -80,8 +93,17 @@ export class SettingsPage implements OnInit {
   }
 
   async onCardLanguageChange(cardLanguage: string): Promise<void> {
-    const next: UserSettings = { ...this.settings(), cardLanguage };
+    const previous = this.settings();
+    const next: UserSettings = { ...previous, cardLanguage };
     this.settings.set(next);
-    await this.repository.updateSettings(next);
+    this.saveError.set(false);
+
+    try {
+      await this.repository.updateSettings(next);
+    } catch (error: unknown) {
+      console.error('settings.save_failed', error);
+      this.settings.set(previous);
+      this.saveError.set(true);
+    }
   }
 }

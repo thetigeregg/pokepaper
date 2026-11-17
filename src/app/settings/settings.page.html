@@ -27,6 +27,13 @@
         }
       </ion-select>
     </ion-item>
+    @if (saveError()) {
+      <ion-item lines="none">
+        <ion-note color="danger" data-testid="save-error">
+          Couldn't save on this device. Please try again.
+        </ion-note>
+      </ion-item>
+    }
   </ion-list>
 
   <ion-list inset="true">
@@ -37,5 +44,12 @@
       <ion-label>Status</ion-label>
       <ion-note slot="end" data-testid="sync-status">{{ syncStatusLabel() }}</ion-note>
     </ion-item>
+    @if (rejectedOperations() > 0) {
+      <ion-item lines="none">
+        <ion-note color="warning" data-testid="rejected-operations">
+          {{ rejectedOperations() }} change(s) were rejected by the server and reverted.
+        </ion-note>
+      </ion-item>
+    }
   </ion-list>
 </ion-content>
