@@ -15,26 +15,50 @@ TLS terminates at Cloudflare. Everything is protected by passkeys (`docs/auth.md
 
 ## 1. Directories, permissions, and the setup token
 
-On the NAS, pick a root (e.g. `/volume1/docker/pokepaper`) and create:
+The server container runs unprivileged as **PUID:PGID** (default `1000:1000`, the image's `node` user). Its data folders and the setup token must be accessible to that uid.
+
+**On a Synology shared folder, use your own DSM user.** Shared folders carry ACLs that override `chown`/`chmod`: a uid the ACL doesn't list (like 1000) is denied even when it owns the folder. Run the container as a DSM user the share already allows instead:
 
 ```bash
-ROOT=/volume1/docker/pokepaper
+id                                # e.g. uid=1026(biono) gid=100(users)
+ROOT=/volume2/LocalN/projects/pokepaper   # anywhere inside a shared folder you can write
 mkdir -p "$ROOT/server-data" "$ROOT/server-backups" "$ROOT/secrets"
 
-# The server container runs as the unprivileged `node` user (uid 1000).
-sudo chown -R 1000:1000 "$ROOT/server-data" "$ROOT/server-backups"
+# One-time token for registering the first passkey (only your user can read it)
+openssl rand -base64 32 > "$ROOT/secrets/setup_token" && chmod 400 "$ROOT/secrets/setup_token"
+```
 
-# One-time token for registering the first passkey (readable by uid 1000).
+Then set `PUID` / `PGID` to those IDs (e.g. `1026` / `100`) in the stack variables (section 3).
+
+**Elsewhere (plain Linux permissions, no ACLs):** keep the default 1000:1000 and give the folders to that uid:
+
+```bash
+sudo mkdir -p "$ROOT/server-data" "$ROOT/server-backups" "$ROOT/secrets"
+sudo chown -R 1000:1000 "$ROOT/server-data" "$ROOT/server-backups"
 openssl rand -base64 32 | sudo tee "$ROOT/secrets/setup_token" > /dev/null
 sudo chown 1000:1000 "$ROOT/secrets/setup_token" && sudo chmod 400 "$ROOT/secrets/setup_token"
-sudo cat "$ROOT/secrets/setup_token"   # you'll paste this into the app once
 ```
+
+**Check access before deploying.** Run the real image as the configured user with the real mounts (replace `1026:100` with your PUID:PGID). Expect three `OK` lines:
+
+```bash
+sudo docker run --rm --entrypoint sh --user 1026:100 \
+  -v "$ROOT/server-data:/app/server/data" \
+  -v "$ROOT/server-backups:/app/server/backups" \
+  -v "$ROOT/secrets:/run/secrets:ro" \
+  ghcr.io/thetigeregg/pokepaper-server:main -c '
+    touch /app/server/data/.t && rm /app/server/data/.t && echo "server-data: OK"
+    touch /app/server/backups/.t && rm /app/server/backups/.t && echo "server-backups: OK"
+    cat /run/secrets/setup_token > /dev/null && echo "setup_token: OK"'
+```
+
+The folders hold:
 
 - `server-data`: the SQLite database (`pokepaper.db`, `-wal`, `-shm`).
 - `server-backups`: database snapshots (see section 8).
 - `secrets`: one file per secret, mounted read-only at `/run/secrets`.
 
-If the server logs `EACCES` or `SQLITE_CANTOPEN`, the data directories aren't writable by uid 1000. If the sign-in screen says "Setup isn't enabled", the setup token file is missing or not readable by uid 1000.
+If the server logs `EACCES` or `SQLITE_CANTOPEN`, the data folders aren't writable by PUID:PGID. If the sign-in screen says "Setup isn't enabled", the setup token is missing or not readable by PUID:PGID.
 
 ## 2. Images
 
@@ -68,6 +92,7 @@ Create a stack from `docker-compose.yml` (upload it or point Portainer at the re
 | `NAS_DATA_ROOT`    | `/volume1/docker/pokepaper`         | Parent of `server-data` and `server-backups`                              |
 | `SECRETS_HOST_DIR` | `/volume1/docker/pokepaper/secrets` | Holds `setup_token`                                                       |
 | `EDGE_PORT`        | `8080`                              | Host port Nginx Proxy Manager forwards to. Pick a free one                |
+| `PUID` / `PGID`    | `1026` / `100`                      | User the server runs as (default `1000`/`1000`); see section 1            |
 | `TRUSTED_PROXIES`  | _(default `private_ranges`)_        | Proxies allowed to set `CF-Connecting-IP`; see section 4                  |
 | `TZ`               | `Europe/Zurich`                     |                                                                           |
 | `SERVER_IMAGE`     | _(default `…-server:main`)_         | Override to pin a version                                                 |
@@ -150,7 +175,7 @@ To restore:
 docker compose stop server
 cp server-backups/pokepaper-<timestamp>.db server-data/pokepaper.db
 rm -f server-data/pokepaper.db-wal server-data/pokepaper.db-shm
-sudo chown 1000:1000 server-data/pokepaper.db
+sudo chown "$PUID:$PGID" server-data/pokepaper.db   # only needed if you copied as another user
 docker compose start server
 ```
 
