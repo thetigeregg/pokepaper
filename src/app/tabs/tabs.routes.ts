@@ -23,6 +23,11 @@ export const routes: Routes = [
         loadComponent: () => import('../settings/settings.page').then((m) => m.SettingsPage),
       },
       {
+        path: 'settings/downloads',
+        loadComponent: () =>
+          import('../settings/downloads/downloads.page').then((m) => m.DownloadsPage),
+      },
+      {
         path: '',
         redirectTo: '/tabs/cards',
         pathMatch: 'full',

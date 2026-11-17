@@ -4,7 +4,7 @@ import { routes as appRoutes } from '../app.routes';
 describe('tab routes', () => {
   const tabs = routes.find((route) => route.path === 'tabs');
 
-  it('lazy-loads each tab page', async () => {
+  it('lazy-loads each tab page and its sub-pages', async () => {
     const children = tabs?.children ?? [];
     const loaded: unknown[] = [];
     for (const child of children) {
@@ -18,6 +18,7 @@ describe('tab routes', () => {
       'collection',
       'decks',
       'settings',
+      'settings/downloads',
       '',
     ]);
     expect(loaded.every(Boolean)).toBe(true);

@@ -2,7 +2,7 @@
 
 PokePaper's card data comes from [TCGdex](https://tcgdex.dev), a community-maintained, open-source Pokémon TCG database. The server imports it into its own SQLite file on a schedule. Clients will download it from the server (never from TCGdex directly), so the app keeps working if TCGdex is slow, down, or changes its API.
 
-Status: the server import, download API and image cache (`server/src/catalog/`) and the app's offline copy (`CatalogSyncService`) are implemented. Image caching on the device and the browsing screens come next.
+Status: the server import, download API and image cache (`server/src/catalog/`), the app's offline copy (`CatalogSyncService`) and the app's image cache (`ImageCacheService`, `ImageDownloadService`) are implemented. The browsing screens come next.
 
 ## Data model
 
@@ -109,6 +109,17 @@ The app keeps a **full copy of the catalog** in its local storage: IndexedDB on 
 - **Browser storage:** after the first download, the app asks the browser to keep its storage (`navigator.storage.persist()`) so the catalog isn't evicted. If it is (Safari can evict sites that aren't on the home screen), it re-downloads.
 
 The first download is about 390 requests (one per set) and roughly 10–12 MB over the network.
+
+## Images on the device
+
+Card scans aren't part of the catalog download (every grid-size scan in all seven languages would be about 2 GB). The app keeps them two ways:
+
+- **Recently viewed:** an image is saved the first time it's shown (by the browsing screens, which arrive in C4; until then this cache only holds images of removed sets). These are capped at a size you choose in Settings → Images (250 MB, 500 MB by default, 1 GB or 2 GB). Past the cap, the least recently viewed go first.
+- **Downloaded sets:** `ImageDownloadService.downloadSet(region, setId, languages)` downloads and **pins** a set's grid-size scans, so they work offline and are never evicted. For each card and language it pins the scan the app would show: that language's, else the region's fallback language's. Images already on the device are just pinned, so running it again resumes. Removing a set unpins its images, which then count as recently viewed. One image pinned by two sets stays until both are removed. The languages a set was downloaded in are recorded (`downloadedSets`), so Settings → Images → Downloaded sets can list downloads grouped by series, with search and removal per set, per series, or all at once.
+
+`ImageCacheService` stores images by their same-origin URL: as blobs in IndexedDB on the web, and as files under the iOS app's cache folder (`ImageFileStore`). The cache folder keeps gigabytes of re-downloadable scans out of iCloud backups; if iOS purges it when storage runs low, an image is simply downloaded again when next shown. Images the server doesn't have (`404`) aren't requested again during the session. Pins live in their own table (`imagePins`), so the size cap only ever counts and evicts unpinned images.
+
+In testing, a full set in two languages (516 scans) plus a Japanese set (210 scans) took about 7 seconds and 14 MB.
 
 ## Storage
 

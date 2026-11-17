@@ -10,7 +10,11 @@ import {
   catalogKey,
   nestedScopeViolation,
   CatalogStats,
+  DownloadedSet,
   ImageCacheRecord,
+  ImageCacheUsage,
+  PinnedSetSummary,
+  StoredImageRef,
   OutboxEntry,
   StorageEngine,
   StorageScope,
@@ -23,6 +27,8 @@ import {
 } from './storage-transaction-context';
 
 const BULK_BATCH_SIZE = 500;
+/** SQL condition: image `i` is pinned by at least one downloaded set. */
+const PINNED = 'EXISTS (SELECT 1 FROM image_pins p WHERE p.image_key = i.key)';
 const SETTINGS_ROW_ID = 1;
 
 interface PayloadRow {
@@ -102,27 +108,148 @@ export class SqliteStorageEngine implements StorageEngine {
   }
 
   async getImage(key: string): Promise<ImageCacheRecord | undefined> {
-    const rows = await this.sql.query<PayloadRow>(
-      'SELECT payload FROM image_cache_meta WHERE key = ?',
+    const rows = await this.sql.query<PayloadRow & { last_accessed_at: string }>(
+      'SELECT payload, last_accessed_at FROM image_cache_meta WHERE key = ?',
       [key]
     );
-    return this.firstEntity(rows) as ImageCacheRecord | undefined;
+    const row = rows.at(0);
+    if (!row) {
+      return undefined;
+    }
+    // The column is authoritative: touchImage updates only it.
+    const record = this.parseEntity(row) as ImageCacheRecord;
+    return { ...record, lastAccessedAt: row.last_accessed_at || record.lastAccessedAt };
   }
 
   async putImage(record: ImageCacheRecord): Promise<void> {
     await this.sql.run(
-      `INSERT INTO image_cache_meta (key, file_path, payload) VALUES (?, ?, ?)
-       ON CONFLICT(key) DO UPDATE SET file_path = excluded.file_path, payload = excluded.payload`,
+      `INSERT INTO image_cache_meta (key, file_path, size, last_accessed_at, payload)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET
+         file_path = excluded.file_path,
+         size = excluded.size,
+         last_accessed_at = excluded.last_accessed_at,
+         payload = excluded.payload`,
       this.imageCacheValues(record)
     );
+  }
+
+  async touchImage(key: string, at: string): Promise<void> {
+    await this.sql.run('UPDATE image_cache_meta SET last_accessed_at = ? WHERE key = ?', [at, key]);
   }
 
   async deleteImage(key: string): Promise<void> {
     await this.sql.run('DELETE FROM image_cache_meta WHERE key = ?', [key]);
   }
 
-  async clearImageCache(): Promise<void> {
-    await this.sql.run('DELETE FROM image_cache_meta', []);
+  async deleteImages(keys: readonly string[]): Promise<void> {
+    await this.executeBatched(
+      keys.map((key) => ({
+        statement: 'DELETE FROM image_cache_meta WHERE key = ?',
+        values: [key],
+      }))
+    );
+  }
+
+  evictImages(keys: readonly string[]): Promise<StoredImageRef[]> {
+    return this.runInTransaction(['imageCache', 'imagePins'], async () => {
+      const removed: StoredImageRef[] = [];
+      for (const key of keys) {
+        const rows = await this.sql.query<{ key: string; file_path: string | null; size: number }>(
+          `SELECT key, file_path, size FROM image_cache_meta i WHERE key = ? AND NOT ${PINNED}`,
+          [key]
+        );
+        const row = rows.at(0);
+        if (row) {
+          await this.sql.run('DELETE FROM image_cache_meta WHERE key = ?', [key]);
+          removed.push({ key: row.key, filePath: row.file_path, size: row.size });
+        }
+      }
+      return removed;
+    });
+  }
+
+  clearImageCache(): Promise<void> {
+    return this.runInTransaction(['imageCache', 'imagePins', 'downloadedSets'], async () => {
+      await this.sql.run('DELETE FROM image_cache_meta', []);
+      await this.sql.run('DELETE FROM image_pins', []);
+      await this.sql.run('DELETE FROM downloaded_sets', []);
+    });
+  }
+
+  async imageCacheUsage(): Promise<ImageCacheUsage> {
+    const rows = await this.sql.query<{ pinned: number | null; unpinned: number | null }>(
+      `SELECT
+         SUM(CASE WHEN ${PINNED} THEN size ELSE 0 END) AS pinned,
+         SUM(CASE WHEN ${PINNED} THEN 0 ELSE size END) AS unpinned
+       FROM image_cache_meta i`,
+      []
+    );
+    return { pinnedBytes: rows[0]?.pinned ?? 0, unpinnedBytes: rows[0]?.unpinned ?? 0 };
+  }
+
+  async listEvictableImages(limit: number): Promise<StoredImageRef[]> {
+    return (
+      await this.sql.query<{ key: string; file_path: string | null; size: number }>(
+        `SELECT key, file_path, size FROM image_cache_meta i
+         WHERE NOT ${PINNED} ORDER BY last_accessed_at LIMIT ?`,
+        [limit]
+      )
+    ).map((row) => ({ key: row.key, filePath: row.file_path, size: row.size }));
+  }
+
+  deleteUnpinnedImages(): Promise<StoredImageRef[]> {
+    return this.runInTransaction(['imageCache', 'imagePins'], async () => {
+      const removed = (
+        await this.sql.query<{ key: string; file_path: string | null; size: number }>(
+          `SELECT key, file_path, size FROM image_cache_meta i WHERE NOT ${PINNED}`,
+          []
+        )
+      ).map((row) => ({ key: row.key, filePath: row.file_path, size: row.size }));
+      await this.sql.run(`DELETE FROM image_cache_meta AS i WHERE NOT ${PINNED}`, []);
+      return removed;
+    });
+  }
+
+  async pinImages(setKey: string, imageKeys: readonly string[]): Promise<void> {
+    await this.executeBatched(
+      imageKeys.map((imageKey) => ({
+        statement: 'INSERT OR IGNORE INTO image_pins (set_key, image_key) VALUES (?, ?)',
+        values: [setKey, imageKey],
+      }))
+    );
+  }
+
+  async unpinSet(setKey: string): Promise<void> {
+    await this.sql.run('DELETE FROM image_pins WHERE set_key = ?', [setKey]);
+  }
+
+  async putDownloadedSet(record: DownloadedSet): Promise<void> {
+    await this.sql.run(
+      `INSERT INTO downloaded_sets (set_key, payload) VALUES (?, ?)
+       ON CONFLICT(set_key) DO UPDATE SET payload = excluded.payload`,
+      [record.setKey, JSON.stringify(record)]
+    );
+  }
+
+  async listDownloadedSets(): Promise<DownloadedSet[]> {
+    const rows = await this.sql.query<PayloadRow>('SELECT payload FROM downloaded_sets', []);
+    return rows.map((row) => this.parseEntity(row) as DownloadedSet);
+  }
+
+  async deleteDownloadedSet(setKey: string): Promise<void> {
+    await this.sql.run('DELETE FROM downloaded_sets WHERE set_key = ?', [setKey]);
+  }
+
+  async listPinnedSets(): Promise<PinnedSetSummary[]> {
+    return (
+      await this.sql.query<{ set_key: string; images: number; bytes: number | null }>(
+        `SELECT p.set_key, COUNT(i.key) AS images, SUM(i.size) AS bytes
+         FROM image_pins p LEFT JOIN image_cache_meta i ON i.key = p.image_key
+         GROUP BY p.set_key ORDER BY p.set_key`,
+        []
+      )
+    ).map((row) => ({ setKey: row.set_key, images: row.images, bytes: row.bytes ?? 0 }));
   }
 
   async getSyncMeta(key: string): Promise<SyncMetaEntry | undefined> {
@@ -288,7 +415,13 @@ export class SqliteStorageEngine implements StorageEngine {
 
   private imageCacheValues(record: ImageCacheRecord): unknown[] {
     const { blob: _blob, ...payload } = record;
-    return [record.key, record.filePath ?? null, JSON.stringify(payload)];
+    return [
+      record.key,
+      record.filePath ?? null,
+      record.size,
+      record.lastAccessedAt,
+      JSON.stringify(payload),
+    ];
   }
 
   private parseEntity(row: PayloadRow): unknown {

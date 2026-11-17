@@ -12,7 +12,12 @@ import {
   catalogKey,
   nestedScopeViolation,
   CatalogStats,
+  DownloadedSet,
   ImageCacheRecord,
+  ImageCacheUsage,
+  ImagePin,
+  PinnedSetSummary,
+  StoredImageRef,
   OutboxEntry,
   StorageEngine,
   StorageScope,
@@ -37,6 +42,8 @@ const SCOPE_TABLE_NAMES: Record<StorageScope, string> = {
   catalogSeries: 'catalogSeries',
   catalogSets: 'catalogSets',
   catalogCards: 'catalogCards',
+  imagePins: 'imagePins',
+  downloadedSets: 'downloadedSets',
 };
 
 const SETTINGS_ROW_ID = 1;
@@ -106,12 +113,123 @@ export class DexieStorageEngine implements StorageEngine {
     return this.imageCacheTable.put(record).then(() => undefined);
   }
 
+  async touchImage(key: string, at: string): Promise<void> {
+    await this.imageCacheTable.update(key, { lastAccessedAt: at });
+  }
+
   deleteImage(key: string): Promise<void> {
     return this.imageCacheTable.delete(key);
   }
 
+  deleteImages(keys: readonly string[]): Promise<void> {
+    return this.imageCacheTable.bulkDelete([...keys]);
+  }
+
+  evictImages(keys: readonly string[]): Promise<StoredImageRef[]> {
+    return this.runInTransaction(['imageCache', 'imagePins'], async () => {
+      const pinned = await this.pinnedImageKeys();
+      const records = (await this.imageCacheTable.bulkGet(keys.filter((key) => !pinned.has(key))))
+        .filter((record) => record !== undefined)
+        .map(toImageRef);
+      await this.imageCacheTable.bulkDelete(records.map((record) => record.key));
+      return records;
+    });
+  }
+
   clearImageCache(): Promise<void> {
-    return this.imageCacheTable.clear();
+    return this.runInTransaction(['imageCache', 'imagePins', 'downloadedSets'], async () => {
+      await this.imageCacheTable.clear();
+      await this.imagePinsTable.clear();
+      await this.downloadedSetsTable.clear();
+    });
+  }
+
+  imageCacheUsage(): Promise<ImageCacheUsage> {
+    return this.runInTransaction(['imageCache', 'imagePins'], async () => {
+      const pinned = await this.pinnedImageKeys();
+      const usage: ImageCacheUsage = { pinnedBytes: 0, unpinnedBytes: 0 };
+      await this.imageCacheTable.each((record) => {
+        if (pinned.has(record.key)) {
+          usage.pinnedBytes += record.size;
+        } else {
+          usage.unpinnedBytes += record.size;
+        }
+      });
+      return usage;
+    });
+  }
+
+  listEvictableImages(limit: number): Promise<StoredImageRef[]> {
+    return this.runInTransaction(['imageCache', 'imagePins'], async () => {
+      const pinned = await this.pinnedImageKeys();
+      const records = await this.imageCacheTable
+        .orderBy('lastAccessedAt')
+        .filter((record) => !pinned.has(record.key))
+        .limit(limit)
+        .toArray();
+      return records.map(toImageRef);
+    });
+  }
+
+  deleteUnpinnedImages(): Promise<StoredImageRef[]> {
+    return this.runInTransaction(['imageCache', 'imagePins'], async () => {
+      const pinned = await this.pinnedImageKeys();
+      const removed = (
+        await this.imageCacheTable.filter((record) => !pinned.has(record.key)).toArray()
+      ).map(toImageRef);
+      await this.imageCacheTable.bulkDelete(removed.map((record) => record.key));
+      return removed;
+    });
+  }
+
+  async pinImages(setKey: string, imageKeys: readonly string[]): Promise<void> {
+    await this.imagePinsTable.bulkPut(imageKeys.map((imageKey) => ({ setKey, imageKey })));
+  }
+
+  async unpinSet(setKey: string): Promise<void> {
+    await this.imagePinsTable.where('setKey').equals(setKey).delete();
+  }
+
+  listPinnedSets(): Promise<PinnedSetSummary[]> {
+    return this.runInTransaction(['imageCache', 'imagePins'], async () => {
+      const bySet = new Map<string, string[]>();
+      for (const pin of await this.imagePinsTable.toArray()) {
+        const keys = bySet.get(pin.setKey);
+        if (keys) {
+          keys.push(pin.imageKey);
+        } else {
+          bySet.set(pin.setKey, [pin.imageKey]);
+        }
+      }
+      const summaries: PinnedSetSummary[] = [];
+      for (const [setKey, keys] of bySet) {
+        const stored = (await this.imageCacheTable.bulkGet(keys)).filter(
+          (record) => record !== undefined
+        );
+        summaries.push({
+          setKey,
+          images: stored.length,
+          bytes: stored.reduce((total, record) => total + record.size, 0),
+        });
+      }
+      return summaries.sort((a, b) => a.setKey.localeCompare(b.setKey));
+    });
+  }
+
+  async putDownloadedSet(record: DownloadedSet): Promise<void> {
+    await this.downloadedSetsTable.put(record);
+  }
+
+  listDownloadedSets(): Promise<DownloadedSet[]> {
+    return this.downloadedSetsTable.toArray();
+  }
+
+  deleteDownloadedSet(setKey: string): Promise<void> {
+    return this.downloadedSetsTable.delete(setKey);
+  }
+
+  private async pinnedImageKeys(): Promise<Set<string>> {
+    return new Set((await this.imagePinsTable.orderBy('imageKey').uniqueKeys()) as string[]);
   }
 
   getSyncMeta(key: string): Promise<SyncMetaEntry | undefined> {
@@ -240,6 +358,14 @@ export class DexieStorageEngine implements StorageEngine {
     return this.resolveTable('catalogCards', this.db.catalogCards);
   }
 
+  private get imagePinsTable(): Table<ImagePin, [string, string]> {
+    return this.resolveTable('imagePins', this.db.imagePins);
+  }
+
+  private get downloadedSetsTable(): Table<DownloadedSet, string> {
+    return this.resolveTable('downloadedSets', this.db.downloadedSets);
+  }
+
   /**
    * Routes a call through the active transaction only when the caller is
    * running *inside* that transaction's action. Callers outside it (e.g.
@@ -270,4 +396,8 @@ export class DexieStorageEngine implements StorageEngine {
     const currentTransaction = Dexie.currentTransaction as Transaction | undefined;
     return !currentTransaction || currentTransaction === active.transaction;
   }
+}
+
+function toImageRef(record: ImageCacheRecord): StoredImageRef {
+  return { key: record.key, filePath: record.filePath ?? null, size: record.size };
 }
