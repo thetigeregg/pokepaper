@@ -114,7 +114,7 @@ Create a stack from `docker-compose.yml` (upload it or point Portainer at the re
 | `SERVER_IMAGE`     | _(default `…-server:main`)_                       | Override to pin a version                                                                                            |
 | `EDGE_IMAGE`       | _(default `…-edge:main`)_                         | Override to pin a version                                                                                            |
 
-The compose file already sets `NODE_ENV=production`, `SETUP_TOKEN_FILE`, `CLIENT_IP_HEADER=cf-connecting-ip`, and `TRUST_PROXY_HOPS=1`. Optional server settings (session lifetime, backups, rate limits) are listed, commented, in `docker-compose.yml`. All server settings are in `README.md` → Server and `docs/auth.md` → Configuration.
+The compose file already sets `NODE_ENV=production`, `SETUP_TOKEN_FILE`, `CLIENT_IP_HEADER=cf-connecting-ip`, and `TRUST_PROXY_HOPS=1`. Optional server settings (session lifetime, backups, rate limits, card catalogue import) are listed, commented, in `docker-compose.yml`. All server settings are in `README.md` → Server and `docs/auth.md` → Configuration.
 
 `edge` waits for `server` to report healthy. Both have healthchecks, so `docker compose ps` / Portainer shows `healthy` once they're up. If you use `docker-compose.npm.yml` (section 4), add `-f docker-compose.yml -f docker-compose.npm.yml` to manual `docker compose` commands that recreate containers (`up`, `pull`); `ps`, `logs`, `stop` and `start` work either way.
 
@@ -176,7 +176,7 @@ NPM passes request headers through unchanged, including Cloudflare's `CF-Connect
 ```bash
 # On the NAS
 docker compose ps                                  # both healthy
-docker compose logs -f server                      # "Server listening", "backup.written"
+docker compose logs -f server                      # "Server listening", "backup.written", "catalog.ingest_started"
 curl -s http://127.0.0.1:${EDGE_PORT:-8080}/api/health   # {"status":"ok","clientIp":"…"}
 
 # From anywhere
@@ -186,6 +186,8 @@ curl -s https://pokepaper.<your-domain>/api/auth/status                         
 curl -s https://pokepaper.<your-domain>/.well-known/apple-app-site-association   # JSON with the app IDs
 curl -s https://app-site-association.cdn-apple.com/a/v1/pokepaper.<your-domain>  # same JSON via Apple's CDN (may take a while to appear)
 ```
+
+The first card catalogue import starts about 10 seconds after the server and runs in the background for 10–15 minutes; `catalog.ingest_finished` in the server log marks the end ([`docs/catalog.md`](catalog.md)).
 
 ## 7. First sign-in
 
@@ -205,6 +207,8 @@ Lost every passkey? See `docs/auth.md` → Recovering access.
 ## 8. Backups and restore
 
 The server writes a consistent snapshot to `server-backups/` at startup (unless one is less than `BACKUP_INTERVAL_HOURS` old) and every `BACKUP_INTERVAL_HOURS` (default 24), keeping the newest `BACKUP_KEEP` (default 14). Include `server-backups` (or `server-data`) in your regular NAS backups (Hyper Backup, snapshots, …).
+
+The card catalogue (`server-data/catalog.db`) isn't in these snapshots: it holds no user data and is rebuilt from TCGdex. To rebuild it, stop the server, delete `catalog.db` and any `catalog.db-wal` / `catalog.db-shm`, and start it again ([`docs/catalog.md`](catalog.md)).
 
 To restore:
 

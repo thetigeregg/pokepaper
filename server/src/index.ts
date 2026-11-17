@@ -1,11 +1,15 @@
 import { join } from 'node:path';
 import { buildApp } from './app.js';
 import { startBackupSchedule } from './backup.js';
+import { CATALOG_DB_FILENAME, openCatalogDatabase } from './catalog/db.js';
+import { startCatalogSchedule, type CatalogSchedule } from './catalog/schedule.js';
+import { CatalogStore } from './catalog/store.js';
 import { loadConfig } from './config.js';
 import { DB_FILENAME, openDatabase } from './db.js';
 
 const config = loadConfig();
 const db = openDatabase(join(config.dataDir, DB_FILENAME));
+const catalogDb = openCatalogDatabase(join(config.dataDir, CATALOG_DB_FILENAME));
 const app = buildApp({
   db,
   auth: config.auth,
@@ -23,6 +27,22 @@ const stopBackups = startBackupSchedule({
   log: app.log,
 });
 
+// The catalogue (catalog.db) is rebuilt from TCGdex rather than backed up.
+const catalogSchedule: CatalogSchedule | null = config.catalog.syncEnabled
+  ? startCatalogSchedule({
+      store: new CatalogStore(catalogDb),
+      languages: config.catalog.languages,
+      refreshHours: config.catalog.refreshHours,
+      fullRefreshDays: config.catalog.fullRefreshDays,
+      log: app.log,
+    })
+  : null;
+
+const closeDatabases = (): void => {
+  db.close();
+  catalogDb.close();
+};
+
 if (config.auth.devBypass) {
   app.log.warn(
     'AUTH_DEV_BYPASS is on: every request is treated as signed in (local development only)'
@@ -34,7 +54,8 @@ try {
 } catch (error: unknown) {
   app.log.error({ err: error }, 'server.listen_failed');
   stopBackups();
-  db.close();
+  await catalogSchedule?.stop();
+  closeDatabases();
   process.exit(1);
 }
 
@@ -48,13 +69,12 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     }
     shuttingDown = true;
     stopBackups();
-    app
-      .close()
+    Promise.all([app.close(), catalogSchedule?.stop()])
       .catch((error: unknown) => {
         app.log.error({ err: error }, 'server.close_failed');
       })
       .finally(() => {
-        db.close();
+        closeDatabases();
         process.exit(0);
       });
   });

@@ -40,6 +40,7 @@ export default defineConfig({
         'src/zone-flags.ts',
         'src/vitest.setup.ts',
         'server/src/index.ts',
+        'server/src/catalog/cli.ts',
       ],
     },
   },

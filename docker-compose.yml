@@ -47,6 +47,11 @@ services:
       # RATE_LIMIT_PER_MINUTE: "600"
       # AUTH_RATE_LIMIT_PER_MINUTE: "20"
       # LOG_LEVEL: info
+      # Card catalogue import from TCGdex (docs/catalog.md):
+      # CATALOG_SYNC_ENABLED: "true"
+      # CATALOG_LANGUAGES: en,fr,it,de,ja,zh-tw,zh-cn
+      # CATALOG_REFRESH_HOURS: "24"
+      # CATALOG_FULL_REFRESH_DAYS: "7"
     healthcheck:
       test:
         [
