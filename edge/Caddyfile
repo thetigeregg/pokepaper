@@ -1,0 +1,85 @@
+{
+	# TLS terminates upstream (Cloudflare -> cloudflared -> Nginx Proxy
+	# Manager); edge only ever serves plain HTTP inside the NAS.
+	auto_https off
+	admin off
+
+	# The real client IP arrives in Cloudflare's CF-Connecting-IP header, but
+	# only requests from a trusted proxy (Nginx Proxy Manager) may set it.
+	# From anyone else, {client_ip} is the connection's own address, so a
+	# spoofed header can't dodge the server's rate limits. Narrow
+	# TRUSTED_PROXIES to NPM's address (docs/nas-deployment.md).
+	servers {
+		trusted_proxies static {$TRUSTED_PROXIES:private_ranges}
+		client_ip_headers CF-Connecting-IP
+	}
+}
+
+:8080 {
+	encode zstd gzip
+
+	# Security headers for every response. HSTS is honored by browsers only
+	# over HTTPS, i.e. on the public hostname. CSP notes:
+	# - style-src 'unsafe-inline': Ionic components inject inline styles.
+	# - no inline scripts: Angular's critical-CSS inlining (which adds an
+	#   inline onload handler) is disabled in angular.json for this reason.
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+		Permissions-Policy "camera=(self), microphone=(), geolocation=(), payment=(), usb=()"
+		Cross-Origin-Opener-Policy "same-origin"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		-Server
+	}
+
+	# API and cached images are served by the server container, which keys
+	# rate limits on CF-Connecting-IP: always overwritten with the vetted
+	# client IP (see trusted_proxies above).
+	@server path /api/* /images/*
+	handle @server {
+		reverse_proxy server:3000 {
+			header_up CF-Connecting-IP {client_ip}
+		}
+	}
+
+	# Passkeys in the iOS app: Apple fetches this (via its CDN) to verify
+	# the app may use passkeys for this domain. Must be JSON, at this exact
+	# path, with no redirect.
+	handle /.well-known/apple-app-site-association {
+		root * /srv-well-known
+		rewrite * /apple-app-site-association
+		header Content-Type "application/json"
+		header Cache-Control "public, max-age=3600"
+		file_server
+	}
+
+	handle {
+		root * /srv
+
+		# Content-hashed build output (main-<hash>.js, chunk-<hash>.js,
+		# styles-<hash>.css) never changes under the same name. `file` keeps a
+		# missing hashed URL (e.g. an older build's chunk) from being marked
+		# immutable. Everything else (index.html, ngsw.json, ngsw-worker.js,
+		# the manifest, assets) gets the deferred default and revalidates
+		# (cheap 304 via ETag), so deploys and service worker updates show up.
+		@hashed {
+			path_regexp -[A-Za-z0-9_-]{8}\.(js|css)$
+			file
+		}
+		header @hashed Cache-Control "public, max-age=31536000, immutable"
+		header ?Cache-Control "no-cache"
+
+		# App routes (no file extension, no such file) are served the SPA. A
+		# missing *file* is a real 404 rather than index.html, so a stale tab
+		# requesting a removed chunk fails cleanly instead of parsing HTML as
+		# JavaScript.
+		@spa {
+			not path_regexp \.[A-Za-z0-9]+$
+			not file
+		}
+		rewrite @spa /index.html
+		file_server
+	}
+}

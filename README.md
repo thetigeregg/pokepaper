@@ -18,9 +18,9 @@ It runs as a web app and as a native iOS app (Capacitor). It works offline: data
 - `scripts/`: Node tooling (devx worktree adapter; iOS build/version/environment scripts _(planned)_), each with `*.test.mjs` tests
 - `public/`: static web assets (favicon, web app manifest)
 - `server/`: Fastify API with SQLite storage: passkey auth, sync, and health; card catalog and image cache _(planned)_ (npm workspace)
-- `edge/`: Caddy container serving the web app and proxying `/api` to `server` _(planned)_
+- `edge/`: Caddy container serving the web app, proxying `/api` to `server`, serving the iOS app-association file, and setting security headers (CSP, HSTS, …)
 - `ios/`: Capacitor iOS project with App DEV / App PROD targets _(planned)_
-- `docs/`: [`auth.md`](docs/auth.md) (passkeys, sessions, setup, recovery), [`sync.md`](docs/sync.md) (sync rules); deployment and iOS docs _(planned)_
+- `docs/`: [`auth.md`](docs/auth.md) (passkeys, sessions, setup, recovery), [`sync.md`](docs/sync.md) (sync rules), [`nas-deployment.md`](docs/nas-deployment.md) (Docker, Nginx Proxy Manager, Cloudflare); iOS docs _(planned)_
 - `.github/`: PR/issue templates, Dependabot, and (planned) CI, release, TestFlight, and security workflows
 
 ## Prerequisites
@@ -103,6 +103,14 @@ npm run format:check      # Prettier
 
 Commits are checked by husky: `lint-staged` (Prettier and `eslint --fix` on staged files) runs on pre-commit, and `commitlint` (Conventional Commits) runs on commit-msg.
 
-## Deployment _(planned)_
+## Deployment
 
-Two Docker images, `server` and `edge`, are published to GHCR and deployed on a Synology NAS via Portainer. Public traffic goes Cloudflare → cloudflared tunnel → Nginx Proxy Manager → `edge`. See `docs/nas-deployment.md` once it lands.
+Two Docker images, `server` (`server/Dockerfile`) and `edge` (`edge/Dockerfile`), run as a Portainer stack on the Synology NAS from `docker-compose.yml`. Public traffic goes Cloudflare → cloudflared tunnel → Nginx Proxy Manager → `edge` → `server`; only `edge` is published on the host. The full walkthrough (directories and permissions, Portainer variables, NPM and Cloudflare settings, verification, first sign-in, backups, updates) is in [`docs/nas-deployment.md`](docs/nas-deployment.md).
+
+To try the production stack locally (builds both images, runs in development mode with Docker volumes, so nothing needs creating or `chown`-ing):
+
+```bash
+PUBLIC_ORIGIN=http://localhost:8080 docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
+```
+
+Open http://localhost:8080 and set up with `local-setup-token-0123456789` (override with `SETUP_TOKEN`). `docker compose … down -v` resets the data.
