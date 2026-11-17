@@ -99,28 +99,29 @@ docker build -f edge/Dockerfile -t pokepaper-edge:local .
 
 Create a stack from `docker-compose.yml` (upload it or point Portainer at the repo) with these environment variables:
 
-| Variable           | Example                             | Notes                                                                     |
-| ------------------ | ----------------------------------- | ------------------------------------------------------------------------- |
-| `PUBLIC_ORIGIN`    | `https://pokepaper.example.com`     | **Required.** The public HTTPS origin. Passkeys are bound to its hostname |
-| `NAS_DATA_ROOT`    | `/volume1/docker/pokepaper`         | Parent of `server-data` and `server-backups`                              |
-| `SECRETS_HOST_DIR` | `/volume1/docker/pokepaper/secrets` | Holds `setup_token`                                                       |
-| `EDGE_PORT`        | `8080`                              | Host port Nginx Proxy Manager forwards to. Pick a free one                |
-| `PUID` / `PGID`    | `<puid>` / `<pgid>`                 | User the server runs as (default `1000`/`1000`); see section 1            |
-| `TRUSTED_PROXIES`  | _(default `private_ranges`)_        | Proxies allowed to set `CF-Connecting-IP`; see section 4                  |
-| `TZ`               | `Europe/Zurich`                     |                                                                           |
-| `SERVER_IMAGE`     | _(default `…-server:main`)_         | Override to pin a version                                                 |
-| `EDGE_IMAGE`       | _(default `…-edge:main`)_           | Override to pin a version                                                 |
+| Variable           | Example                                | Notes                                                                     |
+| ------------------ | -------------------------------------- | ------------------------------------------------------------------------- |
+| `PUBLIC_ORIGIN`    | `https://pokepaper.example.com`        | **Required.** The public HTTPS origin. Passkeys are bound to its hostname |
+| `NAS_DATA_ROOT`    | `/volume1/docker/pokepaper`            | Parent of `server-data` and `server-backups`                              |
+| `SECRETS_HOST_DIR` | `/volume1/docker/pokepaper/secrets`    | Holds `setup_token`                                                       |
+| `EDGE_PORT`        | `8080`                                 | Host port Nginx Proxy Manager forwards to. Pick a free one                |
+| `PUID` / `PGID`    | `<puid>` / `<pgid>`                    | User the server runs as (default `1000`/`1000`); see section 1            |
+| `TRUSTED_PROXIES`  | _(default `private_ranges`)_           | Proxies allowed to set `CF-Connecting-IP`; see section 4                  |
+| `NPM_NETWORK`      | _(only with `docker-compose.npm.yml`)_ | Nginx Proxy Manager's Docker network; see section 4                       |
+| `TZ`               | `Europe/Zurich`                        |                                                                           |
+| `SERVER_IMAGE`     | _(default `…-server:main`)_            | Override to pin a version                                                 |
+| `EDGE_IMAGE`       | _(default `…-edge:main`)_              | Override to pin a version                                                 |
 
 The compose file already sets `NODE_ENV=production`, `SETUP_TOKEN_FILE`, `CLIENT_IP_HEADER=cf-connecting-ip`, and `TRUST_PROXY_HOPS=1`. Optional server settings (session lifetime, backups, rate limits) are listed, commented, in `docker-compose.yml`. All server settings are in `README.md` → Server and `docs/auth.md` → Configuration.
 
-`edge` waits for `server` to report healthy. Both have healthchecks, so `docker compose ps` / Portainer shows `healthy` once they're up.
+`edge` waits for `server` to report healthy. Both have healthchecks, so `docker compose ps` / Portainer shows `healthy` once they're up. If you use `docker-compose.npm.yml` (section 4), add `-f docker-compose.yml -f docker-compose.npm.yml` to manual `docker compose` commands that recreate containers (`up`, `pull`); `ps`, `logs`, `stop` and `start` work either way.
 
 ## 4. Nginx Proxy Manager
 
 Add a **Proxy Host**:
 
 - **Domain:** `pokepaper.<your-domain>`
-- **Scheme / Forward host / port:** `http` / the NAS's LAN IP (or the Docker host gateway) / `EDGE_PORT`
+- **Scheme / Forward host / port:** `http` / the NAS's LAN IP / `EDGE_PORT` to start with. Once edge shares NPM's network (below): `pokepaper-edge` / `8080`.
 - **Cache Assets:** **off**. Edge already sends the right caching headers (immutable hashed assets, revalidated `index.html` and service worker files). NPM's asset cache would override them and can serve stale app versions.
 - **Block Common Exploits:** optional.
 - **Websockets Support:** not needed.
@@ -128,16 +129,28 @@ Add a **Proxy Host**:
 
 NPM passes request headers through unchanged, including Cloudflare's `CF-Connecting-IP`, which the server uses for rate limiting.
 
-**Narrowing `TRUSTED_PROXIES` (recommended).** Edge only accepts `CF-Connecting-IP` from trusted proxies. From anything else, it overwrites the header with the connection's own address, so a spoofed header can't dodge the rate limits. The default trusts every private address, which includes other devices on your LAN that can reach `EDGE_PORT` directly. To trust only NPM:
+**Recommended: share NPM's Docker network** (`docker-compose.npm.yml`). Edge only accepts `CF-Connecting-IP` from trusted proxies; from anything else it overwrites the header with the connection's own address, so a spoofed header can't dodge the rate limits. But when NPM reaches edge through the published `EDGE_PORT`, Docker's port proxy rewrites **every** connection's source to the bridge gateway, so NPM and any other LAN device look identical and `TRUSTED_PROXIES` can't be narrowed usefully. If NPM runs in Docker on the same NAS, put edge on NPM's network instead. Do the steps in this order, so NPM's traffic is never left untrusted in between.
 
-1. Find the address NPM's requests arrive from. If NPM runs in Docker on the NAS and forwards to `<nas-ip>:EDGE_PORT`, that's usually the Docker bridge gateway (e.g. `172.17.0.1`) or NPM's container IP:
+1. **Find NPM's network.** Match on NPM's image (the container may have any name):
 
    ```bash
-   docker inspect <npm-container> --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{.Gateway}} {{end}}'
+   sudo docker ps --filter ancestor=jc21/nginx-proxy-manager --format '{{.Names}}\t{{.Networks}}'
+   sudo docker network inspect <npm-network> --format '{{.Driver}} {{range .IPAM.Config}}{{.Subnet}} {{end}}'
    ```
 
-2. Set `TRUSTED_PROXIES` to that address or a small CIDR (space-separated for several), e.g. `172.17.0.1/32`, and redeploy.
-3. Confirm sign-in still works through the public URL. If the address is wrong, nothing breaks, but every visitor shares one rate-limit bucket (NPM's address) instead of being counted separately.
+   It must be a **user-defined** network (not Docker's default `bridge`). The default bridge has no container-name DNS, so NPM couldn't reach `pokepaper-edge`, and every container without its own network shares it. If NPM is on `bridge`, create a network for it first (`docker network create <name>`) and attach NPM to it. If the network has both IPv4 and IPv6 subnets, use the IPv4 one below.
+
+2. **Join the network.** In the Portainer stack, add `docker-compose.npm.yml` under **Additional paths**, set `NPM_NETWORK` = `<npm-network>` (leave `TRUSTED_PROXIES` unset for now), and update the stack.
+
+3. **Point NPM at edge by name.** Change the proxy host's **Forward Hostname** to `pokepaper-edge` and **Forward Port** to `8080` (the container's port, not `EDGE_PORT`). Check the site still loads through the public URL.
+
+4. **Narrow `TRUSTED_PROXIES`**, then update the stack again. Choose one:
+   - **NPM's address only (strictest):** give NPM a fixed IP on that network in NPM's own stack (`networks: <npm-network>: ipv4_address: …`), then set `TRUSTED_PROXIES` = `<npm-ip>/32`.
+   - **The network's subnet:** `TRUSTED_PROXIES` = `<npm-network-subnet>`. Simpler, and survives NPM getting a new address on restart, but it trusts **every** container on that network, plus processes on the NAS itself that reach it through the network's gateway. Fine when only NPM and its tunnel are on it.
+
+5. **Verify the client IP end to end.** From a browser or another machine, open `https://pokepaper.<your-domain>/api/health`. `clientIp` must be **your public IP** (compare with any what-is-my-IP site). If it shows a private address (NPM's or a gateway), the proxy isn't trusted: every visitor then shares one rate-limit bucket. Re-check `TRUSTED_PROXIES` against step 1.
+
+`EDGE_PORT` stays published for direct LAN access and troubleshooting. LAN devices that come that way are never trusted, so they can't set the client IP.
 
 ## 5. Cloudflare
 
@@ -154,10 +167,10 @@ NPM passes request headers through unchanged, including Cloudflare's `CF-Connect
 # On the NAS
 docker compose ps                                  # both healthy
 docker compose logs -f server                      # "Server listening", "backup.written"
-curl -s http://127.0.0.1:${EDGE_PORT:-8080}/api/health   # {"status":"ok"}
+curl -s http://127.0.0.1:${EDGE_PORT:-8080}/api/health   # {"status":"ok","clientIp":"…"}
 
 # From anywhere
-curl -s https://pokepaper.<your-domain>/api/health                               # {"status":"ok"}
+curl -s https://pokepaper.<your-domain>/api/health                               # {"status":"ok","clientIp":"<your public IP>"}
 curl -sI https://pokepaper.<your-domain>/ | grep -i content-security-policy      # edge headers present
 curl -s https://pokepaper.<your-domain>/api/auth/status                          # {"registered":false,…,"setupAvailable":true}
 curl -s https://pokepaper.<your-domain>/.well-known/apple-app-site-association   # JSON with the app IDs
@@ -196,6 +209,6 @@ Each snapshot carries its own sync epoch, so after a restore every device automa
 
 ## 9. Updating
 
-CI publishes new images on merges to `main`. In Portainer, **Pull and redeploy** the stack (or `docker compose pull && docker compose up -d`). Database migrations run automatically at server start. A migration that was edited after being applied stops the server with a clear error rather than corrupting data.
+CI publishes new images on merges to `main`. In Portainer, **Pull and redeploy** the stack. By hand, pass the same compose files every time, or a plain `up` drops edge off NPM's network and the site returns 502: `docker compose -f docker-compose.yml -f docker-compose.npm.yml pull && docker compose -f docker-compose.yml -f docker-compose.npm.yml up -d` (omit the second file if you don't use it). Database migrations run automatically at server start. A migration that was edited after being applied stops the server with a clear error rather than corrupting data.
 
 Changing `PUBLIC_ORIGIN` (the domain) invalidates every passkey, because they're bound to the hostname. Plan that like a fresh setup.
