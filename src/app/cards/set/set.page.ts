@@ -68,10 +68,9 @@ export function setLine(set: CatalogSet, card: CatalogCard): string {
       }
       .caption {
         margin: 4px 0 8px;
-        overflow: hidden;
         font-size: 0.75rem;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        text-align: center;
+        overflow-wrap: anywhere;
       }
     `,
   ],

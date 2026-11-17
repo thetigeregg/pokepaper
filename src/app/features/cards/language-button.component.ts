@@ -16,8 +16,8 @@ import { languageOutline } from 'ionicons/icons';
 let nextId = 0;
 
 /**
- * Header language switch (docs/ui.md): an IonButton with the current
- * language's code, opening an IonPopover with an IonRadioGroup of the
+ * Header language switch (docs/ui.md): an icon-only IonButton (the current
+ * language is in its accessible label), opening an IonPopover with an IonRadioGroup of the
  * languages the set or card exists in.
  */
 @Component({
@@ -29,8 +29,7 @@ let nextId = 0;
       [attr.aria-label]="'Language: ' + label().name"
       data-testid="language-button"
     >
-      <ion-icon slot="start" name="language-outline"></ion-icon>
-      {{ label().short }}
+      <ion-icon slot="icon-only" name="language-outline"></ion-icon>
     </ion-button>
     <ion-popover [trigger]="triggerId" [dismissOnSelect]="true">
       <ng-template>

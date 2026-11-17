@@ -15,6 +15,7 @@ describe('tab routes', () => {
 
     expect(children.map((child) => child.path)).toEqual([
       'cards',
+      'cards/set/:region/:setId',
       'collection',
       'decks',
       'settings',
@@ -22,15 +23,6 @@ describe('tab routes', () => {
       '',
     ]);
     expect(loaded.every(Boolean)).toBe(true);
-  });
-
-  it('lazy-loads the Cards home and set pages inside the Cards tab', async () => {
-    const cards = tabs?.children?.find((child) => child.path === 'cards');
-
-    expect(cards?.children?.map((child) => child.path)).toEqual(['', 'set/:region/:setId']);
-    for (const child of cards?.children ?? []) {
-      expect(await child.loadComponent?.()).toBeDefined();
-    }
   });
 
   it('redirects the root to the Cards tab', () => {

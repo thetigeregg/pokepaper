@@ -8,18 +8,11 @@ export const routes: Routes = [
     children: [
       {
         path: 'cards',
-        loadComponent: () => import('../cards/cards.page').then((m) => m.CardsPage),
-        children: [
-          {
-            path: '',
-            loadComponent: () =>
-              import('../cards/home/cards-home.page').then((m) => m.CardsHomePage),
-          },
-          {
-            path: 'set/:region/:setId',
-            loadComponent: () => import('../cards/set/set.page').then((m) => m.SetPage),
-          },
-        ],
+        loadComponent: () => import('../cards/home/cards-home.page').then((m) => m.CardsHomePage),
+      },
+      {
+        path: 'cards/set/:region/:setId',
+        loadComponent: () => import('../cards/set/set.page').then((m) => m.SetPage),
       },
       {
         path: 'collection',

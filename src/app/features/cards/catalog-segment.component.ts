@@ -6,6 +6,9 @@ import { CatalogBrowseService } from '../../core/services/catalog-browse.service
 /** IonSegment switching the Cards tab between the international and Asian catalogs. */
 @Component({
   selector: 'app-catalog-segment',
+  // Full toolbar width, so the segment can be centered in it.
+  host: { class: 'ion-display-flex ion-justify-content-center' },
+  styles: [':host { width: 100%; }'],
   template: `
     <ion-segment
       [value]="browse.region()"

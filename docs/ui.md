@@ -50,11 +50,12 @@ Standards for PokePaper's screens, so new pages look and behave like existing on
 ## Cards
 
 - **Catalogs:** an `IonSegment` ("International | Japan & Asia") in a second header `IonToolbar`, remembered on the device.
-- **Desktop layout:** `IonSplitPane when="lg"`. An `IonMenu` holds the segment and the sets list, and the selected set opens beside it; picking another set replaces it rather than stacking. Phones push pages: sets, then set.
-- **Sets list:** an `IonItemGroup` per series under a sticky `IonItemDivider`, newest first. Each row is an `IonItem` with the set logo in an `IonThumbnail`, name, "date · N cards", and an `IonIcon` (cloud-done) when downloaded.
+- **Desktop layout:** `IonSplitPane when="lg"` wraps `IonTabs` (`TabsPage`). Its `IonMenu` holds the segment and the sets list and is enabled only while the Cards tab is open, so other tabs stay full width. The selected set opens beside it; picking another set replaces it rather than stacking. Phones push pages: sets, then set.
+- **Tab stacks are stock Ionic:** each tab keeps its pages when you switch away, and tapping the current tab pops to its root. Sub-pages are routes at the tab level (`cards/set/:region/:setId`, `settings/downloads`); don't nest an `IonRouterOutlet` inside a tab page, because Ionic then forgets the tab's position.
+- **Sets list:** an `IonItemGroup` per series under a sticky `IonItemDivider`, newest first. Each row is an `IonItem lines="full"` with the set logo in an `IonThumbnail`, name, "date · N cards", and a small `IonIcon` (cloud-done) when downloaded.
 - **Set page:**
-  - The header's end slot has two icon `IonButton`s: language (code shown, opening an `IonPopover` with an `IonRadioGroup`) and download (an `IonActionSheet`). An `IonProgressBar` shows while downloading.
-  - Cards in an `IonGrid` with `IonCol size="4" sizeMd="3" sizeLg="2"`: the image plus a "001 · Pineco" caption.
+  - The header's end slot has two icon-only `IonButton`s: language (opening an `IonPopover` with an `IonRadioGroup`) and download (an `IonActionSheet`). An `IonProgressBar` shows while downloading.
+  - Cards in an `IonGrid` with `IonCol size="4" sizeMd="3" sizeLg="2"`: the image plus a centered "001 · Pineco" caption that wraps (the row grows with it) rather than truncating.
 - **Card detail:**
   - An `IonModal`: a sheet on phones (`[breakpoints]="[0, 1]"`, handle), a centered dialog on desktop (`.card-detail-modal`, image beside the text).
   - Swiper with virtual slides; ‹ / › and "4 / 258" in an `IonFooter`; ←/→ keys.

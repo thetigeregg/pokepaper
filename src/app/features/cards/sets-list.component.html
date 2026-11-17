@@ -28,6 +28,7 @@
       @for (set of group.sets; track set.id) {
         <ion-item
           button="true"
+          lines="full"
           [detail]="true"
           [color]="key(set) === selectedKey() ? 'light' : undefined"
           (click)="selected.emit(set)"
@@ -49,6 +50,7 @@
             <ion-icon
               slot="end"
               name="cloud-done-outline"
+              size="small"
               color="medium"
               aria-label="Downloaded for offline use"
             ></ion-icon>
