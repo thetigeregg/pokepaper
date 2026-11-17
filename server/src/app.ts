@@ -1,8 +1,9 @@
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
-import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
+import Fastify, { type FastifyInstance } from 'fastify';
 import { registerAuth } from './auth/plugin.js';
 import { AuthStore } from './auth/store.js';
+import { clientIp } from './client-ip.js';
 import type { AuthConfig } from './config.js';
 import type { Db } from './db.js';
 import { registerHealthRoute } from './health.js';
@@ -10,7 +11,6 @@ import { registerSyncRoutes } from './sync/routes.js';
 import { SyncStore } from './sync/store.js';
 
 export const DEFAULT_RATE_LIMIT_PER_MINUTE = 600;
-const MAX_IP_LENGTH = 45;
 
 export interface BuildAppOptions {
   db: Db;
@@ -23,19 +23,6 @@ export interface BuildAppOptions {
   logLevel?: string | false;
   /** Requests per client IP per minute, across all routes. */
   rateLimitPerMinute?: number;
-}
-
-/** The client IP used to key rate limits. */
-export function clientIp(request: FastifyRequest, clientIpHeader: string | null): string {
-  if (clientIpHeader) {
-    const raw = request.headers[clientIpHeader];
-    const value = (Array.isArray(raw) ? raw[0] : raw)?.trim();
-    if (value && value.length <= MAX_IP_LENGTH) {
-      return value;
-    }
-  }
-
-  return request.ip;
 }
 
 /**
@@ -77,7 +64,7 @@ export function buildApp({
   // this scope; public ones opt out via `config: { auth: 'public' }`.
   void app.register((instance, _options, done) => {
     registerAuth(instance, { store: new AuthStore(db, auth.sessionTtlDays), config: auth });
-    registerHealthRoute(instance, db);
+    registerHealthRoute(instance, db, clientIpHeader);
     registerSyncRoutes(instance, new SyncStore(db));
     done();
   });

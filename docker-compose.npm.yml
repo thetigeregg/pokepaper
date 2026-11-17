@@ -8,11 +8,14 @@
 #
 #   - NPM forwards to http://pokepaper-edge:8080 (container name), not
 #     <nas-ip>:EDGE_PORT
-#   - TRUSTED_PROXIES = that network's subnet (only containers on NPM's
-#     network may set CF-Connecting-IP)
-#   - direct LAN access via EDGE_PORT still works but is never trusted
+#   - TRUSTED_PROXIES = NPM's address (with a fixed IP) or the network's
+#     subnet. A subnet trusts every container on that network, plus
+#     processes on the host that reach it through the network's gateway.
+#   - LAN devices reaching edge through EDGE_PORT are never trusted
 #
-# Use it as an extra compose file (Portainer Git stack: "Additional paths"):
+# Requires a user-defined network (Docker's default "bridge" has no
+# container-name DNS). Use it as an extra compose file (Portainer Git stack:
+# "Additional paths"), and include it in every manual compose command:
 #   docker compose -f docker-compose.yml -f docker-compose.npm.yml up -d
 # with NPM_NETWORK and TRUSTED_PROXIES set. See docs/nas-deployment.md, section 4.
 

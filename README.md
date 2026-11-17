@@ -56,12 +56,12 @@ The app opens at `http://localhost:4200`. `ng serve` proxies `/api` and `/images
 
 Fastify 5 + better-sqlite3, run with `tsx` (no build step). It stores data in `server/data/pokepaper.db` (WAL mode) and applies the checksummed migrations in `server/src/migrations/` on startup.
 
-| Route                 | Purpose                                                                                          |
-| --------------------- | ------------------------------------------------------------------------------------------------ |
-| `GET /api/health`     | 200 `{ status: 'ok' }` when the database answers, else 503                                       |
-| `POST /api/sync/push` | Apply queued client operations (idempotent, last-writer-wins)                                    |
-| `POST /api/sync/pull` | Page through the compacted change log from a cursor                                              |
-| `/api/auth/*`         | Passkey setup, sign-in, sign-out, passkey and device management ([`docs/auth.md`](docs/auth.md)) |
+| Route                 | Purpose                                                                                                                                         |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/health`     | 200 `{ status: 'ok', clientIp }` when the database answers, else 503. `clientIp` is the address you're rate-limited as (checks the proxy chain) |
+| `POST /api/sync/push` | Apply queued client operations (idempotent, last-writer-wins)                                                                                   |
+| `POST /api/sync/pull` | Page through the compacted change log from a cursor                                                                                             |
+| `/api/auth/*`         | Passkey setup, sign-in, sign-out, passkey and device management ([`docs/auth.md`](docs/auth.md))                                                |
 
 Every route except health, auth status, and the passkey ceremonies requires a session.
 
