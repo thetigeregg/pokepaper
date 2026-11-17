@@ -55,11 +55,12 @@ sudo cat "$ROOT/secrets/setup_token"   # you'll paste this into the app once
 
 ```bash
 PUID=<puid> PGID=<pgid>
+IMAGE=ghcr.io/thetigeregg/pokepaper-server:main   # or the SERVER_IMAGE you deploy
 sudo docker run --rm --entrypoint sh --user "$PUID:$PGID" \
   -v "$ROOT/server-data:/app/server/data" \
   -v "$ROOT/server-backups:/app/server/backups" \
   -v "$ROOT/secrets:/run/secrets:ro" \
-  ghcr.io/thetigeregg/pokepaper-server:main -c '
+  "$IMAGE" -c '
     touch /app/server/data/.t && rm /app/server/data/.t && echo "server-data: OK"
     touch /app/server/backups/.t && rm /app/server/backups/.t && echo "server-backups: OK"
     cat /run/secrets/setup_token > /dev/null && echo "setup_token: OK"'
@@ -99,19 +100,19 @@ docker build -f edge/Dockerfile -t pokepaper-edge:local .
 
 Create a stack from `docker-compose.yml` (upload it or point Portainer at the repo) with these environment variables:
 
-| Variable           | Example                                  | Notes                                                                                                                |
-| ------------------ | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `PUBLIC_ORIGIN`    | `https://pokepaper.example.com`          | **Required.** The public HTTPS origin. Passkeys are bound to its hostname                                            |
-| `NAS_DATA_ROOT`    | `/volume1/docker/pokepaper`              | Parent of `server-data` and `server-backups`                                                                         |
-| `SECRETS_HOST_DIR` | `/volume1/docker/pokepaper/secrets`      | Holds `setup_token`                                                                                                  |
-| `EDGE_PORT`        | `8080`                                   | Host port Nginx Proxy Manager forwards to. Pick a free one                                                           |
-| `EDGE_BIND`        | _(unset: all interfaces, IPv4 and IPv6)_ | Host address the edge port listens on, e.g. `127.0.0.1` once edge shares NPM's network (section 4). IPv6 in brackets |
-| `PUID` / `PGID`    | `<puid>` / `<pgid>`                      | User the server runs as (default `1000`/`1000`); see section 1                                                       |
-| `TRUSTED_PROXIES`  | _(default `private_ranges`)_             | Proxies allowed to set `CF-Connecting-IP`; see section 4                                                             |
-| `NPM_NETWORK`      | _(only with `docker-compose.npm.yml`)_   | Nginx Proxy Manager's Docker network; see section 4                                                                  |
-| `TZ`               | `Europe/Zurich`                          |                                                                                                                      |
-| `SERVER_IMAGE`     | _(default `…-server:main`)_              | Override to pin a version                                                                                            |
-| `EDGE_IMAGE`       | _(default `…-edge:main`)_                | Override to pin a version                                                                                            |
+| Variable           | Example                                           | Notes                                                                                                                |
+| ------------------ | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `PUBLIC_ORIGIN`    | `https://pokepaper.example.com`                   | **Required.** The public HTTPS origin. Passkeys are bound to its hostname                                            |
+| `NAS_DATA_ROOT`    | `/path/to/pokepaper` (your `ROOT` from section 1) | Parent of `server-data` and `server-backups`                                                                         |
+| `SECRETS_HOST_DIR` | `/path/to/pokepaper/secrets`                      | Holds `setup_token`                                                                                                  |
+| `EDGE_PORT`        | `8080`                                            | Host port Nginx Proxy Manager forwards to. Pick a free one                                                           |
+| `EDGE_BIND`        | _(unset: all interfaces, IPv4 and IPv6)_          | Host address the edge port listens on, e.g. `127.0.0.1` once edge shares NPM's network (section 4). IPv6 in brackets |
+| `PUID` / `PGID`    | `<puid>` / `<pgid>`                               | User the server runs as (default `1000`/`1000`); see section 1                                                       |
+| `TRUSTED_PROXIES`  | _(default `private_ranges`)_                      | Proxies allowed to set `CF-Connecting-IP`; see section 4                                                             |
+| `NPM_NETWORK`      | _(only with `docker-compose.npm.yml`)_            | Nginx Proxy Manager's Docker network; see section 4                                                                  |
+| `TZ`               | `Europe/Zurich`                                   |                                                                                                                      |
+| `SERVER_IMAGE`     | _(default `…-server:main`)_                       | Override to pin a version                                                                                            |
+| `EDGE_IMAGE`       | _(default `…-edge:main`)_                         | Override to pin a version                                                                                            |
 
 The compose file already sets `NODE_ENV=production`, `SETUP_TOKEN_FILE`, `CLIENT_IP_HEADER=cf-connecting-ip`, and `TRUST_PROXY_HOPS=1`. Optional server settings (session lifetime, backups, rate limits) are listed, commented, in `docker-compose.yml`. All server settings are in `README.md` → Server and `docs/auth.md` → Configuration.
 
@@ -193,7 +194,8 @@ curl -s https://app-site-association.cdn-apple.com/a/v1/pokepaper.<your-domain> 
 3. **Delete the setup token** to close setup (it's re-read on each attempt, so no restart is needed):
 
    ```bash
-   sudo rm /volume1/docker/pokepaper/secrets/setup_token
+   rm "$ROOT/secrets/setup_token"        # Synology (your own DSM user owns it)
+   sudo rm "$ROOT/secrets/setup_token"   # plain Linux (owned by uid 1000)
    ```
 
 4. Add passkeys for your other devices from Settings → Passkeys (synced passkeys, e.g. iCloud Keychain, usually appear on your other devices automatically).
