@@ -21,7 +21,7 @@ It runs as a web app and as a native iOS app (Capacitor). It works offline: data
 - `edge/`: Caddy container serving the web app, proxying `/api` to `server`, serving the iOS app-association file, and setting security headers (CSP, HSTS, …)
 - `ios/`: Capacitor iOS project with App DEV / App PROD targets _(planned)_
 - `docs/`: [`auth.md`](docs/auth.md) (passkeys, sessions, setup, recovery), [`sync.md`](docs/sync.md) (sync rules), [`nas-deployment.md`](docs/nas-deployment.md) (Docker, Nginx Proxy Manager, Cloudflare); iOS docs _(planned)_
-- `.github/`: PR/issue templates, Dependabot, and (planned) CI, release, TestFlight, and security workflows
+- `.github/`: CI, release/publish, CodeQL, secret-scanning, and Claude workflows; PR/issue templates; Dependabot
 
 ## Prerequisites
 
@@ -102,6 +102,24 @@ npm run format:check      # Prettier
 ```
 
 Commits are checked by husky: `lint-staged` (Prettier and `eslint --fix` on staged files) runs on pre-commit, and `commitlint` (Conventional Commits) runs on commit-msg.
+
+## CI/CD
+
+| Workflow                                    | Trigger                            | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CI PR Checks` (`ci-pr.yml`)                | PRs to `main`                      | **Quality Checks**: format, lint, server type-check, unit tests with coverage (uploaded to Codecov), script tests, production build. **Docker Build Validation**: builds both images for amd64 without pushing                                                                                                                                                                                                                                                                                                                                                                                  |
+| `Release & Publish` (`release-publish.yml`) | push to `main`, manual (main only) | Releases the latest `main`: bumps the version from Conventional Commits (`devx release version`: `feat` → minor, `fix`/others → patch, `!`/`BREAKING CHANGE` → major), updates `CHANGELOG.md`, and pushes the release commit and `vX.Y.Z` tag atomically. Then rebuilds only the images whose inputs changed (`scripts/image-should-publish.mjs`; a version-only bump of `package.json` doesn't count) and re-tags the unchanged one, so every version tag exists for both images. A run that loses a race with a newer merge is superseded by the next run. Manual runs can force-publish both |
+| `Secret Scan` (`secret-scan.yml`)           | PRs, push to `main`                | gitleaks (`.gitleaks.toml`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `CodeQL` (`codeql.yml`)                     | PRs, push to `main`, weekly        | Static analysis of TypeScript and workflows (`.github/codeql/codeql-config.yml`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `Claude Code Review` / `Claude Code`        | PRs / `@claude` mentions           | AI review and assistant (keep these files byte-identical to `main`; see `.prettierignore`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+
+Releases skip themselves: the release commit is `chore(release): vX.Y.Z [skip ci]`.
+
+**One-time repository setup** (Settings → Secrets and variables → Actions):
+
+- `AUTOCOMMIT_CLIENT_ID` (variable) and `AUTOCOMMIT_APP_PRIVATE_KEY` (secret): the release GitHub App (the same one go-gather uses). Install the app on this repository and add it as a bypass actor on the `main` ruleset so the release commit can be pushed.
+- `CODECOV_TOKEN` (secret): coverage uploads. Until it's set, uploads are best-effort and don't fail PRs.
+- `CLAUDE_CODE_OAUTH_TOKEN` (secret): already configured.
 
 ## Deployment
 

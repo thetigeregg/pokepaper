@@ -1,0 +1,92 @@
+name: CI PR Checks
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pokepaper-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  quality_checks:
+    name: Quality Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Format
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check server
+        run: npm run typecheck:server
+
+      - name: Unit tests (app + server)
+        run: npm run test
+
+      - name: Script tests
+        run: npm run test:scripts
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          files: ./coverage/app/lcov.info
+          name: coverage
+          token: ${{ secrets.CODECOV_TOKEN }}
+          # Strict once the Codecov token is configured; until then a missing
+          # token must not fail the PR.
+          fail_ci_if_error: ${{ secrets.CODECOV_TOKEN != '' }}
+
+      - name: Build (production web)
+        run: npm run build -- --configuration production
+
+  docker_build_validation:
+    name: Docker Build Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build server image (no push)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: server/Dockerfile
+          platforms: linux/amd64
+          push: false
+          provenance: false
+          cache-from: type=gha,scope=pokepaper-server
+
+      - name: Build edge image (no push)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: edge/Dockerfile
+          platforms: linux/amd64
+          push: false
+          provenance: false
+          cache-from: type=gha,scope=pokepaper-edge
