@@ -1,13 +1,4 @@
-import {
-  ChangeDetectionStrategy,
-  Component,
-  DestroyRef,
-  OnInit,
-  computed,
-  inject,
-  signal,
-} from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import {
   IonContent,
   IonHeader,
@@ -16,29 +7,12 @@ import {
   IonList,
   IonListHeader,
   IonNote,
-  IonSelect,
-  IonSelectOption,
   IonTitle,
   IonToolbar,
 } from '@ionic/angular';
-import { DEFAULT_SETTINGS, type UserSettings } from '@pokepaper/shared';
-import { LocalUserDataRepository } from '../core/data/local-user-data-repository';
 import { AccountSectionComponent } from '../features/account/account-section.component';
+import { CatalogSectionComponent } from '../features/catalog/catalog-section.component';
 import { SyncService, type SyncStatus } from '../core/services/sync.service';
-
-/** Card languages offered in Settings. Codes follow TCGdex; the list is
- * revisited when the card catalog lands and real per-language coverage is known. */
-export const CARD_LANGUAGES: readonly { code: string; label: string }[] = [
-  { code: 'en', label: 'English' },
-  { code: 'fr', label: 'Français' },
-  { code: 'de', label: 'Deutsch' },
-  { code: 'it', label: 'Italiano' },
-  { code: 'es', label: 'Español' },
-  { code: 'pt', label: 'Português' },
-  { code: 'ja', label: '日本語' },
-  { code: 'ko', label: '한국어' },
-  { code: 'zh-tw', label: '繁體中文' },
-];
 
 const SYNC_STATUS_LABELS: Record<SyncStatus, string> = {
   idle: 'Up to date',
@@ -51,9 +25,21 @@ const SYNC_STATUS_LABELS: Record<SyncStatus, string> = {
 @Component({
   selector: 'app-settings',
   templateUrl: 'settings.page.html',
+  // A readable column on wide (desktop) screens, large title included; full
+  // width on phones.
+  styles: [
+    `
+      .settings-column,
+      ion-header[collapse='condense'] ion-toolbar {
+        max-width: 760px;
+        margin-inline: auto;
+      }
+    `,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     AccountSectionComponent,
+    CatalogSectionComponent,
     IonHeader,
     IonToolbar,
     IonTitle,
@@ -63,49 +49,11 @@ const SYNC_STATUS_LABELS: Record<SyncStatus, string> = {
     IonItem,
     IonLabel,
     IonNote,
-    IonSelect,
-    IonSelectOption,
   ],
 })
-export class SettingsPage implements OnInit {
-  private readonly repository = inject(LocalUserDataRepository);
+export class SettingsPage {
   private readonly syncService = inject(SyncService);
-  private readonly destroyRef = inject(DestroyRef);
 
-  readonly languages = CARD_LANGUAGES;
-  readonly settings = signal<UserSettings>({ ...DEFAULT_SETTINGS });
   readonly syncStatusLabel = computed(() => SYNC_STATUS_LABELS[this.syncService.status()]);
   readonly rejectedOperations = this.syncService.rejectedOperations;
-  readonly saveError = signal(false);
-
-  ngOnInit(): void {
-    void this.loadSettings();
-
-    // Ionic keeps tab pages alive, so reload when a pull changes settings
-    // (e.g. edited on another device) rather than only on first init.
-    this.syncService.dataChanged$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((types) => {
-      if (types.has('settings')) {
-        void this.loadSettings();
-      }
-    });
-  }
-
-  async loadSettings(): Promise<void> {
-    this.settings.set(await this.repository.getSettings());
-  }
-
-  async onCardLanguageChange(cardLanguage: string): Promise<void> {
-    const previous = this.settings();
-    const next: UserSettings = { ...previous, cardLanguage };
-    this.settings.set(next);
-    this.saveError.set(false);
-
-    try {
-      await this.repository.updateSettings(next);
-    } catch (error: unknown) {
-      console.error('settings.save_failed', error);
-      this.settings.set(previous);
-      this.saveError.set(true);
-    }
-  }
 }

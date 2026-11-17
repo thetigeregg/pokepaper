@@ -34,7 +34,7 @@ const stopBackups = startBackupSchedule({
   log: app.log,
 });
 
-// The catalogue (catalog.db) is rebuilt from TCGdex rather than backed up.
+// The catalog (catalog.db) is rebuilt from TCGdex rather than backed up.
 const catalogSchedule: CatalogSchedule | null = config.catalog.syncEnabled
   ? startCatalogSchedule({
       store: catalogStore,

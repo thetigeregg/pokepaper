@@ -1,5 +1,5 @@
 /**
- * Card catalogue types: the server's stored records (`server/src/catalog/`)
+ * Card catalog types: the server's stored records (`server/src/catalog/`)
  * and, later, the packs clients download. See docs/catalog.md.
  *
  * TCGdex splits cards into two regions with separate ID spaces. Within a
@@ -152,7 +152,7 @@ export interface CatalogManifestSet {
 
 /**
  * `GET /api/catalog/manifest`. `version` changes whenever anything in the
- * catalogue does, so a client that has seen it can skip the set diff
+ * catalog does, so a client that has seen it can skip the set diff
  * (the response's ETag is derived from it).
  */
 export interface CatalogManifest {

@@ -1,13 +1,22 @@
 import { Injectable, inject } from '@angular/core';
 import Dexie, { Table, Transaction } from 'dexie';
-import type { UserSettings } from '@pokepaper/shared';
-import { AppDb, SettingsRow } from './app-db';
+import type {
+  CatalogCard,
+  CatalogRegion,
+  CatalogSeries,
+  CatalogSetPack,
+  UserSettings,
+} from '@pokepaper/shared';
+import { AppDb, CatalogCardRow, CatalogSeriesRow, SettingsRow } from './app-db';
 import {
+  catalogKey,
   nestedScopeViolation,
+  CatalogStats,
   ImageCacheRecord,
   OutboxEntry,
   StorageEngine,
   StorageScope,
+  StoredCatalogSet,
   SyncMetaEntry,
 } from './storage-engine';
 import {
@@ -25,6 +34,9 @@ const SCOPE_TABLE_NAMES: Record<StorageScope, string> = {
   imageCache: 'imageCache',
   syncMeta: 'syncMeta',
   outbox: 'outbox',
+  catalogSeries: 'catalogSeries',
+  catalogSets: 'catalogSets',
+  catalogCards: 'catalogCards',
 };
 
 const SETTINGS_ROW_ID = 1;
@@ -110,6 +122,75 @@ export class DexieStorageEngine implements StorageEngine {
     return this.syncMetaTable.put(entry).then(() => undefined);
   }
 
+  replaceCatalogSeries(series: readonly CatalogSeries[]): Promise<void> {
+    return this.runInTransaction(['catalogSeries'], async () => {
+      await this.catalogSeriesTable.clear();
+      await this.catalogSeriesTable.bulkPut(
+        series.map((entry) => ({ key: catalogKey(entry.region, entry.id), series: entry }))
+      );
+    });
+  }
+
+  async listCatalogSeries(): Promise<CatalogSeries[]> {
+    return (await this.catalogSeriesTable.toArray()).map((row) => row.series);
+  }
+
+  replaceCatalogSet(pack: CatalogSetPack): Promise<void> {
+    const key = catalogKey(pack.set.region, pack.set.id);
+    return this.runInTransaction(['catalogSets', 'catalogCards'], async () => {
+      await this.catalogCardsTable.where('setKey').equals(key).delete();
+      await this.catalogCardsTable.bulkPut(
+        pack.cards.map((card) => ({
+          key: catalogKey(card.region, card.id),
+          setKey: key,
+          sortIndex: card.sortIndex,
+          card,
+        }))
+      );
+      await this.catalogSetsTable.put({
+        key,
+        region: pack.set.region,
+        hash: pack.hash,
+        cardCount: pack.cards.length,
+        set: pack.set,
+      });
+    });
+  }
+
+  deleteCatalogSet(region: CatalogRegion, setId: string): Promise<void> {
+    const key = catalogKey(region, setId);
+    return this.runInTransaction(['catalogSets', 'catalogCards'], async () => {
+      await this.catalogCardsTable.where('setKey').equals(key).delete();
+      await this.catalogSetsTable.delete(key);
+    });
+  }
+
+  listCatalogSets(region?: CatalogRegion): Promise<StoredCatalogSet[]> {
+    return region
+      ? this.catalogSetsTable.where('region').equals(region).toArray()
+      : this.catalogSetsTable.toArray();
+  }
+
+  async listCatalogCards(region: CatalogRegion, setId: string): Promise<CatalogCard[]> {
+    const rows = await this.catalogCardsTable
+      .where('setKey')
+      .equals(catalogKey(region, setId))
+      .toArray();
+    return rows.sort((a, b) => a.sortIndex - b.sortIndex).map((row) => row.card);
+  }
+
+  async getCatalogCard(region: CatalogRegion, cardId: string): Promise<CatalogCard | undefined> {
+    return (await this.catalogCardsTable.get(catalogKey(region, cardId)))?.card;
+  }
+
+  async catalogStats(): Promise<CatalogStats> {
+    const [sets, cards] = await Promise.all([
+      this.catalogSetsTable.count(),
+      this.catalogCardsTable.count(),
+    ]);
+    return { sets, cards };
+  }
+
   getOutboxEntry(opId: string): Promise<OutboxEntry | undefined> {
     return this.outboxTable.get(opId);
   }
@@ -144,6 +225,18 @@ export class DexieStorageEngine implements StorageEngine {
 
   private get outboxTable(): Table<OutboxEntry, string> {
     return this.resolveTable('outbox', this.db.outbox);
+  }
+
+  private get catalogSeriesTable(): Table<CatalogSeriesRow, string> {
+    return this.resolveTable('catalogSeries', this.db.catalogSeries);
+  }
+
+  private get catalogSetsTable(): Table<StoredCatalogSet, string> {
+    return this.resolveTable('catalogSets', this.db.catalogSets);
+  }
+
+  private get catalogCardsTable(): Table<CatalogCardRow, string> {
+    return this.resolveTable('catalogCards', this.db.catalogCards);
   }
 
   /**

@@ -10,9 +10,11 @@ import { ImageUnavailableError, type CatalogImageCache } from './image-cache.js'
 import type { CatalogStore } from './store.js';
 
 /**
- * Image requests per client per minute. Above the global API limit: a set
- * grid or an offline set download legitimately loads hundreds at once (the
- * app caches each image, so this is a first-view cost).
+ * Catalog requests (packs and images) per client per minute. Above the
+ * global API limit: a device's first catalog download is ~390 requests,
+ * a set grid or an offline set download loads hundreds of images at once,
+ * and devices at home share one public IP. The app keeps what it downloads,
+ * so these are one-off costs.
  */
 export const CATALOG_IMAGE_RATE_LIMIT = 3000;
 
@@ -69,23 +71,27 @@ function withETag(reply: FastifyReply, etag: string): FastifyReply {
 }
 
 /**
- * Catalogue download API (docs/catalog.md → Download API). Every route needs
+ * Catalog download API (docs/catalog.md → Download API). Every route needs
  * a session, like the rest of the API.
  *
  * - `GET /api/catalog/manifest`: all series and a hash per set.
  * - `GET /api/catalog/sets/:region/:setId`: one set with all its cards.
  * - `GET /images/catalog/...`: card scans and set logos/symbols, fetched from
- *   TCGdex once and cached on disk. Only images the catalogue links are
+ *   TCGdex once and cached on disk. Only images the catalog links are
  *   served, so this is never an open proxy to TCGdex.
  */
 export function registerCatalogRoutes(app: FastifyInstance, options: CatalogRoutesOptions): void {
   const { store, images, languages } = options;
 
+  const catalogRoute = {
+    config: { rateLimit: { max: CATALOG_IMAGE_RATE_LIMIT, timeWindow: '1 minute' } },
+  };
+
   const manifestTag = (version: number): string =>
     `"catalog-${String(version)}-${languages.join('.')}"`;
 
   // ETags are checked before anything is loaded, so update checks stay cheap.
-  app.get('/api/catalog/manifest', (request, reply) => {
+  app.get('/api/catalog/manifest', catalogRoute, (request, reply) => {
     const current = manifestTag(store.version());
     if (matchesIfNoneMatch(request, current)) {
       return withETag(reply, current).code(304).send();
@@ -97,6 +103,7 @@ export function registerCatalogRoutes(app: FastifyInstance, options: CatalogRout
 
   app.get<{ Params: { region: string; setId: string } }>(
     '/api/catalog/sets/:region/:setId',
+    catalogRoute,
     (request, reply) => {
       const { region, setId } = request.params;
       if (!isRegion(region) || !validId(setId)) {
@@ -115,9 +122,7 @@ export function registerCatalogRoutes(app: FastifyInstance, options: CatalogRout
     }
   );
 
-  const imageRoute = {
-    config: { rateLimit: { max: CATALOG_IMAGE_RATE_LIMIT, timeWindow: '1 minute' } },
-  };
+  const imageRoute = catalogRoute;
 
   const sendImage = async (
     request: FastifyRequest,

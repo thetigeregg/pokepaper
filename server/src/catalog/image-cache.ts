@@ -31,13 +31,13 @@ export interface CatalogImageCacheOptions {
 class RetryableImageError extends ImageUnavailableError {}
 
 /**
- * Disk cache of TCGdex catalogue images. Each image is fetched from TCGdex's
+ * Disk cache of TCGdex catalog images. Each image is fetched from TCGdex's
  * asset host once, checked to really be a WebP image, and kept as
  * `<sha256 of its asset path>.webp` (hashed, so case-sensitive TCGdex paths
  * can't collide on a case-insensitive filesystem). Concurrent requests for
  * the same image share one fetch.
  *
- * Callers decide *which* asset paths are allowed (catalogue lookups in
+ * Callers decide *which* asset paths are allowed (catalog lookups in
  * routes.ts); this class never builds paths from request input itself.
  */
 export class CatalogImageCache {

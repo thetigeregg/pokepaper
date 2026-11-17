@@ -1,0 +1,57 @@
+<ion-list>
+  <ion-list-header>
+    <ion-label>Card catalog</ion-label>
+  </ion-list-header>
+
+  <ion-item [lines]="progress() ? 'none' : undefined">
+    <ion-label>Status</ion-label>
+    <ion-note slot="end" data-testid="catalog-status">{{ statusLabel() }}</ion-note>
+  </ion-item>
+  @if (progress(); as progress) {
+    <ion-item>
+      <ion-progress-bar
+        [value]="progress.total ? progress.done / progress.total : 0"
+        aria-label="Catalog download progress"
+      ></ion-progress-bar>
+    </ion-item>
+  }
+
+  <ion-item>
+    <ion-label>On this device</ion-label>
+    <ion-note slot="end" data-testid="catalog-stats">
+      @if (stats(); as stats) {
+        @if (stats.sets > 0) {
+          {{ stats.sets | number }} {{ stats.sets === 1 ? 'set' : 'sets' }} ·
+          {{ stats.cards | number }} {{ stats.cards === 1 ? 'card' : 'cards' }}
+        } @else {
+          Not downloaded yet
+        }
+      }
+    </ion-note>
+  </ion-item>
+
+  <ion-item>
+    <ion-label>Last checked</ion-label>
+    <ion-note slot="end" data-testid="catalog-last-checked">{{ lastChecked() }}</ion-note>
+  </ion-item>
+
+  @if (storageUsed(); as storageUsed) {
+    <ion-item>
+      <ion-label>
+        Storage used
+        <p class="hint">Everything PokePaper keeps in this browser</p>
+      </ion-label>
+      <ion-note slot="end" data-testid="catalog-storage">{{ storageUsed }}</ion-note>
+    </ion-item>
+  }
+
+  <ion-item
+    button="true"
+    detail="false"
+    [disabled]="busy()"
+    (click)="checkForUpdates()"
+    data-testid="catalog-check"
+  >
+    <ion-label color="primary">Check for updates</ion-label>
+  </ion-item>
+</ion-list>

@@ -24,7 +24,7 @@ export interface BuildAppOptions {
   logLevel?: string | false;
   /** Requests per client IP per minute, across all routes. */
   rateLimitPerMinute?: number;
-  /** Card catalogue download API and image cache; omitted, those routes don't exist. */
+  /** Card catalog download API and image cache; omitted, those routes don't exist. */
   catalog?: CatalogRoutesOptions;
 }
 

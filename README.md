@@ -54,7 +54,7 @@ The app opens at `http://localhost:4200`. `ng serve` proxies `/api` and `/images
 
 ## Server
 
-Fastify 5 + better-sqlite3, run with `tsx` (no build step). It stores data in `server/data/pokepaper.db` (WAL mode) and applies the checksummed migrations in `server/src/migrations/` on startup. The card catalogue, imported from TCGdex on a schedule, lives separately in `server/data/catalog.db` ([`docs/catalog.md`](docs/catalog.md)).
+Fastify 5 + better-sqlite3, run with `tsx` (no build step). It stores data in `server/data/pokepaper.db` (WAL mode) and applies the checksummed migrations in `server/src/migrations/` on startup. The card catalog, imported from TCGdex on a schedule, lives separately in `server/data/catalog.db` ([`docs/catalog.md`](docs/catalog.md)).
 
 | Route                 | Purpose                                                                                                                                         |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -62,7 +62,7 @@ Fastify 5 + better-sqlite3, run with `tsx` (no build step). It stores data in `s
 | `POST /api/sync/push` | Apply queued client operations (idempotent, last-writer-wins)                                                                                   |
 | `POST /api/sync/pull` | Page through the compacted change log from a cursor                                                                                             |
 | `/api/auth/*`         | Passkey setup, sign-in, sign-out, passkey and device management ([`docs/auth.md`](docs/auth.md))                                                |
-| `/api/catalog/*`      | Card catalogue manifest and per-set packs ([`docs/catalog.md`](docs/catalog.md))                                                                |
+| `/api/catalog/*`      | Card catalog manifest and per-set packs ([`docs/catalog.md`](docs/catalog.md))                                                                  |
 | `/images/catalog/*`   | Card scans and set logos, cached from TCGdex on first request                                                                                   |
 
 Every route except health, auth status, and the passkey ceremonies requires a session.
@@ -81,7 +81,7 @@ Configuration (environment variables, all optional):
 | `RATE_LIMIT_PER_MINUTE` | `600`              | Requests per client IP per minute, across all routes (429 beyond)                                                                                                                                          |
 | `LOG_LEVEL`             | `info`             | pino log level                                                                                                                                                                                             |
 
-Auth settings (`PUBLIC_ORIGIN`, `RP_ID`, `SESSION_TTL_DAYS`, `SETUP_TOKEN_FILE`, …) are listed in [`docs/auth.md`](docs/auth.md) → Configuration, and catalogue settings (`CATALOG_LANGUAGES`, `CATALOG_REFRESH_HOURS`, …) in [`docs/catalog.md`](docs/catalog.md) → Configuration. Set `NODE_ENV=production` in production: it requires an https `PUBLIC_ORIGIN` and refuses `AUTH_DEV_BYPASS`.
+Auth settings (`PUBLIC_ORIGIN`, `RP_ID`, `SESSION_TTL_DAYS`, `SETUP_TOKEN_FILE`, …) are listed in [`docs/auth.md`](docs/auth.md) → Configuration, and catalog settings (`CATALOG_LANGUAGES`, `CATALOG_REFRESH_HOURS`, …) in [`docs/catalog.md`](docs/catalog.md) → Configuration. Set `NODE_ENV=production` in production: it requires an https `PUBLIC_ORIGIN` and refuses `AUTH_DEV_BYPASS`.
 
 Invalid values fail startup with a clear error. Backups use SQLite's online backup API, so the server keeps serving while a snapshot is written; each snapshot gets a fresh sync epoch, so restoring one makes clients re-sync from scratch (see [`docs/sync.md`](docs/sync.md)).
 
@@ -90,6 +90,8 @@ Invalid values fail startup with a clear error. Backups use SQLite's online back
 - **Local-first storage.** All structured data goes through the `StorageEngine` interface (`src/app/core/data/`): Dexie/IndexedDB on the web, `@capacitor-community/sqlite` on iOS. Both engines run the same contract test suite.
 - **Sync.** Writes update local storage and queue an outbox entry in one transaction. `SyncService` pushes the outbox to `POST /api/sync/push` and pulls the server change log from `POST /api/sync/pull` on startup, every 30 seconds, when the browser comes back online, and after each local write. A 401 pauses sync (outbox kept) until the user signs in again. Conflict rules and the server contract are in [`docs/sync.md`](docs/sync.md).
 - **Offline web shell.** Production web builds register an Angular service worker (`ngsw-config.json`) so the app opens with no signal. iOS builds don't need it: the bundle ships inside the app.
+
+UI conventions (layout, lists, actions, language, mobile and desktop parity) are in [`docs/ui.md`](docs/ui.md).
 
 ## Testing and Quality
 

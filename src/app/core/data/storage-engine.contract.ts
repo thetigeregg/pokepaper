@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { UserSettings } from '@pokepaper/shared';
+import type {
+  CatalogCard,
+  CatalogRegion,
+  CatalogSeries,
+  CatalogSetPack,
+  UserSettings,
+} from '@pokepaper/shared';
 import { DEFAULT_SETTINGS, SETTINGS_ENTITY_ID } from '@pokepaper/shared';
 import { NestedTransactionScopeError } from './storage-engine';
 import type { ImageCacheRecord, OutboxEntry, StorageEngine, SyncMetaEntry } from './storage-engine';
@@ -41,6 +47,79 @@ export function makeContractOutboxEntry(overrides: Partial<OutboxEntry> = {}): O
     lastError: null,
     ...overrides,
   };
+}
+
+export function makeContractCard(
+  region: CatalogRegion,
+  setId: string,
+  id: string,
+  sortIndex: number
+): CatalogCard {
+  return {
+    region,
+    id,
+    setId,
+    localId: id.split('-').at(-1) ?? id,
+    sortIndex,
+    category: 'Pokemon',
+    rarity: 'Common',
+    hp: 60,
+    types: ['Grass'],
+    stage: 'Basic',
+    suffix: null,
+    trainerType: null,
+    energyType: null,
+    dexIds: [204],
+    retreat: 2,
+    regulationMark: 'G',
+    illustrator: null,
+    variants: { normal: true, reverse: true, holo: false, firstEdition: false, wPromo: false },
+    legal: { standard: false, expanded: true },
+    weaknesses: [{ type: 'Fire', value: '×2' }],
+    resistances: [],
+    attacks: [{ cost: ['Colorless'], damage: '10' }],
+    text: {
+      en: {
+        name: id,
+        description: null,
+        effect: null,
+        evolveFrom: null,
+        attacks: [{ name: 'Tackle', effect: null }],
+        abilities: [],
+        image: `en/x/${setId}/${id}`,
+      },
+    },
+  };
+}
+
+/** A set pack whose cards are given in reverse order, to prove engines sort by `sortIndex`. */
+export function makeContractPack(
+  region: CatalogRegion,
+  setId: string,
+  cardIds: string[],
+  hash = `hash-${setId}`
+): CatalogSetPack {
+  return {
+    hash,
+    set: {
+      region,
+      id: setId,
+      serieId: 'sv',
+      releaseDate: '2023-03-31',
+      cardCount: { total: cardIds.length, official: cardIds.length },
+      abbreviation: null,
+      names: { en: setId },
+      logos: {},
+      symbol: null,
+      legal: { standard: false, expanded: true },
+      languages: ['en'],
+    },
+    cards: cardIds.map((id, index) => makeContractCard(region, setId, id, index)).reverse(),
+  };
+}
+
+export function makeContractSeries(region: CatalogRegion, id: string): CatalogSeries {
+  return { region, id, names: { en: id }, logos: {} };
 }
 
 export function describeStorageEngineContract(
@@ -102,6 +181,104 @@ export function describeStorageEngineContract(
 
         expect((await engine.getSyncMeta('pullCursor'))?.value).toBe('2');
         expect(await engine.getSyncMeta('missing')).toBeUndefined();
+      });
+    });
+
+    describe('card catalog', () => {
+      it('is empty before anything is downloaded', async () => {
+        expect(await engine.listCatalogSeries()).toEqual([]);
+        expect(await engine.listCatalogSets()).toEqual([]);
+        expect(await engine.listCatalogCards('intl', 'sv01')).toEqual([]);
+        expect(await engine.getCatalogCard('intl', 'sv01-001')).toBeUndefined();
+        expect(await engine.catalogStats()).toEqual({ sets: 0, cards: 0 });
+      });
+
+      it('replaces all series at once', async () => {
+        await engine.replaceCatalogSeries([
+          makeContractSeries('intl', 'sv'),
+          makeContractSeries('intl', 'swsh'),
+        ]);
+        await engine.replaceCatalogSeries([
+          makeContractSeries('intl', 'sv'),
+          makeContractSeries('asia', 'SV'),
+        ]);
+
+        const keys = (await engine.listCatalogSeries()).map((s) => `${s.region}:${s.id}`).sort();
+        expect(keys).toEqual(['asia:SV', 'intl:sv']);
+      });
+
+      it('stores a set with its hash, and its cards in display order', async () => {
+        const pack = makeContractPack('intl', 'sv01', ['sv01-001', 'sv01-002', 'sv01-003']);
+
+        await engine.replaceCatalogSet(pack);
+
+        expect(await engine.listCatalogSets()).toEqual([
+          { key: 'intl:sv01', region: 'intl', hash: 'hash-sv01', cardCount: 3, set: pack.set },
+        ]);
+        expect((await engine.listCatalogCards('intl', 'sv01')).map((card) => card.id)).toEqual([
+          'sv01-001',
+          'sv01-002',
+          'sv01-003',
+        ]);
+        expect(await engine.getCatalogCard('intl', 'sv01-002')).toEqual(
+          makeContractCard('intl', 'sv01', 'sv01-002', 1)
+        );
+        expect(await engine.catalogStats()).toEqual({ sets: 1, cards: 3 });
+      });
+
+      it('replaces an earlier copy of a set, dropping cards no longer in it', async () => {
+        await engine.replaceCatalogSet(makeContractPack('intl', 'sv01', ['sv01-001', 'sv01-002']));
+
+        await engine.replaceCatalogSet(makeContractPack('intl', 'sv01', ['sv01-002'], 'hash-2'));
+
+        expect((await engine.listCatalogSets())[0]?.hash).toBe('hash-2');
+        expect((await engine.listCatalogCards('intl', 'sv01')).map((card) => card.id)).toEqual([
+          'sv01-002',
+        ]);
+        expect(await engine.getCatalogCard('intl', 'sv01-001')).toBeUndefined();
+      });
+
+      it('keeps regions apart even when IDs repeat', async () => {
+        await engine.replaceCatalogSet(makeContractPack('intl', 'neo1', ['neo1-1']));
+        await engine.replaceCatalogSet(makeContractPack('asia', 'neo1', ['neo1-1', 'neo1-2']));
+
+        expect((await engine.listCatalogSets('intl')).map((set) => set.key)).toEqual(['intl:neo1']);
+        expect((await engine.listCatalogSets('asia')).map((set) => set.key)).toEqual(['asia:neo1']);
+        expect(await engine.listCatalogCards('intl', 'neo1')).toHaveLength(1);
+        expect(await engine.listCatalogCards('asia', 'neo1')).toHaveLength(2);
+      });
+
+      it('moves a card that changed sets', async () => {
+        await engine.replaceCatalogSet(makeContractPack('intl', 'sv01', ['sv01-001']));
+        const moved = makeContractPack('intl', 'svp', []);
+        moved.cards = [{ ...makeContractCard('intl', 'svp', 'sv01-001', 0) }];
+
+        await engine.replaceCatalogSet(moved);
+
+        expect(await engine.listCatalogCards('intl', 'svp')).toHaveLength(1);
+        expect(await engine.listCatalogCards('intl', 'sv01')).toEqual([]);
+        expect(await engine.catalogStats()).toEqual({ sets: 2, cards: 1 });
+      });
+
+      it('deletes a set and only its cards', async () => {
+        await engine.replaceCatalogSet(makeContractPack('intl', 'sv01', ['sv01-001']));
+        await engine.replaceCatalogSet(makeContractPack('intl', 'sv02', ['sv02-001']));
+
+        await engine.deleteCatalogSet('intl', 'sv01');
+
+        expect((await engine.listCatalogSets()).map((set) => set.key)).toEqual(['intl:sv02']);
+        expect(await engine.catalogStats()).toEqual({ sets: 1, cards: 1 });
+      });
+
+      it('rolls a set back with the transaction it joined', async () => {
+        await expect(
+          engine.runInTransaction(['catalogSets', 'catalogCards'], async () => {
+            await engine.replaceCatalogSet(makeContractPack('intl', 'sv01', ['sv01-001']));
+            throw new Error('boom');
+          })
+        ).rejects.toThrow('boom');
+
+        expect(await engine.catalogStats()).toEqual({ sets: 0, cards: 0 });
       });
     });
 

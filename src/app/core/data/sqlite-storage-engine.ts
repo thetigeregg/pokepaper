@@ -1,11 +1,20 @@
-import type { UserSettings } from '@pokepaper/shared';
+import type {
+  CatalogCard,
+  CatalogRegion,
+  CatalogSeries,
+  CatalogSetPack,
+  UserSettings,
+} from '@pokepaper/shared';
 import { SqliteConnection, SqliteStatement } from './sqlite-connection';
 import {
+  catalogKey,
   nestedScopeViolation,
+  CatalogStats,
   ImageCacheRecord,
   OutboxEntry,
   StorageEngine,
   StorageScope,
+  StoredCatalogSet,
   SyncMetaEntry,
 } from './storage-engine';
 import {
@@ -129,6 +138,93 @@ export class SqliteStorageEngine implements StorageEngine {
        ON CONFLICT(key) DO UPDATE SET payload = excluded.payload`,
       [entry.key, JSON.stringify(entry)]
     );
+  }
+
+  replaceCatalogSeries(series: readonly CatalogSeries[]): Promise<void> {
+    return this.runInTransaction(['catalogSeries'], async () => {
+      await this.sql.run('DELETE FROM catalog_series', []);
+      await this.executeBatched(
+        series.map((entry) => ({
+          statement: 'INSERT INTO catalog_series (key, payload) VALUES (?, ?)',
+          values: [catalogKey(entry.region, entry.id), JSON.stringify(entry)],
+        }))
+      );
+    });
+  }
+
+  async listCatalogSeries(): Promise<CatalogSeries[]> {
+    const rows = await this.sql.query<PayloadRow>('SELECT payload FROM catalog_series', []);
+    return rows.map((row) => this.parseEntity(row) as CatalogSeries);
+  }
+
+  replaceCatalogSet(pack: CatalogSetPack): Promise<void> {
+    const key = catalogKey(pack.set.region, pack.set.id);
+    const stored: StoredCatalogSet = {
+      key,
+      region: pack.set.region,
+      hash: pack.hash,
+      cardCount: pack.cards.length,
+      set: pack.set,
+    };
+    return this.runInTransaction(['catalogSets', 'catalogCards'], async () => {
+      await this.sql.run('DELETE FROM catalog_cards WHERE set_key = ?', [key]);
+      await this.executeBatched(
+        pack.cards.map((card) => ({
+          statement: `INSERT INTO catalog_cards (key, set_key, sort_index, payload) VALUES (?, ?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+              set_key = excluded.set_key,
+              sort_index = excluded.sort_index,
+              payload = excluded.payload`,
+          values: [catalogKey(card.region, card.id), key, card.sortIndex, JSON.stringify(card)],
+        }))
+      );
+      await this.sql.run(
+        `INSERT INTO catalog_sets (key, region, payload) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET region = excluded.region, payload = excluded.payload`,
+        [key, stored.region, JSON.stringify(stored)]
+      );
+    });
+  }
+
+  deleteCatalogSet(region: CatalogRegion, setId: string): Promise<void> {
+    const key = catalogKey(region, setId);
+    return this.runInTransaction(['catalogSets', 'catalogCards'], async () => {
+      await this.sql.run('DELETE FROM catalog_cards WHERE set_key = ?', [key]);
+      await this.sql.run('DELETE FROM catalog_sets WHERE key = ?', [key]);
+    });
+  }
+
+  async listCatalogSets(region?: CatalogRegion): Promise<StoredCatalogSet[]> {
+    const rows = region
+      ? await this.sql.query<PayloadRow>('SELECT payload FROM catalog_sets WHERE region = ?', [
+          region,
+        ])
+      : await this.sql.query<PayloadRow>('SELECT payload FROM catalog_sets', []);
+    return rows.map((row) => this.parseEntity(row) as StoredCatalogSet);
+  }
+
+  async listCatalogCards(region: CatalogRegion, setId: string): Promise<CatalogCard[]> {
+    const rows = await this.sql.query<PayloadRow>(
+      'SELECT payload FROM catalog_cards WHERE set_key = ? ORDER BY sort_index',
+      [catalogKey(region, setId)]
+    );
+    return rows.map((row) => this.parseEntity(row) as CatalogCard);
+  }
+
+  async getCatalogCard(region: CatalogRegion, cardId: string): Promise<CatalogCard | undefined> {
+    const rows = await this.sql.query<PayloadRow>(
+      'SELECT payload FROM catalog_cards WHERE key = ?',
+      [catalogKey(region, cardId)]
+    );
+    return this.firstEntity(rows) as CatalogCard | undefined;
+  }
+
+  async catalogStats(): Promise<CatalogStats> {
+    const rows = await this.sql.query<{ sets: number; cards: number }>(
+      'SELECT (SELECT COUNT(*) FROM catalog_sets) AS sets, (SELECT COUNT(*) FROM catalog_cards) AS cards',
+      []
+    );
+    return { sets: rows[0]?.sets ?? 0, cards: rows[0]?.cards ?? 0 };
   }
 
   async getOutboxEntry(opId: string): Promise<OutboxEntry | undefined> {

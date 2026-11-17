@@ -36,7 +36,7 @@ export function setContentHash(set: CatalogSet, cards: readonly CatalogCard[]): 
     .digest('hex');
 }
 
-/** Persistence for the imported catalogue (`catalog.db`). */
+/** Persistence for the imported catalog (`catalog.db`). */
 export class CatalogStore {
   constructor(private readonly db: Db) {}
 
