@@ -5,7 +5,9 @@ alwaysApply: true
 ---
 
 Before suggesting any commit:
-1. Run `npm run format:check` to verify Prettier formatting
-2. Run `npm run test:scripts` to execute the Node script tests
-3. Do not bypass pre-commit hooks
-4. If any step fails, fix the issue before proceeding
+1. Run `npm run lint` to verify ESLint passes
+2. Run `npm run test` to execute the Vitest suite with coverage
+3. Run `npm run build` to verify the Angular build passes
+4. Run `npm run test:scripts` if anything under `scripts/` changed
+5. Do not bypass pre-commit hooks
+6. If any step fails, fix the issue before proceeding

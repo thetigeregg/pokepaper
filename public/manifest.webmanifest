@@ -1,0 +1,11 @@
+{
+  "name": "PokePaper",
+  "short_name": "PokePaper",
+  "description": "Pokémon TCG card browser, collection tracker, and deck builder",
+  "display": "standalone",
+  "scope": "/",
+  "start_url": "/",
+  "theme_color": "#3b5ba5",
+  "background_color": "#ffffff",
+  "icons": [{ "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

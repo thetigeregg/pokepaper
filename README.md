@@ -13,13 +13,14 @@ It runs as a web app and as a native iOS app (Capacitor). It works offline: data
 
 ## Repository Structure
 
+- `src/`: frontend app (Ionic/Angular, web + Capacitor iOS)
+- `shared/`: domain and sync wire types shared by the frontend and server (`@pokepaper/shared`, npm workspace)
 - `scripts/`: Node tooling (devx worktree adapter; iOS build/version/environment scripts _(planned)_), each with `*.test.mjs` tests
-- `src/`: frontend app (Ionic/Angular, web + Capacitor iOS) _(planned)_
-- `server/`: Fastify API with SQLite storage (catalog, sync, auth, image cache) _(planned)_
-- `shared/`: domain and API types shared by the frontend and server (npm workspace) _(planned)_
+- `public/`: static web assets (favicon, web app manifest)
+- `server/`: Fastify API with SQLite storage (sync, auth, catalog, image cache) _(planned)_
 - `edge/`: Caddy container serving the web app and proxying `/api` to `server` _(planned)_
 - `ios/`: Capacitor iOS project with App DEV / App PROD targets _(planned)_
-- `docs/`: deployment, auth, and iOS docs _(planned)_
+- `docs/`: sync rules ([`docs/sync.md`](docs/sync.md)); deployment, auth, and iOS docs _(planned)_
 - `.github/`: PR/issue templates, Dependabot, and (planned) CI, release, TestFlight, and security workflows
 
 ## Prerequisites
@@ -29,18 +30,37 @@ It runs as a web app and as a native iOS app (Capacitor). It works offline: data
 
 ## Local Development
 
+1. Install dependencies (npm workspaces: installs the root app and `shared/` together):
+
 ```bash
 npm ci
 ```
 
+2. Run the frontend dev server:
+
+```bash
+npm start
+```
+
+The app opens at `http://localhost:4200`. `ng serve` proxies `/api` and `/images` to `http://127.0.0.1:3000` (`proxy.conf.json`), so the app and API share one origin in dev, matching production behind `edge`. Until the server lands, Settings shows "Sync failed: will retry"; everything else works from local storage.
+
+## App Architecture
+
+- **Local-first storage.** All structured data goes through the `StorageEngine` interface (`src/app/core/data/`): Dexie/IndexedDB on the web, `@capacitor-community/sqlite` on iOS. Both engines run the same contract test suite.
+- **Sync.** Writes update local storage and queue an outbox entry in one transaction. `SyncService` pushes the outbox to `POST /api/sync/push` and pulls the server change log from `POST /api/sync/pull` on startup, every 30 seconds, when the browser comes back online, and after each local write. A 401 pauses sync (outbox kept) until the user signs in again. Conflict rules and the server contract are in [`docs/sync.md`](docs/sync.md).
+- **Offline web shell.** Production web builds register an Angular service worker (`ngsw-config.json`) so the app opens with no signal. iOS builds don't need it: the bundle ships inside the app.
+
 ## Testing and Quality
 
 ```bash
-npm run format:check  # Prettier
+npm run lint          # ESLint (repo-wide)
+npm run test          # Vitest with coverage (app + shared)
+npm run build         # production web build into www/
 npm run test:scripts  # Node script tests (scripts/*.test.mjs)
+npm run format:check  # Prettier
 ```
 
-Commits are checked by husky: `lint-staged` runs on pre-commit, and `commitlint` (Conventional Commits) runs on commit-msg.
+Commits are checked by husky: `lint-staged` (Prettier and `eslint --fix` on staged files) runs on pre-commit, and `commitlint` (Conventional Commits) runs on commit-msg.
 
 ## Deployment _(planned)_
 

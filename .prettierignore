@@ -55,3 +55,10 @@ compose*.yml
 
 # OS artifacts
 Thumbs.db
+
+# Claude Code workflows: anthropics/claude-code-action refuses to run unless
+# the workflow file is byte-identical to the default branch's copy, so a
+# Prettier reformat inside a PR silently skips the review on that PR. Keep
+# these exactly as installed.
+.github/workflows/claude.yml
+.github/workflows/claude-code-review.yml
