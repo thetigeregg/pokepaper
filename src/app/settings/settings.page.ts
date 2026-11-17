@@ -12,6 +12,7 @@ import {
 } from '@ionic/angular';
 import { AccountSectionComponent } from '../features/account/account-section.component';
 import { CatalogSectionComponent } from '../features/catalog/catalog-section.component';
+import { ImagesSectionComponent } from '../features/catalog/images-section.component';
 import { SyncService, type SyncStatus } from '../core/services/sync.service';
 
 const SYNC_STATUS_LABELS: Record<SyncStatus, string> = {
@@ -25,21 +26,11 @@ const SYNC_STATUS_LABELS: Record<SyncStatus, string> = {
 @Component({
   selector: 'app-settings',
   templateUrl: 'settings.page.html',
-  // A readable column on wide (desktop) screens, large title included; full
-  // width on phones.
-  styles: [
-    `
-      .settings-column,
-      ion-header[collapse='condense'] ion-toolbar {
-        max-width: 760px;
-        margin-inline: auto;
-      }
-    `,
-  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     AccountSectionComponent,
     CatalogSectionComponent,
+    ImagesSectionComponent,
     IonHeader,
     IonToolbar,
     IonTitle,

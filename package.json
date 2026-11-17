@@ -71,6 +71,7 @@
     "@angular/service-worker": "^22.2.6",
     "@capacitor-community/sqlite": "^8.1.1",
     "@capacitor/core": "^8.6.2",
+    "@capacitor/filesystem": "^8.1.5",
     "@capacitor/preferences": "^8.0.1",
     "@ionic/angular": "^9.0.11",
     "@pokepaper/shared": "^0.0.0",

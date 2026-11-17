@@ -2,7 +2,9 @@ import Dexie, { Table } from 'dexie';
 import { Injectable } from '@angular/core';
 import type { CatalogCard, CatalogSeries, UserSettings } from '@pokepaper/shared';
 import type {
+  DownloadedSet,
   ImageCacheRecord,
+  ImagePin,
   OutboxEntry,
   StoredCatalogSet,
   SyncMetaEntry,
@@ -37,6 +39,8 @@ export class AppDb extends Dexie {
   catalogSeries!: Table<CatalogSeriesRow, string>;
   catalogSets!: Table<StoredCatalogSet, string>;
   catalogCards!: Table<CatalogCardRow, string>;
+  imagePins!: Table<ImagePin, [string, string]>;
+  downloadedSets!: Table<DownloadedSet, string>;
 
   constructor() {
     super('pokepaper');
@@ -53,6 +57,13 @@ export class AppDb extends Dexie {
       catalogSeries: 'key',
       catalogSets: 'key, region',
       catalogCards: 'key, setKey, [setKey+sortIndex]',
+    });
+
+    // Image cache size limit and offline sets. Matches SQLite schema version 3.
+    this.version(3).stores({
+      imageCache: 'key, lastAccessedAt',
+      imagePins: '[setKey+imageKey], setKey, imageKey',
+      downloadedSets: 'setKey',
     });
   }
 }

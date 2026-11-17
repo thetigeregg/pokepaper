@@ -1,0 +1,45 @@
+<ion-list>
+  <ion-list-header>
+    <ion-label>Images</ion-label>
+  </ion-list-header>
+
+  <ion-item button="true" (click)="openDownloads()" data-testid="images-downloads">
+    <ion-label>
+      Downloaded sets
+      <p class="hint">Kept until you remove them</p>
+    </ion-label>
+    <ion-note slot="end" data-testid="images-offline-size">{{ downloadsSummary() }}</ion-note>
+  </ion-item>
+
+  <ion-item>
+    <ion-label>
+      Recently viewed
+      <p class="hint">The oldest are removed first when over the limit</p>
+    </ion-label>
+    <ion-note slot="end" data-testid="images-recent-size">{{ recentSize() }}</ion-note>
+  </ion-item>
+
+  <ion-item>
+    <ion-select
+      label="Keep recently viewed up to"
+      interface="popover"
+      [value]="limitMb()"
+      (ionChange)="onLimitChange($event.detail.value)"
+      data-testid="images-limit"
+    >
+      @for (option of limitOptions; track option.value) {
+        <ion-select-option [value]="option.value">{{ option.label }}</ion-select-option>
+      }
+    </ion-select>
+  </ion-item>
+
+  <ion-item
+    button="true"
+    detail="false"
+    [disabled]="busy() || !hasRecent()"
+    (click)="clearRecent()"
+    data-testid="images-clear"
+  >
+    <ion-label color="danger">Clear recently viewed</ion-label>
+  </ion-item>
+</ion-list>

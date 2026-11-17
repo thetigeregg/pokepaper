@@ -24,6 +24,7 @@ describe('describeAge', () => {
 
 describe('describeBytes', () => {
   it.each([
+    [0, '0 MB'],
     [512, '1 KB'],
     [300 * 1024, '300 KB'],
     [118 * 1024 * 1024, '118 MB'],

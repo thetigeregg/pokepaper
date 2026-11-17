@@ -46,6 +46,9 @@ export function describeAge(then: Date, now: Date): string {
 
 /** 123456789 → "118 MB". */
 export function describeBytes(bytes: number): string {
+  if (bytes <= 0) {
+    return '0 MB';
+  }
   if (bytes < 1024 * 1024) {
     return `${String(Math.max(1, Math.round(bytes / 1024)))} KB`;
   }

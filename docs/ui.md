@@ -15,7 +15,9 @@ Standards for PokePaper's screens, so new pages look and behave like existing on
 ## Page layout
 
 - **Large collapsing title:** pages use a translucent `ion-header` plus an `ion-header collapse="condense"` with a large `ion-title` inside `ion-content`.
-- **Readable column on wide screens:** settings-style pages wrap their content in a centered column with `max-width: 760px`, and apply the same width to the large-title toolbar, so the title lines up with the content. On phones the column is full width. Example: `src/app/settings/settings.page.ts`.
+- **Readable column on wide screens:** settings-style pages wrap their content in `<div class="page-column">` (centered, `max-width: 760px`; both classes are global in `src/global.scss`). The large-title header gets `class="page-column-header"` so the title lines up with the content. On phones the column is full width.
+- **Sub-pages** opened from a page (e.g. Settings → Downloaded sets) get a back button labeled with the parent page and a standard (small) title, with no large title. A search field sits in a second header toolbar, with the `page-column` width. Open them with `NavController.navigateForward` from a row with a chevron (`ion-item button`, whose detail arrow shows).
+- **Long lists move to a sub-page:** the parent page shows one summary row (e.g. "214 sets · 3.1 GB ›") instead of a list that can grow without limit.
 
 ## Lists
 
@@ -23,7 +25,9 @@ Standards for PokePaper's screens, so new pages look and behave like existing on
 - **One list per section,** titled with an `ion-list-header`.
 - **Dividers between rows only:** no divider under the last row of a list. A global rule in `src/global.scss` enforces this.
 - **Label and value rows:** the label in `ion-label`, the value as `<ion-note slot="end">`.
+- **Choice rows:** an `ion-select` inside the `ion-item`, with its `label` as the row label and `interface="popover"`, e.g. "Keep recently viewed up to".
 - **Hint text** under a label: `<p class="hint">` inside the `ion-label` (styled globally with a little top padding).
+- **Grouped lists:** collapsible groups use `ion-accordion-group` (multiple open). The group row is the accordion header; its rows sit one step in (`class="child-row"`, global). Searching opens every matching group.
 - **Progress:** an `ion-progress-bar` in its own row, directly under the row it belongs to.
 
 ## Actions
@@ -32,6 +36,7 @@ Standards for PokePaper's screens, so new pages look and behave like existing on
 - **Destructive actions** use `color="danger"`, e.g. "Sign out of this device".
 - **Actions on one row** (e.g. "Remove" on a passkey) are `fill="clear"` buttons at the row's end (`slot="end"`).
 - **Disable actions while they run** (`[disabled]="busy()"`), rather than hiding them.
+- **Confirm bulk or hard-to-undo removals** (a whole series, everything, a passkey) with an alert: "Cancel" plus a red "Remove". Removing a single item that's easy to redo (one downloaded set) doesn't ask.
 - **A screen's single main call to action outside any list** (e.g. the sign-in button) is an `ion-button expand="block"`.
 
 ## Tests

@@ -46,3 +46,17 @@ ion-list > ion-item:last-of-type {
 ion-label p.hint {
   padding-top: 4px;
 }
+
+/* Readable column on wide (desktop) screens; full width on phones
+   (docs/ui.md). On a page's large-title header too, so titles line up. */
+.page-column,
+ion-header.page-column-header ion-toolbar {
+  max-width: 760px;
+  margin-inline: auto;
+}
+
+/* Rows nested under a collapsible group row (e.g. a series' sets) sit one
+   step further in (docs/ui.md). */
+ion-item.child-row {
+  --padding-start: 32px;
+}

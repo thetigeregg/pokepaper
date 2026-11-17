@@ -1,6 +1,7 @@
 import { InjectionToken } from '@angular/core';
 import type {
   CatalogCard,
+  CatalogLanguage,
   CatalogRegion,
   CatalogSeries,
   CatalogSet,
@@ -25,7 +26,9 @@ export type StorageScope =
   | 'outbox'
   | 'catalogSeries'
   | 'catalogSets'
-  | 'catalogCards';
+  | 'catalogCards'
+  | 'imagePins'
+  | 'downloadedSets';
 
 /** Catalog rows are keyed `region:id` (IDs repeat across regions; docs/catalog.md). */
 export function catalogKey(region: CatalogRegion, id: string): string {
@@ -65,14 +68,49 @@ export interface OutboxEntry {
 }
 
 /**
- * Image cache row. The web engine persists the image bytes inline (`blob`);
- * the native engine stores bytes on the filesystem and keeps only a relative
- * file path here instead.
+ * Image cache row, keyed by the image's same-origin URL path (e.g.
+ * `/images/catalog/cards/intl/sv01-001/en/low.webp`). The web engine keeps
+ * the bytes inline (`blob`); the native engine stores them on the
+ * filesystem and keeps only a relative `filePath` here.
  */
 export interface ImageCacheRecord {
   key: string;
   blob?: Blob;
   filePath?: string | null;
+  /** Bytes, for the cache size limit. */
+  size: number;
+  /** ISO time it was last shown, for least-recently-viewed eviction. */
+  lastAccessedAt: string;
+}
+
+/** An image kept for offline use by a downloaded set (`setKey` = `region:setId`). */
+export interface ImagePin {
+  setKey: string;
+  imageKey: string;
+}
+
+/** A set downloaded for offline use, and the languages its images were downloaded in. */
+export interface DownloadedSet {
+  /** `region:setId`. */
+  setKey: string;
+  languages: CatalogLanguage[];
+  downloadedAt: string;
+}
+
+/** Where an image's bytes live, for deleting them. */
+export type StoredImageRef = Pick<ImageCacheRecord, 'key' | 'filePath' | 'size'>;
+
+/** Cached image bytes, split by whether a downloaded set pins them. */
+export interface ImageCacheUsage {
+  pinnedBytes: number;
+  unpinnedBytes: number;
+}
+
+/** A downloaded set's pinned images that are on the device. */
+export interface PinnedSetSummary {
+  setKey: string;
+  images: number;
+  bytes: number;
 }
 
 /** A single sync-metadata key/value pair (e.g. pull cursor, catalog version). */
@@ -107,8 +145,29 @@ export interface StorageEngine {
   // Image cache
   getImage(key: string): Promise<ImageCacheRecord | undefined>;
   putImage(record: ImageCacheRecord): Promise<void>;
+  /** Records that an image was just shown (least-recently-viewed eviction). */
+  touchImage(key: string, at: string): Promise<void>;
   deleteImage(key: string): Promise<void>;
+  deleteImages(keys: readonly string[]): Promise<void>;
+  /** Removes every image and pin. */
   clearImageCache(): Promise<void>;
+  imageCacheUsage(): Promise<ImageCacheUsage>;
+  /** Up to `limit` unpinned images, least recently viewed first. */
+  listEvictableImages(limit: number): Promise<StoredImageRef[]>;
+  /** Removes every unpinned image, returning what was removed. */
+  deleteUnpinnedImages(): Promise<StoredImageRef[]>;
+
+  // Image pins (images kept for offline use by downloaded sets)
+  pinImages(setKey: string, imageKeys: readonly string[]): Promise<void>;
+  /** Removes a set's pins; its images become evictable unless another set pins them. */
+  unpinSet(setKey: string): Promise<void>;
+  /** Downloaded sets with how many of their pinned images are stored, and their size. */
+  listPinnedSets(): Promise<PinnedSetSummary[]>;
+
+  // Downloaded sets (what was downloaded, in which languages)
+  putDownloadedSet(record: DownloadedSet): Promise<void>;
+  listDownloadedSets(): Promise<DownloadedSet[]>;
+  deleteDownloadedSet(setKey: string): Promise<void>;
 
   // Sync metadata
   getSyncMeta(key: string): Promise<SyncMetaEntry | undefined>;

@@ -1,0 +1,109 @@
+<ion-header [translucent]="true">
+  <ion-toolbar>
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/tabs/settings" text="Settings"></ion-back-button>
+    </ion-buttons>
+    <ion-title>Downloaded sets</ion-title>
+  </ion-toolbar>
+  <ion-toolbar>
+    <ion-searchbar
+      class="page-column"
+      placeholder="Search downloaded sets"
+      debounce="150"
+      [value]="query()"
+      (ionInput)="onSearch($event.detail.value)"
+      data-testid="downloads-search"
+    ></ion-searchbar>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <div class="page-column">
+    <ion-list>
+      <ion-item>
+        <ion-label>On this device</ion-label>
+        <ion-note slot="end" data-testid="downloads-total">{{ totals() }}</ion-note>
+      </ion-item>
+    </ion-list>
+
+    @if (groups().length > 0) {
+      <ion-accordion-group
+        [multiple]="true"
+        [value]="openSeries()"
+        (ionChange)="onToggle($event.detail.value)"
+      >
+        @for (group of groups(); track group.key) {
+          <ion-accordion [value]="group.key">
+            <ion-item slot="header">
+              <ion-label>
+                {{ group.name }}
+                <p class="hint">
+                  {{ describeLanguages(group.languages) }} · {{ group.sets.length }}
+                  {{ group.sets.length === 1 ? 'set' : 'sets' }} · {{ describeBytes(group.bytes) }}
+                </p>
+              </ion-label>
+              <ion-button
+                slot="end"
+                fill="clear"
+                color="danger"
+                [disabled]="busy()"
+                (click)="removeSeries(group, $event)"
+              >
+                Remove
+              </ion-button>
+            </ion-item>
+            <ion-list slot="content">
+              @for (set of group.sets; track set.setKey) {
+                <ion-item class="child-row">
+                  <ion-label>
+                    {{ set.name }}
+                    <p class="hint">
+                      {{ describeLanguages(set.languages) }} · {{ set.images }}
+                      {{ set.images === 1 ? 'image' : 'images' }} · {{ describeBytes(set.bytes) }}
+                    </p>
+                  </ion-label>
+                  <ion-button
+                    slot="end"
+                    fill="clear"
+                    color="danger"
+                    [disabled]="busy()"
+                    (click)="removeSet(set)"
+                  >
+                    Remove
+                  </ion-button>
+                </ion-item>
+              }
+            </ion-list>
+          </ion-accordion>
+        }
+      </ion-accordion-group>
+    } @else {
+      <ion-list>
+        <ion-item>
+          <ion-label>
+            @if (query().trim()) {
+              No downloaded sets match "{{ query().trim() }}"
+            } @else {
+              No sets downloaded
+              <p class="hint">Download a set's images from its page to see them offline</p>
+            }
+          </ion-label>
+        </ion-item>
+      </ion-list>
+    }
+
+    @if (hasDownloads()) {
+      <ion-list>
+        <ion-item
+          button="true"
+          detail="false"
+          [disabled]="busy()"
+          (click)="removeAll()"
+          data-testid="downloads-remove-all"
+        >
+          <ion-label color="danger">Remove all downloads</ion-label>
+        </ion-item>
+      </ion-list>
+    }
+  </div>
+</ion-content>

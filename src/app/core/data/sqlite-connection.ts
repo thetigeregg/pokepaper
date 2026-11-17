@@ -26,7 +26,7 @@ export interface SqliteConnection {
 }
 
 export const SQLITE_DB_NAME = 'pokepaper';
-export const SQLITE_SCHEMA_VERSION = 2;
+export const SQLITE_SCHEMA_VERSION = 3;
 
 /**
  * Native schema migrations, applied by the Capacitor plugin on open. Append a
@@ -84,6 +84,25 @@ export const SQLITE_UPGRADE_STATEMENTS: { toVersion: number; statements: string[
         payload TEXT NOT NULL
       );`,
       `CREATE INDEX IF NOT EXISTS idx_catalog_cards_set ON catalog_cards (set_key, sort_index);`,
+    ],
+  },
+  {
+    // Image cache size limit and offline sets. Matches Dexie version 3.
+    toVersion: 3,
+    statements: [
+      `ALTER TABLE image_cache_meta ADD COLUMN size INTEGER NOT NULL DEFAULT 0;`,
+      `ALTER TABLE image_cache_meta ADD COLUMN last_accessed_at TEXT NOT NULL DEFAULT '';`,
+      `CREATE INDEX IF NOT EXISTS idx_image_cache_accessed ON image_cache_meta (last_accessed_at);`,
+      `CREATE TABLE IF NOT EXISTS image_pins (
+        set_key TEXT NOT NULL,
+        image_key TEXT NOT NULL,
+        PRIMARY KEY (set_key, image_key)
+      );`,
+      `CREATE INDEX IF NOT EXISTS idx_image_pins_image ON image_pins (image_key);`,
+      `CREATE TABLE IF NOT EXISTS downloaded_sets (
+        set_key TEXT PRIMARY KEY,
+        payload TEXT NOT NULL
+      );`,
     ],
   },
 ];
