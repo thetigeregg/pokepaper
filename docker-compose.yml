@@ -11,8 +11,9 @@ services:
     restart: unless-stopped
     # Unprivileged by default (the image's `node` user, uid 1000). On a
     # Synology shared folder, whose ACLs override chown, set PUID/PGID to a
-    # DSM user that the folder's ACL already allows (`id <dsm-user>`). See
-    # docs/nas-deployment.md, section 1.
+    # DSM user that the folder's ACL already allows (`id <dsm-user>`). The
+    # container gets PGID only, none of the user's other groups, so PGID must
+    # be a group the ACL grants. See docs/nas-deployment.md, section 1.
     user: "${PUID:-1000}:${PGID:-1000}"
     # Not published on the host. To reach it directly on the LAN for
     # debugging, uncomment (and keep it off the public proxy):
