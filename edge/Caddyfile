@@ -7,9 +7,9 @@
 	# The real client IP arrives in Cloudflare's CF-Connecting-IP header, but
 	# only requests from a trusted proxy (Nginx Proxy Manager) may set it.
 	# From anyone else, {client_ip} is the connection's own address, so a
-	# spoofed header can't dodge the server's rate limits. Behind Docker's
-	# port proxy every source looks the same, so narrow TRUSTED_PROXIES via
-	# docker-compose.npm.yml (docs/nas-deployment.md, section 4).
+	# spoofed header can't dodge the server's rate limits. Which values of
+	# TRUSTED_PROXIES are safe depends on the network setup: see
+	# docs/nas-deployment.md, section 4.
 	servers {
 		trusted_proxies static {$TRUSTED_PROXIES:private_ranges}
 		client_ip_headers CF-Connecting-IP
