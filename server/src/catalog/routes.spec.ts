@@ -10,7 +10,7 @@ import {
 import { testApp } from '../test-helpers.js';
 import { CatalogImageCache } from './image-cache.js';
 import { runCatalogIngest } from './ingest.js';
-import { CATALOG_IMAGE_RATE_LIMIT } from './routes.js';
+import { CATALOG_RATE_LIMIT } from './routes.js';
 import {
   Bytes,
   fakeClient,
@@ -280,7 +280,7 @@ describe('catalog routes', () => {
 
     for (const url of ['/api/catalog/manifest', '/api/catalog/sets/intl/sv01']) {
       const response = await app.inject({ method: 'GET', url, headers });
-      expect(response.headers['x-ratelimit-limit']).toBe(String(CATALOG_IMAGE_RATE_LIMIT));
+      expect(response.headers['x-ratelimit-limit']).toBe(String(CATALOG_RATE_LIMIT));
     }
   });
 
@@ -291,6 +291,6 @@ describe('catalog routes', () => {
 
     const response = await app.inject({ method: 'GET', url, headers });
 
-    expect(response.headers['x-ratelimit-limit']).toBe(String(CATALOG_IMAGE_RATE_LIMIT));
+    expect(response.headers['x-ratelimit-limit']).toBe(String(CATALOG_RATE_LIMIT));
   });
 });

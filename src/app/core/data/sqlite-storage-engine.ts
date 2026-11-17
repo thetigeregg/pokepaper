@@ -145,7 +145,8 @@ export class SqliteStorageEngine implements StorageEngine {
       await this.sql.run('DELETE FROM catalog_series', []);
       await this.executeBatched(
         series.map((entry) => ({
-          statement: 'INSERT INTO catalog_series (key, payload) VALUES (?, ?)',
+          statement: `INSERT INTO catalog_series (key, payload) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET payload = excluded.payload`,
           values: [catalogKey(entry.region, entry.id), JSON.stringify(entry)],
         }))
       );
@@ -163,7 +164,6 @@ export class SqliteStorageEngine implements StorageEngine {
       key,
       region: pack.set.region,
       hash: pack.hash,
-      cardCount: pack.cards.length,
       set: pack.set,
     };
     return this.runInTransaction(['catalogSets', 'catalogCards'], async () => {

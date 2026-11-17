@@ -190,25 +190,37 @@ export class CatalogSyncService {
   private async run(): Promise<void> {
     const epoch = this.epoch;
     this._status.set('checking');
+    let outcome: CatalogSyncStatus = 'idle';
     try {
       await this.checkAndDownload(epoch);
-      this._status.set('idle');
     } catch (error: unknown) {
-      if (error instanceof RunSuperseded || epoch !== this.epoch) {
-        return; // A sign-in or sign-out already set the status.
-      }
       if (error instanceof HttpErrorResponse && error.status === 401) {
-        this._status.set('unauthorized');
-      } else {
+        outcome = 'unauthorized';
+        // The session may have expired. A sync lets SyncService confirm it
+        // and, if so, sign out properly (AuthService follows SyncService).
+        void this.syncService.syncNow();
+      } else if (!(error instanceof RunSuperseded)) {
         if (!(error instanceof HttpErrorResponse)) {
           console.error('catalog.sync_failed', error);
         }
-        this._status.set(navigator.onLine ? 'error' : 'offline');
+        outcome = navigator.onLine ? 'error' : 'offline';
       }
     } finally {
       this._progress.set(null);
       await this.refreshStats().catch(() => undefined);
     }
+
+    // A sign-in or sign-out during the run decides the status instead of
+    // this run's outcome (and a signed-out status must stick, so no rerun).
+    if (epoch !== this.epoch) {
+      return;
+    }
+    this._status.set(this.signedOut() ? 'unauthorized' : outcome);
+  }
+
+  /** Read synchronously: the effect relaying sign-outs runs a moment later. */
+  private signedOut(): boolean {
+    return this.syncService.status() === 'unauthorized';
   }
 
   private async checkAndDownload(epoch: number): Promise<void> {
@@ -228,6 +240,10 @@ export class CatalogSyncService {
     const now = new Date();
     await this.engine.putSyncMeta({ key: CATALOG_CHECKED_AT_KEY, value: now.toISOString() });
     this._lastChecked.set(now);
+
+    if ((await this.engine.catalogStats()).sets > 0) {
+      await requestPersistentStorage();
+    }
   }
 
   /** The manifest, or null when it's unchanged since `etag` (304). */
@@ -272,32 +288,39 @@ export class CatalogSyncService {
       return;
     }
 
-    const firstDownload = stored.size === 0;
+    this.ensureCurrent(epoch);
     this._status.set('downloading');
     this._progress.set({ done: 0, total: missing.length });
     await runPool(missing, CATALOG_DOWNLOAD_CONCURRENCY, async (set) => {
       this.ensureCurrent(epoch);
       const pack = await this.fetchPack(set, epoch);
       this.ensureCurrent(epoch);
-      await this.engine.replaceCatalogSet(pack);
+      if (pack) {
+        await this.engine.replaceCatalogSet(pack);
+      } else if (stored.has(catalogKey(set.region, set.id))) {
+        // Removed on the server since the manifest was fetched.
+        await this.engine.deleteCatalogSet(set.region, set.id);
+      }
       this._progress.update((progress) =>
         progress ? { ...progress, done: progress.done + 1 } : progress
       );
       this._changed$.next();
     });
-
-    if (firstDownload) {
-      await requestPersistentStorage();
-    }
   }
 
-  /** Fetches a set pack, waiting out rate limits and brief failures (`CATALOG_PACK_ATTEMPTS`). */
-  private async fetchPack(set: CatalogManifestSet, epoch: number): Promise<CatalogSetPack> {
+  /**
+   * Fetches a set pack, waiting out rate limits and brief failures
+   * (`CATALOG_PACK_ATTEMPTS`). Null when the set no longer exists (404).
+   */
+  private async fetchPack(set: CatalogManifestSet, epoch: number): Promise<CatalogSetPack | null> {
     const url = `${environment.apiUrl}/api/catalog/sets/${set.region}/${encodeURIComponent(set.id)}`;
     for (let attempt = 1; ; attempt++) {
       try {
         return await firstValueFrom(this.http.get<CatalogSetPack>(url));
       } catch (error: unknown) {
+        if (error instanceof HttpErrorResponse && error.status === 404) {
+          return null;
+        }
         if (!isTransient(error) || attempt >= CATALOG_PACK_ATTEMPTS) {
           throw error;
         }
@@ -314,8 +337,9 @@ export class CatalogSyncService {
     });
   }
 
+  /** Stops a run overtaken by a sign-in or sign-out, before its next request or write. */
   private ensureCurrent(epoch: number): void {
-    if (epoch !== this.epoch) {
+    if (epoch !== this.epoch || this.signedOut()) {
       throw new RunSuperseded();
     }
   }
@@ -361,7 +385,9 @@ async function requestPersistentStorage(): Promise<void> {
     return;
   }
   try {
-    await navigator.storage.persist();
+    if (!(await navigator.storage.persisted())) {
+      await navigator.storage.persist();
+    }
   } catch {
     // Best effort: the catalog simply re-downloads if the browser evicts it.
   }

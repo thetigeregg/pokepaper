@@ -73,6 +73,7 @@ describe('CatalogSyncService', () => {
   let httpMock: HttpTestingController;
   let service: CatalogSyncService;
   let syncStatus: ReturnType<typeof signal<SyncStatus>>;
+  const syncNow = vi.fn(() => Promise.resolve());
   let onLine: MockInstance<() => boolean>;
 
   beforeEach(() => {
@@ -83,7 +84,7 @@ describe('CatalogSyncService', () => {
         provideHttpClientTesting(),
         AppDb,
         DexieStorageEngine,
-        { provide: SyncService, useValue: { status: syncStatus.asReadonly() } },
+        { provide: SyncService, useValue: { status: syncStatus.asReadonly(), syncNow } },
         {
           provide: StorageEngineFactory,
           useFactory: (dexie: DexieStorageEngine) => ({ getEngine: () => dexie }),
@@ -96,6 +97,7 @@ describe('CatalogSyncService', () => {
     httpMock = TestBed.inject(HttpTestingController);
     service = TestBed.inject(CatalogSyncService);
     onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
+    syncNow.mockClear();
   });
 
   afterEach(async () => {
@@ -221,10 +223,10 @@ describe('CatalogSyncService', () => {
     const first = service.syncNow();
     await respondManifest(manifest([SV01, SV2A]), '"catalog-1"');
     await respondPack(SV01);
-    // A set removed between the manifest and its download: not retried.
-    (await waitForRequest(httpMock, '/api/catalog/sets/asia/SV2a')).flush('gone', {
-      status: 404,
-      statusText: 'Not Found',
+    // A failure retrying won't fix.
+    (await waitForRequest(httpMock, '/api/catalog/sets/asia/SV2a')).flush('bad', {
+      status: 400,
+      statusText: 'Bad Request',
     });
     await first;
 
@@ -275,7 +277,7 @@ describe('CatalogSyncService', () => {
     expect((await engine.listCatalogSets()).length).toBeLessThan(3);
   });
 
-  it('reports a rejected session as unauthorized', async () => {
+  it('reports a rejected session as unauthorized and asks SyncService to confirm it', async () => {
     const run = service.syncNow();
     (await waitForRequest(httpMock, MANIFEST_URL)).flush(null, {
       status: 401,
@@ -284,6 +286,71 @@ describe('CatalogSyncService', () => {
     await run;
 
     expect(service.status()).toBe('unauthorized');
+    expect(syncNow).toHaveBeenCalled();
+  });
+
+  it('skips a set removed on the server after the manifest, and finishes the rest', async () => {
+    await engine.replaceCatalogSet(makeContractPack('asia', 'SV2a', ['SV2a-001'], 'old-hash'));
+
+    const run = service.syncNow();
+    await respondManifest(manifest([SV01, SV2A]), '"catalog-1"');
+    await respondPack(SV01);
+    (await waitForRequest(httpMock, '/api/catalog/sets/asia/SV2a')).flush('gone', {
+      status: 404,
+      statusText: 'Not Found',
+    });
+    await run;
+
+    expect(service.status()).toBe('idle');
+    expect((await engine.listCatalogSets()).map((set) => set.key)).toEqual(['intl:sv01']);
+  });
+
+  it('stops before its next request as soon as SyncService is signed out', async () => {
+    const run = service.syncNow();
+    await respondManifest(manifest([SV01, SV02]), '"catalog-1"');
+    // Signed out synchronously; the relaying effect hasn't run (no TestBed.tick()).
+    syncStatus.set('unauthorized');
+    for (const request of httpMock.match(() => true)) {
+      request.flush(request.request.url.includes('sv01') ? SV01 : SV02);
+    }
+    await run;
+
+    expect(service.status()).toBe('unauthorized');
+    httpMock.expectNone(() => true);
+    expect(await engine.getSyncMeta(CATALOG_ETAG_KEY)).toBeUndefined();
+  });
+
+  it('keeps a sign-out that lands as a run finishes, and does not run again', async () => {
+    const run = service.syncNow();
+    const request = await waitForRequest(httpMock, MANIFEST_URL);
+    void service.syncNow(); // Asks for a rerun.
+    request.flush(null, { status: 304, statusText: 'Not Modified' });
+    syncStatus.set('unauthorized');
+    TestBed.tick();
+    await run;
+
+    expect(service.status()).toBe('unauthorized');
+    httpMock.expectNone(MANIFEST_URL);
+  });
+
+  it('asks the browser to keep its storage once a catalog is stored', async () => {
+    const persist = vi.fn(() => Promise.resolve(true));
+    const persisted = vi.fn(() => Promise.resolve(false));
+    Object.defineProperty(navigator, 'storage', {
+      value: { persist, persisted },
+      configurable: true,
+    });
+    await engine.replaceCatalogSet(SV01);
+
+    const run = service.syncNow();
+    (await waitForRequest(httpMock, MANIFEST_URL)).flush(null, {
+      status: 304,
+      statusText: 'Not Modified',
+    });
+    await run;
+
+    expect(persist).toHaveBeenCalledTimes(1);
+    Reflect.deleteProperty(navigator, 'storage');
   });
 
   it('reports offline without making a request', async () => {

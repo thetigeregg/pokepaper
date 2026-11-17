@@ -151,7 +151,6 @@ export class DexieStorageEngine implements StorageEngine {
         key,
         region: pack.set.region,
         hash: pack.hash,
-        cardCount: pack.cards.length,
         set: pack.set,
       });
     });
@@ -172,11 +171,13 @@ export class DexieStorageEngine implements StorageEngine {
   }
 
   async listCatalogCards(region: CatalogRegion, setId: string): Promise<CatalogCard[]> {
+    const key = catalogKey(region, setId);
+    // The compound index returns the set's rows already in display order.
     const rows = await this.catalogCardsTable
-      .where('setKey')
-      .equals(catalogKey(region, setId))
+      .where('[setKey+sortIndex]')
+      .between([key, Dexie.minKey], [key, Dexie.maxKey])
       .toArray();
-    return rows.sort((a, b) => a.sortIndex - b.sortIndex).map((row) => row.card);
+    return rows.map((row) => row.card);
   }
 
   async getCatalogCard(region: CatalogRegion, cardId: string): Promise<CatalogCard | undefined> {

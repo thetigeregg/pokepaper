@@ -10,13 +10,13 @@ import { ImageUnavailableError, type CatalogImageCache } from './image-cache.js'
 import type { CatalogStore } from './store.js';
 
 /**
- * Catalog requests (packs and images) per client per minute. Above the
- * global API limit: a device's first catalog download is ~390 requests,
- * a set grid or an offline set download loads hundreds of images at once,
- * and devices at home share one public IP. The app keeps what it downloads,
- * so these are one-off costs.
+ * Requests per client per minute on each catalog route (packs, images; each
+ * route has its own budget). Above the global API limit: a device's first
+ * catalog download is ~390 pack requests, a set grid or an offline set
+ * download loads hundreds of images at once, and devices at home share one
+ * public IP. The app keeps what it downloads, so these are one-off costs.
  */
-export const CATALOG_IMAGE_RATE_LIMIT = 3000;
+export const CATALOG_RATE_LIMIT = 3000;
 
 const MAX_ID_LENGTH = 80;
 const QUALITY_FILES: Readonly<Partial<Record<string, 'low' | 'high'>>> = {
@@ -84,7 +84,7 @@ export function registerCatalogRoutes(app: FastifyInstance, options: CatalogRout
   const { store, images, languages } = options;
 
   const catalogRoute = {
-    config: { rateLimit: { max: CATALOG_IMAGE_RATE_LIMIT, timeWindow: '1 minute' } },
+    config: { rateLimit: { max: CATALOG_RATE_LIMIT, timeWindow: '1 minute' } },
   };
 
   const manifestTag = (version: number): string =>
@@ -122,8 +122,6 @@ export function registerCatalogRoutes(app: FastifyInstance, options: CatalogRout
     }
   );
 
-  const imageRoute = catalogRoute;
-
   const sendImage = async (
     request: FastifyRequest,
     reply: FastifyReply,
@@ -153,7 +151,7 @@ export function registerCatalogRoutes(app: FastifyInstance, options: CatalogRout
 
   app.get<{ Params: { region: string; cardId: string; language: string; file: string } }>(
     '/images/catalog/cards/:region/:cardId/:language/:file',
-    imageRoute,
+    catalogRoute,
     (request, reply) => {
       const { region, cardId, language, file } = request.params;
       const quality = QUALITY_FILES[file];
@@ -167,7 +165,7 @@ export function registerCatalogRoutes(app: FastifyInstance, options: CatalogRout
 
   app.get<{ Params: { region: string; setId: string; file: string } }>(
     '/images/catalog/sets/:region/:setId/logo/:file',
-    imageRoute,
+    catalogRoute,
     (request, reply) => {
       const { region, setId, file } = request.params;
       const language = file.endsWith('.webp') ? file.slice(0, -'.webp'.length) : '';
@@ -181,7 +179,7 @@ export function registerCatalogRoutes(app: FastifyInstance, options: CatalogRout
 
   app.get<{ Params: { region: string; setId: string } }>(
     '/images/catalog/sets/:region/:setId/symbol.webp',
-    imageRoute,
+    catalogRoute,
     (request, reply) => {
       const { region, setId } = request.params;
       if (!isRegion(region) || !validId(setId)) {

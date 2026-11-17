@@ -207,13 +207,21 @@ export function describeStorageEngineContract(
         expect(keys).toEqual(['asia:SV', 'intl:sv']);
       });
 
+      it('keeps the last of duplicate series rather than failing', async () => {
+        const renamed = { ...makeContractSeries('intl', 'sv'), names: { en: 'Renamed' } };
+
+        await engine.replaceCatalogSeries([makeContractSeries('intl', 'sv'), renamed]);
+
+        expect(await engine.listCatalogSeries()).toEqual([renamed]);
+      });
+
       it('stores a set with its hash, and its cards in display order', async () => {
         const pack = makeContractPack('intl', 'sv01', ['sv01-001', 'sv01-002', 'sv01-003']);
 
         await engine.replaceCatalogSet(pack);
 
         expect(await engine.listCatalogSets()).toEqual([
-          { key: 'intl:sv01', region: 'intl', hash: 'hash-sv01', cardCount: 3, set: pack.set },
+          { key: 'intl:sv01', region: 'intl', hash: 'hash-sv01', set: pack.set },
         ]);
         expect((await engine.listCatalogCards('intl', 'sv01')).map((card) => card.id)).toEqual([
           'sv01-001',

@@ -52,7 +52,7 @@ export class AppDb extends Dexie {
     this.version(2).stores({
       catalogSeries: 'key',
       catalogSets: 'key, region',
-      catalogCards: 'key, setKey',
+      catalogCards: 'key, setKey, [setKey+sortIndex]',
     });
   }
 }

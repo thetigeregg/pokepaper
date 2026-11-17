@@ -37,7 +37,6 @@ export interface StoredCatalogSet {
   key: string;
   region: CatalogRegion;
   hash: string;
-  cardCount: number;
   set: CatalogSet;
 }
 
