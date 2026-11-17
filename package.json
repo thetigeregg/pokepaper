@@ -1,0 +1,24 @@
+{
+  "name": "pokepaper",
+  "version": "0.0.0",
+  "private": true,
+  "description": "PokePaper: Pokémon TCG card browser, collection tracker, and deck builder",
+  "scripts": {
+    "test:scripts": "node --test \"scripts/*.test.mjs\"",
+    "format:check": "prettier --check .",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^21.2.4",
+    "@commitlint/config-conventional": "^21.2.4",
+    "@thetigeregg/commitlint-config": "^2.0.3",
+    "@thetigeregg/dev-cli": "^5.1.0",
+    "@thetigeregg/lint-staged-config": "^2.0.0",
+    "@thetigeregg/ncu-config": "^3.1.0",
+    "@thetigeregg/prettier-config": "^2.0.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.6.1",
+    "npm-check-updates": "^23.1.1",
+    "prettier": "^3.9.10"
+  }
+}

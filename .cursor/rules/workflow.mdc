@@ -1,0 +1,11 @@
+---
+description: Build, format, and test verification before commits
+globs: ["**/*"]
+alwaysApply: true
+---
+
+Before suggesting any commit:
+1. Run `npm run format:check` to verify Prettier formatting
+2. Run `npm run test:scripts` to execute the Node script tests
+3. Do not bypass pre-commit hooks
+4. If any step fails, fix the issue before proceeding
