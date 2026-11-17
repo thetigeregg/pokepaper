@@ -64,15 +64,16 @@ Fastify 5 + better-sqlite3, run with `tsx` (no build step). It stores data in `s
 
 Configuration (environment variables, all optional):
 
-| Variable                | Default            | Purpose                                                        |
-| ----------------------- | ------------------ | -------------------------------------------------------------- |
-| `HOST` / `PORT`         | `0.0.0.0` / `3000` | Listen address                                                 |
-| `DATA_DIR`              | `server/data`      | SQLite database directory                                      |
-| `BACKUP_DIR`            | `server/backups`   | `VACUUM INTO` snapshots                                        |
-| `BACKUP_KEEP`           | `14`               | Snapshots retained                                             |
-| `BACKUP_INTERVAL_HOURS` | `24`               | Backup schedule (one also runs at startup; `0` = startup only) |
-| `TRUST_PROXY`           | `false`            | Trust `X-Forwarded-*` (on behind edge in production)           |
-| `LOG_LEVEL`             | `info`             | pino log level                                                 |
+| Variable                | Default            | Purpose                                                           |
+| ----------------------- | ------------------ | ----------------------------------------------------------------- |
+| `HOST` / `PORT`         | `0.0.0.0` / `3000` | Listen address                                                    |
+| `DATA_DIR`              | `server/data`      | SQLite database directory                                         |
+| `BACKUP_DIR`            | `server/backups`   | `VACUUM INTO` snapshots                                           |
+| `BACKUP_KEEP`           | `14`               | Snapshots retained                                                |
+| `BACKUP_INTERVAL_HOURS` | `24`               | Backup schedule (one also runs at startup; `0` = startup only)    |
+| `TRUST_PROXY`           | `false`            | Trust `X-Forwarded-*` (on behind edge in production)              |
+| `RATE_LIMIT_PER_MINUTE` | `600`              | Requests per client IP per minute, across all routes (429 beyond) |
+| `LOG_LEVEL`             | `info`             | pino log level                                                    |
 
 Invalid values fail startup with a clear error.
 

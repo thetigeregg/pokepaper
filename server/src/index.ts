@@ -6,7 +6,12 @@ import { DB_FILENAME, openDatabase } from './db.js';
 
 const config = loadConfig();
 const db = openDatabase(join(config.dataDir, DB_FILENAME));
-const app = buildApp({ db, trustProxy: config.trustProxy, logLevel: config.logLevel });
+const app = buildApp({
+  db,
+  trustProxy: config.trustProxy,
+  logLevel: config.logLevel,
+  rateLimitPerMinute: config.rateLimitPerMinute,
+});
 
 const stopBackups = startBackupSchedule({
   db,

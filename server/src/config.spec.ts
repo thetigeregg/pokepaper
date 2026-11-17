@@ -11,6 +11,7 @@ describe('loadConfig', () => {
       backupKeep: 14,
       backupIntervalHours: 24,
       trustProxy: false,
+      rateLimitPerMinute: 600,
       logLevel: 'info',
     });
     expect(config.dataDir.endsWith(resolve('/server/data'))).toBe(true);
@@ -26,6 +27,7 @@ describe('loadConfig', () => {
       BACKUP_KEEP: '3',
       BACKUP_INTERVAL_HOURS: '0',
       TRUST_PROXY: 'true',
+      RATE_LIMIT_PER_MINUTE: '30',
       LOG_LEVEL: 'warn',
     });
 
@@ -37,6 +39,7 @@ describe('loadConfig', () => {
       backupKeep: 3,
       backupIntervalHours: 0,
       trustProxy: true,
+      rateLimitPerMinute: 30,
       logLevel: 'warn',
     });
   });
@@ -47,6 +50,7 @@ describe('loadConfig', () => {
     [{ BACKUP_KEEP: '0' }, /BACKUP_KEEP/],
     [{ BACKUP_INTERVAL_HOURS: '-1' }, /BACKUP_INTERVAL_HOURS/],
     [{ TRUST_PROXY: 'yes' }, /TRUST_PROXY must be true\/false/],
+    [{ RATE_LIMIT_PER_MINUTE: '0' }, /RATE_LIMIT_PER_MINUTE/],
   ])('fails fast on %o', (env, message) => {
     expect(() => loadConfig(env)).toThrow(message);
   });

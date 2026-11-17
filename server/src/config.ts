@@ -16,6 +16,8 @@ export interface ServerConfig {
    * ever sees traffic from edge (Caddy) behind Nginx Proxy Manager.
    */
   trustProxy: boolean;
+  /** Requests per client IP per minute, across all routes. */
+  rateLimitPerMinute: number;
   logLevel: string;
 }
 
@@ -62,6 +64,7 @@ export function loadConfig(env: Env = process.env): ServerConfig {
     backupKeep: readInt(env, 'BACKUP_KEEP', 14, 1),
     backupIntervalHours: readInt(env, 'BACKUP_INTERVAL_HOURS', 24, 0),
     trustProxy: readBool(env, 'TRUST_PROXY', false),
+    rateLimitPerMinute: readInt(env, 'RATE_LIMIT_PER_MINUTE', 600, 1),
     logLevel: env['LOG_LEVEL']?.trim() || 'info',
   };
 }
