@@ -20,3 +20,7 @@
 ## v0.1.2 - 2026-11-17
 
 - d0412b7 fix(deploy): correct NAS setup steps for ROOT, token, and PGID (#14)
+
+## v0.2.0 - 2026-11-17
+
+- 968599e feat(deploy): add optional override to join NPM's Docker network (#13)
