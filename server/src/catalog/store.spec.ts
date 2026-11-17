@@ -162,6 +162,19 @@ describe('CatalogStore', () => {
     expect(store.getCard('asia', 'sv01-002')).toBeUndefined();
   });
 
+  it('reads a single image path or set hash cheaply', () => {
+    const store = memoryCatalogStore();
+    const withImage = card('sv01-001', 0);
+    (withImage.text.en as { image: string | null }).image = 'en/sv/sv01/001';
+    store.writeSet(set(), [withImage]);
+
+    expect(store.getCardImage('intl', 'sv01-001', 'en')).toBe('en/sv/sv01/001');
+    expect(store.getCardImage('intl', 'sv01-001', 'zh-tw')).toBeNull();
+    expect(store.getCardImage('intl', 'nope', 'en')).toBeNull();
+    expect(store.getSetHash('intl', 'sv01')).toBe(store.getSet('intl', 'sv01')?.hash);
+    expect(store.getSetHash('intl', 'nope')).toBeUndefined();
+  });
+
   it('remembers image checks', () => {
     const store = memoryCatalogStore();
     const at = new Date('2026-01-01T00:00:00Z');

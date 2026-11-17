@@ -41,15 +41,31 @@ function notFound(reply: FastifyReply): FastifyReply {
   return reply.code(404).send({ error: 'not_found' });
 }
 
-/** Sets a revalidation ETag; true (with a 304 sent) when the client's copy is current. */
-function notModified(request: FastifyRequest, reply: FastifyReply, etag: string): boolean {
-  reply.header('cache-control', 'private, no-cache').header('etag', etag);
+/**
+ * Opaque part of an entity tag as a client may echo it: without the weak
+ * marker (Cloudflare weakens tags it recompresses) and without a
+ * compression suffix (Caddy appends `-gzip`/`-zstd` and strips it again on
+ * the way in, but not from a weakened tag).
+ */
+function opaqueTag(tag: string): string {
+  return tag
+    .trim()
+    .replace(/^W\//, '')
+    .replace(/-(?:gzip|zstd|br)"$/, '"');
+}
+
+/** Whether `If-None-Match` matches `etag` (weak comparison, RFC 9110 §13.1.2). */
+function matchesIfNoneMatch(request: FastifyRequest, etag: string): boolean {
   const sent = request.headers['if-none-match'];
-  if (sent?.split(',').some((candidate) => candidate.trim() === etag)) {
-    void reply.code(304).send();
-    return true;
-  }
-  return false;
+  return (
+    sent !== undefined &&
+    sent.split(',').some((candidate) => candidate.trim() === '*' || opaqueTag(candidate) === etag)
+  );
+}
+
+/** Revalidation headers, sent with full and 304 responses alike. */
+function withETag(reply: FastifyReply, etag: string): FastifyReply {
+  return reply.header('cache-control', 'private, no-cache').header('etag', etag);
 }
 
 /**
@@ -65,13 +81,17 @@ function notModified(request: FastifyRequest, reply: FastifyReply, etag: string)
 export function registerCatalogRoutes(app: FastifyInstance, options: CatalogRoutesOptions): void {
   const { store, images, languages } = options;
 
+  const manifestTag = (version: number): string =>
+    `"catalog-${String(version)}-${languages.join('.')}"`;
+
+  // ETags are checked before anything is loaded, so update checks stay cheap.
   app.get('/api/catalog/manifest', (request, reply) => {
-    const manifest = store.manifest(languages);
-    if (
-      notModified(request, reply, `"catalog-${String(manifest.version)}-${languages.join('.')}"`)
-    ) {
-      return reply;
+    const current = manifestTag(store.version());
+    if (matchesIfNoneMatch(request, current)) {
+      return withETag(reply, current).code(304).send();
     }
+    const manifest = store.manifest(languages);
+    withETag(reply, manifestTag(manifest.version));
     return manifest;
   });
 
@@ -79,13 +99,18 @@ export function registerCatalogRoutes(app: FastifyInstance, options: CatalogRout
     '/api/catalog/sets/:region/:setId',
     (request, reply) => {
       const { region, setId } = request.params;
-      const pack = isRegion(region) && validId(setId) ? store.getSetPack(region, setId) : undefined;
+      if (!isRegion(region) || !validId(setId)) {
+        return notFound(reply);
+      }
+      const hash = store.getSetHash(region, setId);
+      if (hash && matchesIfNoneMatch(request, `"${hash}"`)) {
+        return withETag(reply, `"${hash}"`).code(304).send();
+      }
+      const pack = store.getSetPack(region, setId);
       if (!pack) {
         return notFound(reply);
       }
-      if (notModified(request, reply, `"${pack.hash}"`)) {
-        return reply;
-      }
+      withETag(reply, `"${pack.hash}"`);
       return pack;
     }
   );
@@ -130,7 +155,7 @@ export function registerCatalogRoutes(app: FastifyInstance, options: CatalogRout
       if (!quality || !isRegion(region) || !validId(cardId) || !isCatalogLanguage(language)) {
         return notFound(reply);
       }
-      const image = store.getCard(region, cardId)?.text[language]?.image;
+      const image = store.getCardImage(region, cardId, language);
       return sendImage(request, reply, image ? `${image}/${quality}.webp` : null);
     }
   );

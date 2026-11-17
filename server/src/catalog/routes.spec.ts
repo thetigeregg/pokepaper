@@ -122,6 +122,65 @@ describe('catalogue routes', () => {
     expect(response.statusCode).toBe(404);
   });
 
+  it.each([
+    ['a weakened tag', (tag: string) => `W/${tag}`],
+    ['a weakened tag with a compression suffix', (tag: string) => `W/${tag.slice(0, -1)}-gzip"`],
+    ['a zstd suffix', (tag: string) => `${tag.slice(0, -1)}-zstd"`],
+    ['a wildcard', () => '*'],
+  ])('revalidate %s as unchanged', async (_case, echo) => {
+    const { app, headers } = await catalogApp();
+    const first = await app.inject({ method: 'GET', url: '/api/catalog/manifest', headers });
+
+    const again = await app.inject({
+      method: 'GET',
+      url: '/api/catalog/manifest',
+      headers: { ...headers, 'if-none-match': echo(first.headers.etag as string) },
+    });
+
+    expect(again.statusCode).toBe(304);
+    expect(again.headers.etag).toBe(first.headers.etag);
+  });
+
+  it('answer revalidations without loading the manifest or pack', async () => {
+    const { app, headers, store } = await catalogApp();
+    const manifestTag = (await app.inject({ method: 'GET', url: '/api/catalog/manifest', headers }))
+      .headers.etag as string;
+    const packTag = `"${store.getSetHash('intl', 'sv01') ?? ''}"`;
+    const manifest = vi.spyOn(store, 'manifest');
+    const pack = vi.spyOn(store, 'getSetPack');
+
+    const manifest304 = await app.inject({
+      method: 'GET',
+      url: '/api/catalog/manifest',
+      headers: { ...headers, 'if-none-match': manifestTag },
+    });
+    const pack304 = await app.inject({
+      method: 'GET',
+      url: '/api/catalog/sets/intl/sv01',
+      headers: { ...headers, 'if-none-match': packTag },
+    });
+
+    expect([manifest304.statusCode, pack304.statusCode]).toEqual([304, 304]);
+    expect(manifest).not.toHaveBeenCalled();
+    expect(pack).not.toHaveBeenCalled();
+  });
+
+  it('send a fresh manifest once the catalogue changes', async () => {
+    const { app, headers, store } = await catalogApp();
+    const stale = (await app.inject({ method: 'GET', url: '/api/catalog/manifest', headers }))
+      .headers.etag as string;
+    store.deleteSet('intl', '2019sm-fr');
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/catalog/manifest',
+      headers: { ...headers, 'if-none-match': stale },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json<CatalogManifest>().sets).toHaveLength(2);
+  });
+
   it('serve a card scan from TCGdex once, then from disk', async () => {
     const { app, headers, fake } = await catalogApp();
     fake.routes.set('asset:fr/sv/sv01/001/high.webp', new Bytes(webp(200)));
@@ -136,6 +195,21 @@ describe('catalogue routes', () => {
     expect(first.rawPayload).toEqual(Buffer.from(webp(200)));
     expect(second.rawPayload).toEqual(first.rawPayload);
     expect(fake.calls).toEqual(['asset:fr/sv/sv01/001/high.webp']);
+  });
+
+  it('look up a scan path without loading the whole card', async () => {
+    const { app, headers, fake, store } = await catalogApp();
+    fake.routes.set('asset:en/sv/sv01/001/low.webp', new Bytes(webp()));
+    const getCard = vi.spyOn(store, 'getCard');
+
+    const response = await app.inject({
+      method: 'GET',
+      url: catalogCardImageUrl({ region: 'intl', id: 'sv01-001' }, 'en', 'low'),
+      headers,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(getCard).not.toHaveBeenCalled();
   });
 
   it('serve set logos and symbols', async () => {

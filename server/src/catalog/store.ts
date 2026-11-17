@@ -80,6 +80,24 @@ export class CatalogStore {
     return row ? (JSON.parse(row.payload) as CatalogCard) : undefined;
   }
 
+  /** A card's image path in one language, without parsing the whole card. */
+  getCardImage(region: CatalogRegion, id: string, language: CatalogLanguage): string | null {
+    const row = this.db
+      .prepare(
+        'SELECT json_extract(payload, ?) AS image FROM catalog_cards WHERE region = ? AND id = ?'
+      )
+      .get(`$.text."${language}".image`, region, id) as { image: unknown } | undefined;
+    return typeof row?.image === 'string' ? row.image : null;
+  }
+
+  /** A set's content hash, without loading it. */
+  getSetHash(region: CatalogRegion, id: string): string | undefined {
+    const row = this.db
+      .prepare('SELECT content_hash FROM catalog_sets WHERE region = ? AND id = ?')
+      .get(region, id) as { content_hash: string } | undefined;
+    return row?.content_hash;
+  }
+
   /** Everything a client needs to decide which sets to download. */
   manifest(languages: CatalogLanguage[]): CatalogManifest {
     // One read transaction: a consistent snapshot even while an import writes.
@@ -134,10 +152,7 @@ export class CatalogStore {
    */
   writeSet(set: CatalogSet, cards: readonly CatalogCard[], now = new Date()): boolean {
     const hash = setContentHash(set, cards);
-    const stored = this.db
-      .prepare('SELECT content_hash FROM catalog_sets WHERE region = ? AND id = ?')
-      .get(set.region, set.id) as { content_hash: string } | undefined;
-    if (stored?.content_hash === hash) {
+    if (this.getSetHash(set.region, set.id) === hash) {
       return false;
     }
 

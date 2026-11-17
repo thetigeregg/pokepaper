@@ -1,11 +1,14 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
-import { access, rename, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import { setTimeout as delay } from 'node:timers/promises';
 import { join } from 'node:path';
 import { TCGDEX_ASSET_BASE, TCGDEX_USER_AGENT } from './tcgdex-client.js';
 
 /** The largest scan (`high.webp`) is ~300 KB; anything far beyond isn't a card image. */
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+/** Attempts per image for errors that may pass (network, 429, 5xx), including the first. */
+const MAX_ATTEMPTS = 3;
 
 /** TCGdex couldn't deliver the image right now (or delivered something that isn't one). */
 export class ImageUnavailableError extends Error {
@@ -18,7 +21,14 @@ export interface CatalogImageCacheOptions {
   fetch?: typeof fetch;
   assetBaseUrl?: string;
   timeoutMs?: number;
+  /** Fetches from TCGdex in flight at once (one client's set download shouldn't flood it). */
+  concurrency?: number;
+  /** Wait between retries; injected in tests. */
+  sleep?: (ms: number) => Promise<void>;
 }
+
+/** A failure retrying may fix. */
+class RetryableImageError extends ImageUnavailableError {}
 
 /**
  * Disk cache of TCGdex catalogue images. Each image is fetched from TCGdex's
@@ -35,13 +45,19 @@ export class CatalogImageCache {
   private readonly fetchFn: typeof fetch;
   private readonly assetBaseUrl: string;
   private readonly timeoutMs: number;
+  private readonly concurrency: number;
+  private readonly sleep: (ms: number) => Promise<void>;
   private readonly inFlight = new Map<string, Promise<string | null>>();
+  private active = 0;
+  private readonly waiting: (() => void)[] = [];
 
   constructor(options: CatalogImageCacheOptions) {
     this.dir = options.dir;
     this.fetchFn = options.fetch ?? fetch;
     this.assetBaseUrl = options.assetBaseUrl ?? TCGDEX_ASSET_BASE;
     this.timeoutMs = options.timeoutMs ?? 15_000;
+    this.concurrency = options.concurrency ?? 6;
+    this.sleep = options.sleep ?? ((ms: number): Promise<void> => delay(ms));
     mkdirSync(this.dir, { recursive: true });
   }
 
@@ -71,6 +87,46 @@ export class CatalogImageCache {
       // Not cached yet.
     }
 
+    await this.acquire();
+    let bytes: Buffer | null;
+    try {
+      bytes = await this.fetchWithRetry(path);
+    } finally {
+      this.release();
+    }
+    if (!bytes) {
+      return null;
+    }
+
+    // Write then rename, so a crash never leaves a truncated image behind.
+    // The folder is (re)created each time: it may be deleted while running.
+    const temp = `${file}.${randomBytes(6).toString('hex')}.tmp`;
+    try {
+      await mkdir(this.dir, { recursive: true });
+      await writeFile(temp, bytes);
+      await rename(temp, file);
+    } catch (error: unknown) {
+      await rm(temp, { force: true });
+      throw error;
+    }
+    return file;
+  }
+
+  private async fetchWithRetry(path: string): Promise<Buffer | null> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.fetchOnce(path);
+      } catch (error: unknown) {
+        if (!(error instanceof RetryableImageError) || attempt >= MAX_ATTEMPTS) {
+          throw error;
+        }
+        await this.sleep(300 * 3 ** (attempt - 1));
+      }
+    }
+  }
+
+  /** The image's bytes, or null for 404. */
+  private async fetchOnce(path: string): Promise<Buffer | null> {
     let response: Response;
     try {
       response = await this.fetchFn(`${this.assetBaseUrl}${path}`, {
@@ -78,7 +134,7 @@ export class CatalogImageCache {
         signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch (error: unknown) {
-      throw new ImageUnavailableError(`TCGdex asset ${path}: ${describe(error)}`);
+      throw new RetryableImageError(`TCGdex asset ${path}: ${describe(error)}`);
     }
 
     if (response.status === 404) {
@@ -87,7 +143,10 @@ export class CatalogImageCache {
     }
     if (!response.ok) {
       await response.body?.cancel();
-      throw new ImageUnavailableError(`TCGdex asset ${path}: HTTP ${String(response.status)}`);
+      const message = `TCGdex asset ${path}: HTTP ${String(response.status)}`;
+      throw response.status === 429 || response.status >= 500
+        ? new RetryableImageError(message)
+        : new ImageUnavailableError(message);
     }
 
     const bytes = await readCapped(response, path);
@@ -96,17 +155,26 @@ export class CatalogImageCache {
     if (!isWebp(bytes)) {
       throw new ImageUnavailableError(`TCGdex asset ${path}: not a WebP image`);
     }
+    return bytes;
+  }
 
-    // Write then rename, so a crash never leaves a truncated image behind.
-    const temp = `${file}.${randomBytes(6).toString('hex')}.tmp`;
-    try {
-      await writeFile(temp, bytes);
-      await rename(temp, file);
-    } catch (error: unknown) {
-      await rm(temp, { force: true });
-      throw error;
+  private async acquire(): Promise<void> {
+    if (this.active < this.concurrency) {
+      this.active += 1;
+      return;
     }
-    return file;
+    await new Promise<void>((resolve) => {
+      this.waiting.push(resolve);
+    });
+  }
+
+  private release(): void {
+    const next = this.waiting.shift();
+    if (next) {
+      next();
+    } else {
+      this.active -= 1;
+    }
   }
 }
 
@@ -133,7 +201,7 @@ async function readCapped(response: Response, path: string): Promise<Buffer> {
     if (error instanceof ImageUnavailableError) {
       throw error;
     }
-    throw new ImageUnavailableError(`TCGdex asset ${path}: ${describe(error)}`);
+    throw new RetryableImageError(`TCGdex asset ${path}: ${describe(error)}`);
   }
   return Buffer.concat(chunks);
 }

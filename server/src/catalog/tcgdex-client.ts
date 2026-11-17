@@ -98,8 +98,9 @@ export class TcgdexClient {
     const combined = anySignal(this.signal, signal);
     await this.acquire();
     try {
-      const response = await this.request(`${this.baseUrl}${path}`, 'GET', path, combined);
-      return response ? await readJson(response, path) : null;
+      return await this.request(`${this.baseUrl}${path}`, 'GET', path, combined, (response) =>
+        readJson(response, path)
+      );
     } finally {
       this.release();
     }
@@ -113,21 +114,34 @@ export class TcgdexClient {
     const combined = anySignal(this.signal, signal);
     await this.acquire();
     try {
-      const response = await this.request(`${this.assetBaseUrl}${path}`, 'HEAD', path, combined);
-      await response?.body?.cancel();
-      return response !== null;
+      const found = await this.request(
+        `${this.assetBaseUrl}${path}`,
+        'HEAD',
+        path,
+        combined,
+        async (response) => {
+          await response.body?.cancel();
+          return true;
+        }
+      );
+      return found ?? false;
     } finally {
       this.release();
     }
   }
 
-  /** Sends one request with retries. Returns the OK response (body unread), or null for 404. */
-  private async request(
+  /**
+   * Sends one request with retries and reads an OK response with `read`,
+   * inside the retry loop: a connection that drops mid-body is retried like
+   * any other network error. Null for 404.
+   */
+  private async request<T>(
     url: string,
     method: 'GET' | 'HEAD',
     path: string,
-    signal: AbortSignal | undefined
-  ): Promise<Response | null> {
+    signal: AbortSignal | undefined,
+    read: (response: Response) => Promise<T>
+  ): Promise<T | null> {
     let lastError: unknown;
 
     for (let attempt = 1; attempt <= this.maxAttempts; attempt++) {
@@ -147,7 +161,7 @@ export class TcgdexClient {
           return null;
         }
         if (response.ok) {
-          return response;
+          return await read(response);
         }
 
         await response.body?.cancel();

@@ -97,6 +97,30 @@ describe('TcgdexClient', () => {
     expect(tcgdex.requests).toBe(3);
   });
 
+  it('retries when the connection drops mid-body', async () => {
+    let attempt = 0;
+    const fetchFn = () => {
+      attempt += 1;
+      if (attempt === 1) {
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('[{"id":'));
+            controller.error(new TypeError('terminated'));
+          },
+        });
+        return Promise.resolve(new Response(body));
+      }
+      return Promise.resolve(Response.json([{ id: 'sv' }]));
+    };
+    const tcgdex = new TcgdexClient({
+      fetch: fetchFn,
+      sleep: () => Promise.resolve(),
+    });
+
+    await expect(tcgdex.get('/en/series')).resolves.toEqual([{ id: 'sv' }]);
+    expect(attempt).toBe(2);
+  });
+
   it('retries network errors, then gives up as unavailable', async () => {
     const sleeps: number[] = [];
     const tcgdex = new TcgdexClient({
