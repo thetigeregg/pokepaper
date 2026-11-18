@@ -10,6 +10,8 @@ import {
 import { vi } from 'vitest';
 import { makeContractCard, makeContractPack } from '../../core/data/storage-engine.contract';
 import { CollectionService } from '../../core/services/collection.service';
+import { ImageCacheService } from '../../core/services/image-cache.service';
+import { VisibilityService } from '../../core/services/visibility.service';
 import { SetChecklistComponent } from './set-checklist.component';
 
 describe('SetChecklistComponent', () => {
@@ -71,7 +73,7 @@ describe('SetChecklistComponent', () => {
 
   const root = () => fixture.nativeElement as HTMLElement;
   const chip = (cardId: string, variant: string) =>
-    root().querySelector<HTMLIonChipElement>(
+    root().querySelector<HTMLButtonElement>(
       `[data-testid="checklist-${cardId}"] [data-testid="toggle-${variant}"]`
     );
 
@@ -84,11 +86,16 @@ describe('SetChecklistComponent', () => {
       providers: [
         { provide: CollectionService, useValue: collection },
         { provide: AlertController, useValue: alerts },
+        {
+          provide: ImageCacheService,
+          useValue: { resolve: vi.fn(() => Promise.resolve(null)), release: vi.fn() },
+        },
+        { provide: VisibilityService, useValue: { whenVisible: () => () => undefined } },
       ],
     });
   });
 
-  it('lists each card with its number, name, rarity and variant toggles', () => {
+  it('lists each card with its number, name, rarity and a scan per variant', () => {
     owned.set({ 'intl:sv01-001:reverse:en': 2 });
     const checklist = create();
 
@@ -103,9 +110,15 @@ describe('SetChecklistComponent', () => {
     ]);
     expect(chip('sv01-001', 'normal')?.getAttribute('aria-checked')).toBe('false');
     expect(chip('sv01-001', 'reverse')?.getAttribute('aria-checked')).toBe('true');
-    expect(chip('sv01-001', 'reverse')?.textContent.replace(/\s+/g, ' ').trim()).toBe(
-      'Reverse holo ×2'
-    );
+    const reverse = chip('sv01-001', 'reverse');
+    expect(reverse?.querySelector('app-card-image')).not.toBeNull();
+    expect(reverse?.querySelector('.variant-label')?.textContent).toBe('Reverse holo');
+    expect(reverse?.querySelector('.count')?.textContent.trim()).toBe('2');
+    expect(reverse?.classList).toContain('owned');
+    expect(reverse?.getAttribute('aria-label')).toBe('sv01-001 Reverse holo, 2 copies');
+    const normal = chip('sv01-001', 'normal');
+    expect(normal?.querySelector('.count')).toBeNull();
+    expect(normal?.classList).not.toContain('owned');
     expect(root().querySelector('[data-testid="checklist-summary"]')?.textContent).toContain(
       '1 / 3 owned'
     );
