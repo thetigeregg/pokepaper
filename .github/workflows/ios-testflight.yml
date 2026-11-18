@@ -57,11 +57,16 @@ jobs:
           fi
 
           CURRENT=$(git tag --list 'v*' --sort=-v:refname | head -1)
-          # Only deploy a release this run produced: if nothing was released
-          # (no releasable commits), the newest tag doesn't contain the
-          # commit that triggered it, and the last release already shipped.
-          if [ -z "$CURRENT" ] || ! git merge-base --is-ancestor "$HEAD_SHA" "$CURRENT"; then
-            echo "No release tag contains ${HEAD_SHA}; nothing to deploy."
+          # Only deploy a release this run produced. A release run commits
+          # the version bump on top of the commit that triggered it and tags
+          # that, so the newest tag must contain the trigger and sit on a
+          # newer commit. Otherwise nothing was released (no releasable
+          # commits, or a manual rerun on the release commit itself) and the
+          # last release already shipped.
+          if [ -z "$CURRENT" ] \
+            || ! git merge-base --is-ancestor "$HEAD_SHA" "$CURRENT" \
+            || [ "$(git rev-list -n 1 "$CURRENT")" = "$HEAD_SHA" ]; then
+            echo "This run released nothing new (newest tag: ${CURRENT:-none}); nothing to deploy."
             { echo "should_deploy=false"; echo "matched_paths="; echo "release_tag="; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
