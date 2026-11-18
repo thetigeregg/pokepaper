@@ -17,7 +17,16 @@
     "deps:angular:ecosystem": "ng update angular-eslint",
     "typecheck:server": "npm run typecheck --workspace server",
     "test:server": "vitest run --project server",
-    "start:server": "npm run dev --workspace server"
+    "start:server": "npm run dev --workspace server",
+    "generate:ios-info-plists": "node scripts/generate-ios-info-plists.mjs",
+    "sync:ios:version": "node scripts/sync-ios-version.mjs",
+    "prebuild:ios": "node scripts/sync-ios-version.mjs --marketing-only && node scripts/generate-ios-info-plists.mjs",
+    "prebuild:ios:local": "node scripts/write-environment-ios.mjs local && npm run prebuild:ios",
+    "prebuild:ios:prod": "node scripts/write-environment-ios.mjs prod && npm run prebuild:ios",
+    "build:ios:local": "ng build --configuration ios-local",
+    "build:ios:prod": "ng build --configuration ios-prod",
+    "sync:ios:local": "npm run build:ios:local && npx cap sync ios",
+    "sync:ios:prod": "npm run build:ios:prod && npx cap sync ios"
   },
   "devDependencies": {
     "@analogjs/vite-plugin-angular": "^2.9.7",
@@ -49,6 +58,7 @@
     "jsdom": "^31.0.1",
     "lint-staged": "^17.6.1",
     "npm-check-updates": "^23.1.1",
+    "plist": "^5.1.1",
     "prettier": "^3.9.10",
     "sql.js": "^1.16.0",
     "typescript": "~6.0.3",
@@ -73,6 +83,7 @@
     "@capacitor-community/sqlite": "^8.1.1",
     "@capacitor/core": "^8.6.2",
     "@capacitor/filesystem": "^8.1.5",
+    "@capacitor/ios": "^8.6.2",
     "@capacitor/preferences": "^8.0.1",
     "@ionic/angular": "^9.0.11",
     "@pokepaper/shared": "^0.0.0",

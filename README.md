@@ -9,18 +9,18 @@ PokePaper is a one-user Ionic + Angular app for the Pokémon Trading Card Game:
 
 It runs as a web app and as a native iOS app (Capacitor). It works offline: data lives on the device and syncs when online. It's served on the public internet behind passkey-only authentication ([`docs/auth.md`](docs/auth.md)).
 
-> **Status:** early scaffolding. This repo is being built in phases: tooling → app shell → server → passkey auth → Docker/deploy → CI/CD → iOS. Sections marked _(planned)_ describe pieces that haven't landed yet.
+> **Status:** early scaffolding. This repo is being built in phases: tooling → app shell → server → passkey auth → Docker/deploy → CI/CD → iOS. iOS is in progress: the native shell is in place, while native passkey sign-in and TestFlight delivery are still to come ([`docs/ios.md`](docs/ios.md)).
 
 ## Repository Structure
 
 - `src/`: frontend app (Ionic/Angular, web + Capacitor iOS)
 - `shared/`: domain and sync wire types shared by the frontend and server (`@pokepaper/shared`, npm workspace)
-- `scripts/`: Node tooling (devx worktree adapter; iOS build/version/environment scripts _(planned)_), each with `*.test.mjs` tests
+- `scripts/`: Node tooling (devx worktree adapter; iOS build/version/environment scripts), each with `*.test.mjs` tests
 - `public/`: static web assets (favicon, web app manifest)
-- `server/`: Fastify API with SQLite storage: passkey auth, sync, and health; card catalog and image cache _(planned)_ (npm workspace)
+- `server/`: Fastify API with SQLite storage: passkey auth, sync, health, card catalog, and image cache (npm workspace)
 - `edge/`: Caddy container serving the web app, proxying `/api` to `server`, serving the iOS app-association file, and setting security headers (CSP, HSTS, …)
-- `ios/`: Capacitor iOS project with App DEV / App PROD targets _(planned)_
-- `docs/`: [`auth.md`](docs/auth.md) (passkeys, sessions, setup, recovery), [`sync.md`](docs/sync.md) (sync rules), [`collection.md`](docs/collection.md) (collection tracking), [`nas-deployment.md`](docs/nas-deployment.md) (Docker, Nginx Proxy Manager, Cloudflare); iOS docs _(planned)_
+- `ios/`: Capacitor iOS project with App DEV / App PROD targets ([`docs/ios.md`](docs/ios.md))
+- `docs/`: [`auth.md`](docs/auth.md) (passkeys, sessions, setup, recovery), [`sync.md`](docs/sync.md) (sync rules), [`collection.md`](docs/collection.md) (collection tracking), [`nas-deployment.md`](docs/nas-deployment.md) (Docker, Nginx Proxy Manager, Cloudflare), [`ios.md`](docs/ios.md) (Xcode targets, iOS builds)
 - `.github/`: CI, release/publish, CodeQL, secret-scanning, and Claude workflows; PR/issue templates; Dependabot
 
 ## Prerequisites
@@ -93,6 +93,18 @@ Invalid values fail startup with a clear error. Backups use SQLite's online back
 
 UI conventions (layout, lists, actions, language, mobile and desktop parity) are in [`docs/ui.md`](docs/ui.md).
 
+## iOS App
+
+The Capacitor project in `ios/` has two Xcode targets, **App DEV** (`io.github.thetigeregg.poketcg.dev`, pointed at your Mac's dev server) and **App PROD** (`io.github.thetigeregg.poketcg`, pointed at the public deployment):
+
+```bash
+AUTH_DEV_BYPASS=true npm run start:server   # LAN builds can't use passkeys
+npm run sync:ios:local                      # web build against your LAN IP + npx cap sync
+npx cap open ios                            # run the App DEV scheme
+```
+
+Setup, the prod build, and how the scripts fit together are in [`docs/ios.md`](docs/ios.md).
+
 ## Testing and Quality
 
 ```bash
@@ -111,7 +123,7 @@ Commits are checked by husky: `lint-staged` (Prettier and `eslint --fix` on stag
 
 | Workflow                                    | Trigger                            | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | ------------------------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CI PR Checks` (`ci-pr.yml`)                | PRs to `main`                      | **Quality Checks**: format, lint, server type-check, unit tests with coverage (uploaded to Codecov), script tests, production build. **Docker Build Validation**: builds both images for amd64 without pushing                                                                                                                                                                                                                                                                                                                                                                                  |
+| `CI PR Checks` (`ci-pr.yml`)                | PRs to `main`                      | **Quality Checks**: format, lint, server type-check, unit tests with coverage (uploaded to Codecov), script tests, production build. **iOS prod build validation**: the `ios-prod` Angular build ([`docs/ios.md`](docs/ios.md)). **Docker Build Validation**: builds both images for amd64 without pushing                                                                                                                                                                                                                                                                                      |
 | `Release & Publish` (`release-publish.yml`) | push to `main`, manual (main only) | Releases the latest `main`: bumps the version from Conventional Commits (`devx release version`: `feat` → minor, `fix`/others → patch, `!`/`BREAKING CHANGE` → major), updates `CHANGELOG.md`, and pushes the release commit and `vX.Y.Z` tag atomically. Then rebuilds only the images whose inputs changed (`scripts/image-should-publish.mjs`; a version-only bump of `package.json` doesn't count) and re-tags the unchanged one, so every version tag exists for both images. A run that loses a race with a newer merge is superseded by the next run. Manual runs can force-publish both |
 | `Secret Scan` (`secret-scan.yml`)           | PRs, push to `main`                | gitleaks (`.gitleaks.toml`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `CodeQL` (`codeql.yml`)                     | PRs, push to `main`, weekly        | Static analysis of TypeScript and workflows (`.github/codeql/codeql-config.yml`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |

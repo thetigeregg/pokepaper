@@ -59,6 +59,32 @@ jobs:
       - name: Build (production web)
         run: npm run build -- --configuration production
 
+  ios_prod_build_validation:
+    name: iOS prod build validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Runs prebuild:ios:prod first (generated environment, Info.plists,
+      # MARKETING_VERSION), then the ios-prod Angular build. No Xcode here:
+      # native builds happen locally and, later, in the TestFlight workflow.
+      - name: Validate ios-prod Angular build
+        env:
+          IOS_BACKEND_ORIGIN_PROD: https://ci.example.test
+        run: npm run build:ios:prod
+
   docker_build_validation:
     name: Docker Build Validation
     runs-on: ubuntu-latest
