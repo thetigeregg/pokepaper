@@ -57,3 +57,7 @@
 ## v0.7.1 - 2026-11-18
 
 - 2ee4bd7 test(vitest): add Angular compiler plugin and component specs (#22)
+
+## v0.8.0 - 2026-11-18
+
+- ad471b8 feat(cards): add energy icons and restyle card details (#23)
