@@ -170,12 +170,14 @@ describe('card searchbar and filter chips', () => {
         expect.objectContaining({
           component: FilterPickerComponent,
           componentProps: { kindProp: 'set', sheetProp: true },
+          breakpoints: [0, 1],
           initialBreakpoint: 1,
         })
       );
+      // Every filter opens full height, short lists included.
       expect(modals.create).toHaveBeenNthCalledWith(
         2,
-        expect.objectContaining({ initialBreakpoint: 0.5 })
+        expect.objectContaining({ breakpoints: [0, 1], initialBreakpoint: 1 })
       );
       expect(present).toHaveBeenCalledTimes(2);
     });

@@ -128,8 +128,8 @@ export class SearchFiltersComponent {
       ? await this.modals.create({
           component: FilterPickerComponent,
           componentProps,
-          breakpoints: [0, 0.5, 1],
-          initialBreakpoint: kind === 'set' || kind === 'rarity' ? 1 : 0.5,
+          breakpoints: [0, 1],
+          initialBreakpoint: 1,
           handle: true,
         })
       : await this.popovers.create({
