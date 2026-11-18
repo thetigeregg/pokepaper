@@ -65,7 +65,7 @@ export class CardDetailsComponent {
   readonly language = input.required<CatalogLanguage>();
 
   readonly maxQuantity = MAX_COLLECTION_QUANTITY;
-  readonly languageName = computed(() => LANGUAGE_LABELS[this.language()].english);
+  readonly languageName = computed(() => LANGUAGE_LABELS[this.language()].name);
   /** Copies owned in the current language, per variant the card comes in. */
   readonly variants = computed(() =>
     cardVariants(this.card()).map((variant) => ({
@@ -79,7 +79,7 @@ export class CardDetailsComponent {
     const card = this.card();
     return this.collection
       .otherLanguages(card.region, card.id, this.language(), inDisplayOrder(this.set().languages))
-      .map((other) => `${String(other.quantity)} in ${LANGUAGE_LABELS[other.language].english}`)
+      .map((other) => `${String(other.quantity)} in ${LANGUAGE_LABELS[other.language].name}`)
       .join(' · ');
   });
 

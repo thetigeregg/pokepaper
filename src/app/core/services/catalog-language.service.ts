@@ -12,19 +12,18 @@ import { LocalUserDataRepository } from '../data/local-user-data-repository';
 import { SyncService } from './sync.service';
 
 /**
- * Labels per language: `short` for badges, `name` (the language's own name)
- * for pickers, and `english` for app text ("Collection · German").
+ * Labels per language: `short` for badges, `name` everywhere else. Names
+ * are always English ("German", not "Deutsch"), in pickers and app text
+ * alike (docs/ui.md → Language).
  */
-export const LANGUAGE_LABELS: Readonly<
-  Record<CatalogLanguage, { short: string; name: string; english: string }>
-> = {
-  en: { short: 'EN', name: 'English', english: 'English' },
-  fr: { short: 'FR', name: 'Français', english: 'French' },
-  it: { short: 'IT', name: 'Italiano', english: 'Italian' },
-  de: { short: 'DE', name: 'Deutsch', english: 'German' },
-  ja: { short: 'JA', name: '日本語', english: 'Japanese' },
-  'zh-tw': { short: '繁中', name: '繁體中文', english: 'Traditional Chinese' },
-  'zh-cn': { short: '简中', name: '简体中文', english: 'Simplified Chinese' },
+export const LANGUAGE_LABELS: Readonly<Record<CatalogLanguage, { short: string; name: string }>> = {
+  en: { short: 'EN', name: 'English' },
+  fr: { short: 'FR', name: 'French' },
+  it: { short: 'IT', name: 'Italian' },
+  de: { short: 'DE', name: 'German' },
+  ja: { short: 'JA', name: 'Japanese' },
+  'zh-tw': { short: '繁中', name: 'Traditional Chinese' },
+  'zh-cn': { short: '简中', name: 'Simplified Chinese' },
 };
 
 /** The order languages are listed in pickers and app text. */

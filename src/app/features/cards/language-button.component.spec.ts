@@ -22,7 +22,7 @@ describe('LanguageButtonComponent', () => {
       '[data-testid="language-button"]'
     );
 
-    expect(element?.getAttribute('aria-label')).toBe('Language: Deutsch');
+    expect(element?.getAttribute('aria-label')).toBe('Language: German');
     expect((element as HTMLIonButtonElement | null)?.disabled).toBe(true);
   });
 });

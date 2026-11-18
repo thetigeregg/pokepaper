@@ -202,7 +202,7 @@ describe('SetPage', () => {
 
     expect(createSheet.mock.lastCall?.[0].header).toBe('Download images for offline use');
     expect(sheetButtons().map((b) => b.text)).toEqual([
-      'Download in Deutsch',
+      'Download in German',
       'Download in all languages',
       'Cancel',
     ]);
@@ -232,7 +232,7 @@ describe('SetPage', () => {
 
     await page.openDownloadActions();
 
-    expect(sheetButtons().map((b) => b.text)).toEqual(['Download in Deutsch', 'Cancel']);
+    expect(sheetButtons().map((b) => b.text)).toEqual(['Download in German', 'Cancel']);
   });
 
   it('shows progress and disables the download button while downloading', async () => {
