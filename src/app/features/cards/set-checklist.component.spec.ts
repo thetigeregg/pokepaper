@@ -73,7 +73,7 @@ describe('SetChecklistComponent', () => {
 
   const root = () => fixture.nativeElement as HTMLElement;
   const chip = (cardId: string, variant: string) =>
-    root().querySelector<HTMLButtonElement>(
+    root().querySelector<HTMLIonButtonElement>(
       `[data-testid="checklist-${cardId}"] [data-testid="toggle-${variant}"]`
     );
 
@@ -95,7 +95,7 @@ describe('SetChecklistComponent', () => {
     });
   });
 
-  it('lists each card with its number, name, rarity and a scan per variant', () => {
+  it('lists each card with its scan, name, number and rarity, and a toggle per variant', () => {
     owned.set({ 'intl:sv01-001:reverse:en': 2 });
     const checklist = create();
 
@@ -108,17 +108,19 @@ describe('SetChecklistComponent', () => {
       ['002', 'sv01-002', ['holo']],
       ['003', 'sv01-003', ['normal']], // No flags: just Normal.
     ]);
-    expect(chip('sv01-001', 'normal')?.getAttribute('aria-checked')).toBe('false');
-    expect(chip('sv01-001', 'reverse')?.getAttribute('aria-checked')).toBe('true');
+    const first = root().querySelector('[data-testid="checklist-sv01-001"]');
+    expect(first?.querySelector('[data-testid="open-thumb"] app-card-image')).not.toBeNull();
+    expect(first?.querySelector('.media-row-text p')?.textContent.replace(/\s+/g, ' ').trim()).toBe(
+      '001 · Common'
+    );
     const reverse = chip('sv01-001', 'reverse');
-    expect(reverse?.querySelector('app-card-image')).not.toBeNull();
-    expect(reverse?.querySelector('.variant-label')?.textContent).toBe('Reverse holo');
-    expect(reverse?.querySelector('.count')?.textContent.trim()).toBe('2');
-    expect(reverse?.classList).toContain('owned');
-    expect(reverse?.getAttribute('aria-label')).toBe('sv01-001 Reverse holo, 2 copies');
+    expect(reverse?.fill).toBe('solid');
+    expect(reverse?.textContent.replace(/\s+/g, ' ').trim()).toBe('Reverse holo ×2');
+    const [row] = checklist.rows();
+    expect(checklist.variantLabel(row, row.variants[1])).toBe('sv01-001 Reverse holo, 2 copies');
     const normal = chip('sv01-001', 'normal');
-    expect(normal?.querySelector('.count')).toBeNull();
-    expect(normal?.classList).not.toContain('owned');
+    expect(normal?.fill).toBe('outline');
+    expect(normal?.textContent.trim()).toBe('Normal');
     expect(root().querySelector('[data-testid="checklist-summary"]')?.textContent).toContain(
       '1 / 3 owned'
     );
@@ -134,7 +136,7 @@ describe('SetChecklistComponent', () => {
       1
     );
     fixture.detectChanges();
-    expect(chip('sv01-001', 'normal')?.getAttribute('aria-checked')).toBe('true');
+    expect(chip('sv01-001', 'normal')?.fill).toBe('solid');
 
     chip('sv01-001', 'normal')?.click();
     expect(collection.setQuantity).toHaveBeenLastCalledWith(
@@ -143,7 +145,7 @@ describe('SetChecklistComponent', () => {
     );
   });
 
-  it('opens the card instead when a variant has more than one copy', () => {
+  it('opens the card from its scan or ⓘ, or from a variant with more than one copy', () => {
     owned.set({ 'intl:sv01-002:holo:en': 3 });
     const checklist = create();
     const opened = vi.fn();
@@ -153,8 +155,11 @@ describe('SetChecklistComponent', () => {
     root()
       .querySelector<HTMLElement>('[data-testid="checklist-sv01-003"] [data-testid="open-card"]')
       ?.click();
+    root()
+      .querySelector<HTMLElement>('[data-testid="checklist-sv01-001"] [data-testid="open-thumb"]')
+      ?.click();
 
-    expect(opened.mock.calls).toEqual([[1], [2]]);
+    expect(opened.mock.calls).toEqual([[1], [2], [0]]);
     expect(collection.setQuantity).not.toHaveBeenCalled();
   });
 

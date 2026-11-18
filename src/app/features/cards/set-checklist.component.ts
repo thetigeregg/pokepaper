@@ -1,13 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
-import {
-  AlertController,
-  IonBadge,
-  IonButton,
-  IonIcon,
-  IonItem,
-  IonLabel,
-  IonList,
-} from '@ionic/angular';
+import { AlertController, IonButton, IonIcon, IonItem, IonLabel, IonList } from '@ionic/angular';
 import type { CatalogCard, CatalogLanguage, CatalogSet } from '@pokepaper/shared';
 import { addIcons } from 'ionicons';
 import { informationCircleOutline } from 'ionicons/icons';
@@ -33,59 +25,38 @@ interface ChecklistRow {
 
 /**
  * A set as a checklist (docs/ui.md → Set page), for entering a collection
- * quickly: one row per card with a small scan per variant (TCGdex has one
- * scan per language, so each variant shows it, named underneath). A scan
- * toggles its variant between 0 and 1 copy in `language` (with more copies,
- * the card opens to edit them); owned ones carry the grid's count badge,
- * unowned ones are dimmed. A summary row has "Mark all owned".
+ * quickly: one row per card with its scan (TCGdex has one per language),
+ * name, then number and rarity, and a stacked toggle button per variant (0 ↔ 1
+ * copy in `language`; with more copies, the card opens to edit them). A
+ * summary row has "Mark all owned".
  */
 @Component({
   selector: 'app-set-checklist',
   styles: [
     `
-      .variants {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: flex-start;
-        gap: 12px;
-        margin-top: 8px;
-      }
-      /* A variant: the card's scan, its name underneath. */
-      .variant {
-        position: relative;
-        display: flex;
-        flex-direction: column;
-        width: 64px;
+      /* The card's scan, leading the row like the sets list's logos; it opens the card. */
+      .thumb {
+        flex-shrink: 0;
+        width: 52px;
         padding: 0;
         border: 0;
         background: none;
-        color: inherit;
         cursor: pointer;
       }
-      .variant app-card-image {
-        transition: opacity 0.15s;
+      /* One toggle per variant, stacked. */
+      .variants {
+        display: flex;
+        flex-direction: column;
+        width: 136px;
+        margin-inline-start: 8px;
       }
-      .variant:not(.owned) app-card-image {
-        opacity: 0.4;
-      }
-      .variant:disabled {
-        cursor: default;
-      }
-      .count {
-        position: absolute;
-        top: 4px;
-        right: 4px;
+      @media (min-width: 992px) {
+        .variants {
+          width: 160px;
+        }
       }
       .open ion-icon {
-        font-size: 30px;
-      }
-      .variant-label {
-        display: block;
-        margin-top: 4px;
-        font-size: 0.7rem;
-        line-height: 1.2;
-        white-space: normal;
-        text-align: center;
+        font-size: 24px;
       }
     `,
   ],
@@ -109,38 +80,46 @@ interface ChecklistRow {
       @for (row of rows(); track row.card.id; let index = $index) {
         <ion-item lines="inset" [attr.data-testid]="'checklist-' + row.card.id">
           <ion-label>
-            {{ row.card.localId }} · {{ row.name }}
-            @if (row.card.rarity) {
-              <p>{{ row.card.rarity }}</p>
-            }
-            <div class="variants">
-              @for (variant of row.variants; track variant.variant) {
-                <button
-                  type="button"
-                  class="variant"
-                  [class.owned]="variant.quantity > 0"
-                  [disabled]="!ready()"
-                  role="checkbox"
-                  [attr.aria-checked]="variant.quantity > 0"
-                  [attr.aria-label]="variantLabel(row, variant)"
-                  (click)="toggle(row, variant, index)"
-                  [attr.data-testid]="'toggle-' + variant.variant"
-                >
-                  <app-card-image
-                    [card]="row.card"
-                    [language]="language()"
-                    [setLine]="row.setLine"
-                  />
-                  @if (variant.quantity > 0) {
-                    <ion-badge class="count" color="danger" aria-hidden="true">
-                      {{ variant.quantity }}
-                    </ion-badge>
+            <div class="media-row">
+              <button
+                type="button"
+                class="thumb"
+                (click)="opened.emit(index)"
+                [attr.aria-label]="'Show ' + row.name"
+                data-testid="open-thumb"
+              >
+                <app-card-image [card]="row.card" [language]="language()" [setLine]="row.setLine" />
+              </button>
+              <div class="media-row-text">
+                {{ row.name }}
+                <p>
+                  {{ row.card.localId }}
+                  @if (row.card.rarity) {
+                    · {{ row.card.rarity }}
                   }
-                  <span class="variant-label">{{ variant.label }}</span>
-                </button>
-              }
+                </p>
+              </div>
             </div>
           </ion-label>
+          <div slot="end" class="variants">
+            @for (variant of row.variants; track variant.variant) {
+              <ion-button
+                size="small"
+                expand="block"
+                [fill]="variant.quantity > 0 ? 'solid' : 'outline'"
+                [disabled]="!ready()"
+                [attr.aria-pressed]="variant.quantity > 0"
+                [attr.aria-label]="variantLabel(row, variant)"
+                (click)="toggle(row, variant, index)"
+                [attr.data-testid]="'toggle-' + variant.variant"
+              >
+                {{ variant.label }}
+                @if (variant.quantity > 1) {
+                  ×{{ variant.quantity }}
+                }
+              </ion-button>
+            }
+          </div>
           <ion-button
             slot="end"
             fill="clear"
@@ -155,7 +134,7 @@ interface ChecklistRow {
       }
     </ion-list>
   `,
-  imports: [IonList, IonItem, IonLabel, IonButton, IonBadge, IonIcon, CardImageComponent],
+  imports: [IonList, IonItem, IonLabel, IonButton, IonIcon, CardImageComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SetChecklistComponent {
