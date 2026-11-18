@@ -68,5 +68,7 @@ Standards for PokePaper's screens, so new pages look and behave like existing on
 ## Tests
 
 - Elements that tests or checks look up carry a `data-testid`.
-- Component specs test the component's state (signals) with the template replaced. Real rendering is checked in the browser at both viewport sizes.
-- **Known limit:** Vitest here runs without Angular's compiler plugin, so a component's signal `input()`s and signal queries can't be set or resolved in tests. Keep logic in tested services and pure functions. For `ModalController` components, take `componentProps` as plain properties: Ionic assigns them directly and would overwrite signal inputs (and `modal` is a reserved name).
+- Component specs render the real template: Vitest compiles components with Angular's compiler (`@analogjs/vite-plugin-angular` in `vitest.config.ts`), so set signal inputs with `fixture.componentRef.setInput()` and assert on the DOM. Layout and styling are still checked in the browser at both viewport sizes.
+- Zone.js can't track native `async`/`await`, so `fixture.whenStable()` won't wait for a component's async loads. Flush a macrotask (`await new Promise((r) => setTimeout(r))`) before `fixture.detectChanges()`.
+- In jsdom, Ionic patches some elements' text (`IonLabel` reads as empty), so look elements up by `data-testid` rather than by label text.
+- For `ModalController` components, take `componentProps` as plain properties: Ionic assigns them directly and would overwrite signal inputs (and `modal` is a reserved name).
