@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import {
+  IonButtons,
   IonContent,
   IonHeader,
   IonIcon,
@@ -13,6 +14,7 @@ import { CatalogSearchService } from '../../core/services/catalog-search.service
 import { LayoutService } from '../../core/services/layout.service';
 import { CardSearchbarComponent } from '../../features/cards/card-searchbar.component';
 import { CatalogSegmentComponent } from '../../features/cards/catalog-segment.component';
+import { FiltersButtonComponent } from '../../features/cards/filters-button.component';
 import { SearchFiltersComponent } from '../../features/cards/search-filters.component';
 import { SearchResultsComponent } from '../../features/cards/search-results.component';
 import { SetsListComponent } from '../../features/cards/sets-list.component';
@@ -20,9 +22,9 @@ import { addIcons } from 'ionicons';
 import { albumsOutline } from 'ionicons/icons';
 
 /**
- * Cards home. On phones: the searchbar, the catalog segment and the sets
- * list, pushing the set page, with search results in place of the list while
- * searching. On desktop (the searchbar and list are in the side menu): the
+ * Cards home. On phones: the Filters button, the searchbar, the catalog
+ * segment and the sets list, pushing the set page, with search results in
+ * place of the list while searching. On desktop (the searchbar and list are in the side menu): the
  * search results while searching, else a prompt to pick a set.
  */
 @Component({
@@ -45,12 +47,14 @@ import { albumsOutline } from 'ionicons/icons';
   imports: [
     IonHeader,
     IonToolbar,
+    IonButtons,
     IonTitle,
     IonContent,
     IonIcon,
     IonText,
     CatalogSegmentComponent,
     CardSearchbarComponent,
+    FiltersButtonComponent,
     SearchFiltersComponent,
     SearchResultsComponent,
     SetsListComponent,

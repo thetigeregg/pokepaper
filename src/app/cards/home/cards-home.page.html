@@ -23,6 +23,9 @@
   <ion-header [translucent]="true">
     <ion-toolbar>
       <ion-title>Cards</ion-title>
+      <ion-buttons slot="end">
+        <app-filters-button />
+      </ion-buttons>
     </ion-toolbar>
     <ion-toolbar>
       <app-card-searchbar />
@@ -30,11 +33,6 @@
     <ion-toolbar>
       <app-catalog-segment />
     </ion-toolbar>
-    @if (search.active()) {
-      <ion-toolbar>
-        <app-search-filters />
-      </ion-toolbar>
-    }
   </ion-header>
   <ion-content [fullscreen]="true">
     @if (search.active()) {

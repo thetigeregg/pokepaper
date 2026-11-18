@@ -144,22 +144,60 @@ export function setGroups(
   });
 }
 
+/** A filter's picked values, groups first. */
+export function pickedValues(filters: SearchFilters, kind: FilterKind): string[] {
+  const fields = FILTER_FIELDS[kind];
+  return [
+    ...(fields.groups && fields.groups !== fields.options ? filters[fields.groups] : []),
+    ...filters[fields.options],
+  ];
+}
+
+/** A filter's picks in short: "Fire" or "Fire +2", or null while unused. */
+export function filterSummary(
+  kind: FilterKind,
+  filters: SearchFilters,
+  label: (value: string) => string
+): string | null {
+  const values = pickedValues(filters, kind);
+  if (values.length === 0) {
+    return null;
+  }
+  const more = values.length > 1 ? ` +${String(values.length - 1)}` : '';
+  return `${label(values[0])}${more}`;
+}
+
 /** A chip's label: "Type" while unused, else "Type: Fire" or "Type: Fire +2". */
 export function chipLabel(
   kind: FilterKind,
   filters: SearchFilters,
   label: (value: string) => string
 ): string {
-  const fields = FILTER_FIELDS[kind];
-  const values = [
-    ...(fields.groups && fields.groups !== fields.options ? filters[fields.groups] : []),
-    ...filters[fields.options],
-  ];
-  if (values.length === 0) {
-    return FILTER_TITLES[kind];
-  }
-  const more = values.length > 1 ? ` +${String(values.length - 1)}` : '';
-  return `${FILTER_TITLES[kind]}: ${label(values[0])}${more}`;
+  const summary = filterSummary(kind, filters, label);
+  return summary ? `${FILTER_TITLES[kind]}: ${summary}` : FILTER_TITLES[kind];
+}
+
+/** What the current catalog calls its sets and series, for labeling picks. */
+export interface SetNames {
+  sets: ReadonlyMap<string, { set: CatalogSet }>;
+  seriesNames: ReadonlyMap<string, string>;
+  language: CatalogLanguage;
+}
+
+/** How a picked value of `kind` reads: "Supporter", "Paldea Evolved", "Fire". */
+export function valueLabel(kind: FilterKind, names: SetNames): (value: string) => string {
+  return (value) => {
+    switch (kind) {
+      case 'category':
+        return categoryLabel(value);
+      case 'set': {
+        const set = names.sets.get(value)?.set;
+        return set ? localized(set.names, names.language) : (names.seriesNames.get(value) ?? value);
+      }
+      default:
+        return value;
+    }
+  };
 }
 
 /** `filters` without any value of `kind`. */

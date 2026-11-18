@@ -12,6 +12,8 @@ import {
 import { LayoutService } from '../../core/services/layout.service';
 import { CardSearchbarComponent } from './card-searchbar.component';
 import { FilterPickerComponent } from './filter-picker.component';
+import { FiltersButtonComponent } from './filters-button.component';
+import { FiltersSheetComponent } from './filters-sheet.component';
 import { SearchFiltersComponent } from './search-filters.component';
 
 describe('card searchbar and filter chips', () => {
@@ -150,7 +152,7 @@ describe('card searchbar and filter chips', () => {
 
       (root().querySelector('[data-testid="filter-clear-type"]') as HTMLElement).click();
       expect(filters()).toEqual({ ...NO_FILTERS, rarities: ['Common'] });
-      expect(modals.create).not.toHaveBeenCalled(); // The ✕ doesn't open the chip.
+      expect(popovers.create).not.toHaveBeenCalled(); // The ✕ doesn't open the chip.
 
       fixture.detectChanges();
       (root().querySelector('[data-testid="filter-clear-all"]') as HTMLElement).click();
@@ -159,31 +161,7 @@ describe('card searchbar and filter chips', () => {
       expect(root().querySelector('[data-testid="filter-clear-all"]')).toBeNull();
     });
 
-    it('opens a filter in a sheet on phones', async () => {
-      const chips = create();
-
-      await chips.open('set', new Event('click'));
-      await chips.open('type', new Event('click'));
-
-      expect(modals.create).toHaveBeenNthCalledWith(
-        1,
-        expect.objectContaining({
-          component: FilterPickerComponent,
-          componentProps: { kindProp: 'set', sheetProp: true },
-          breakpoints: [0, 1],
-          initialBreakpoint: 1,
-        })
-      );
-      // Every filter opens full height, short lists included.
-      expect(modals.create).toHaveBeenNthCalledWith(
-        2,
-        expect.objectContaining({ breakpoints: [0, 1], initialBreakpoint: 1 })
-      );
-      expect(present).toHaveBeenCalledTimes(2);
-    });
-
-    it('opens a filter in a popover under its chip on desktop', async () => {
-      wide.set(true);
+    it('opens a filter in a popover under its chip', async () => {
       create();
 
       (root().querySelector('[data-testid="filter-chip-rarity"]') as HTMLElement).click();
@@ -194,10 +172,105 @@ describe('card searchbar and filter chips', () => {
       expect(popovers.create).toHaveBeenCalledWith(
         expect.objectContaining({
           component: FilterPickerComponent,
-          componentProps: { kindProp: 'rarity', sheetProp: false },
+          componentProps: { kindProp: 'rarity' },
           cssClass: 'filter-popover',
         })
       );
+    });
+  });
+
+  describe('FiltersButtonComponent', () => {
+    let fixture: ComponentFixture<FiltersButtonComponent>;
+
+    function create(): FiltersButtonComponent {
+      fixture = TestBed.createComponent(FiltersButtonComponent);
+      fixture.detectChanges();
+      return fixture.componentInstance;
+    }
+
+    const root = () => fixture.nativeElement as HTMLElement;
+
+    it('counts the picked values in a badge before the button', () => {
+      const button = create();
+      expect(button.count()).toBe(0);
+      expect(root().querySelector('[data-testid="filters-count"]')).toBeNull();
+
+      filters.set({ ...NO_FILTERS, types: ['Fire'], series: ['intl:sv'], sets: ['intl:sv01'] });
+      fixture.detectChanges();
+
+      expect(button.count()).toBe(3);
+      const badge = root().querySelector('[data-testid="filters-count"]');
+      expect(badge?.textContent).toBe('3');
+      expect(badge?.nextElementSibling?.getAttribute('data-testid')).toBe('filters-button');
+    });
+
+    it('shows search and opens the filters sheet', async () => {
+      const button = create();
+
+      await button.open();
+
+      expect(search.activate).toHaveBeenCalled();
+      expect(modals.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          component: FiltersSheetComponent,
+          breakpoints: [0, 1],
+          cssClass: 'auto-height-sheet',
+        })
+      );
+      expect(present).toHaveBeenCalled();
+    });
+  });
+
+  describe('FiltersSheetComponent', () => {
+    const dismiss = vi.fn(() => Promise.resolve(true));
+    let fixture: ComponentFixture<FiltersSheetComponent>;
+
+    function create(): FiltersSheetComponent {
+      TestBed.overrideProvider(ModalController, { useValue: { ...modals, dismiss } });
+      fixture = TestBed.createComponent(FiltersSheetComponent);
+      fixture.detectChanges();
+      return fixture.componentInstance;
+    }
+
+    const root = () => fixture.nativeElement as HTMLElement;
+
+    it('lists each filter with its picks, and clears them', () => {
+      filters.set({ ...NO_FILTERS, categories: ['Trainer/Item'], sets: ['intl:sv01'] });
+      const sheet = create();
+
+      expect(sheet.rows().map((row) => [row.title, row.summary])).toEqual([
+        ['Category', 'Item'],
+        ['Type', null],
+        ['Rarity', null],
+        ['Set', 'Scarlet & Violet'],
+      ]);
+      expect(root().querySelector('[data-testid="filters-row-type"]')?.textContent).toContain(
+        'Any'
+      );
+
+      (root().querySelector('[data-testid="filters-clear"]') as HTMLElement).click();
+      expect(filters()).toEqual(NO_FILTERS);
+      fixture.detectChanges();
+      expect(root().querySelector('[data-testid="filters-clear"]')).toBeNull();
+    });
+
+    it('opens a filter in a sheet stacked on top, and closes with Done', async () => {
+      const sheet = create();
+
+      (root().querySelector('[data-testid="filters-row-set"]') as HTMLElement).click();
+      await vi.waitFor(() => {
+        expect(present).toHaveBeenCalled();
+      });
+      expect(modals.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          component: FilterPickerComponent,
+          componentProps: { kindProp: 'set', sheetProp: true },
+          cssClass: 'auto-height-sheet',
+        })
+      );
+
+      sheet.done();
+      expect(dismiss).toHaveBeenCalled();
     });
   });
 });

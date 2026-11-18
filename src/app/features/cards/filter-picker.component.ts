@@ -1,4 +1,4 @@
-import { DecimalPipe } from '@angular/common';
+import { DecimalPipe, NgTemplateOutlet } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -47,15 +47,32 @@ import { SetLogoComponent } from './set-logo.component';
 
 /**
  * One filter's values as checkboxes (docs/ui.md → Cards → Search), in an
- * IonModal sheet on phones or an IonPopover on desktop. Changes apply as
+ * IonModal sheet stacked over the Filters sheet on phones, or an IonPopover
+ * under its chip on desktop. Changes apply as
  * they're made. Groups (a category, a series) can be picked as a whole,
  * which covers all their options.
  */
 @Component({
   selector: 'app-filter-picker',
   templateUrl: 'filter-picker.component.html',
+  styles: [
+    `
+      :host {
+        display: flex;
+        flex: 1 1 auto;
+        flex-direction: column;
+        min-height: 0;
+      }
+      .sheet-scroll {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+      }
+    `,
+  ],
   imports: [
     DecimalPipe,
+    NgTemplateOutlet,
     IonHeader,
     IonToolbar,
     IonTitle,
@@ -83,10 +100,11 @@ export class FilterPickerComponent implements OnInit {
 
   // Set through componentProps, which assigns plain properties.
   kindProp: FilterKind = 'type';
-  /** Opened as a sheet (phone) rather than a popover (desktop). */
+  /** A phone sheet (over the Filters sheet) rather than a desktop popover. */
   sheetProp = false;
 
   readonly kind = signal<FilterKind>('type');
+  readonly sheet = signal(false);
   readonly title = computed(() => FILTER_TITLES[this.kind()]);
   readonly setQuery = signal('');
   readonly language = this.browse.language;
@@ -143,6 +161,7 @@ export class FilterPickerComponent implements OnInit {
 
   ngOnInit(): void {
     this.kind.set(this.kindProp);
+    this.sheet.set(this.sheetProp);
   }
 
   groupChecked(group: FilterGroup): boolean {

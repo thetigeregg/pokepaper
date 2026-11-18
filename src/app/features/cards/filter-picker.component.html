@@ -17,7 +17,18 @@
   }
 </ion-header>
 
-<ion-content>
+<!-- A sheet sizes to its list (auto height), which ion-content can't; a popover has a fixed height. -->
+@if (sheet()) {
+  <div class="sheet-scroll">
+    <ng-container [ngTemplateOutlet]="values" />
+  </div>
+} @else {
+  <ion-content>
+    <ng-container [ngTemplateOutlet]="values" />
+  </ion-content>
+}
+
+<ng-template #values>
   @if (kind() === 'set') {
     <ion-list>
       @for (group of groups(); track group.value) {
@@ -121,4 +132,4 @@
       }
     </ion-list>
   }
-</ion-content>
+</ng-template>

@@ -116,3 +116,17 @@ ion-popover.filter-popover {
   --width: 340px;
   --height: min(520px, 75vh);
 }
+
+/* A sheet as tall as its content (Ionic's auto-height sheet), up to the
+   screen's height, where its own list scrolls (e.g. the filter pickers). */
+ion-modal.auto-height-sheet {
+  --height: auto;
+
+  .ion-page {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    contain: content;
+    max-height: calc(100dvh - var(--ion-safe-area-top, 0px) - 16px);
+  }
+}
