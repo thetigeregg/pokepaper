@@ -61,3 +61,7 @@
 ## v0.8.0 - 2026-11-18
 
 - ad471b8 feat(cards): add energy icons and restyle card details (#23)
+
+## v0.9.0 - 2026-11-18
+
+- 006e55d feat(catalog): search cards by name with filters (#24)
