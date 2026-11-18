@@ -1,6 +1,15 @@
 import { catalogSetImageUrl, type CatalogCard } from '@pokepaper/shared';
 import { makeContractCard, makeContractPack } from '../../core/data/storage-engine.contract';
-import { cardSubtitle, cardText, cardTint, formatStage, setLine, setLogoUrl } from './card-display';
+import {
+  cardSubtitle,
+  cardText,
+  cardTint,
+  formatStage,
+  retreatCost,
+  retreatLabel,
+  setLine,
+  setLogoUrl,
+} from './card-display';
 import { energyIconUrl } from './energy-icon.component';
 
 const card = (overrides: Partial<CatalogCard>): CatalogCard => ({
@@ -63,6 +72,14 @@ describe('set and energy assets', () => {
       catalogSetImageUrl(withLogos, { kind: 'logo', language: 'en' })
     );
     expect(setLogoUrl({ ...set, logos: {} }, 'en')).toBeNull();
+  });
+
+  it('spells out retreat cost as Colorless energy', () => {
+    expect(retreatCost(card({ retreat: 2 }))).toEqual(['Colorless', 'Colorless']);
+    expect(retreatCost(card({ retreat: 0 }))).toEqual([]);
+    expect(retreatCost(card({ retreat: null }))).toEqual([]);
+    expect(retreatLabel(card({ retreat: 2 }))).toBe('2 Colorless');
+    expect(retreatLabel(card({ retreat: 0 }))).toBeNull();
   });
 
   it('maps energy types to their icon files', () => {

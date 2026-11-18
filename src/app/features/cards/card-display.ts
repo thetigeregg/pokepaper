@@ -23,6 +23,17 @@ export function cardSubtitle(card: CatalogCard): string {
   return card.energyType ? `${card.energyType} Energy` : 'Energy';
 }
 
+/** Retreat cost as Colorless energy, one per point; empty for no cost. */
+export function retreatCost(card: CatalogCard): string[] {
+  return Array.from({ length: card.retreat ?? 0 }, () => 'Colorless');
+}
+
+/** One screen-reader label for the retreat icons ("2 Colorless"); null for no cost. */
+export function retreatLabel(card: CatalogCard): string | null {
+  const count = retreatCost(card).length;
+  return count ? `${String(count)} Colorless` : null;
+}
+
 /** The energy type that colors a card without a scan, or null for a neutral card. */
 export function cardTint(card: CatalogCard): string | null {
   return card.category === 'Trainer' ? null : (card.types[0] ?? null);
