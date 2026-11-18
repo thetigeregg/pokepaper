@@ -25,10 +25,10 @@ interface ChecklistRow {
 
 /**
  * A set as a checklist (docs/ui.md → Set page), for entering a collection
- * quickly: one row per card with its scan (TCGdex has one per language),
- * name, then number and rarity, and a stacked toggle button per variant (0 ↔ 1
- * copy in `language`; with more copies, the card opens to edit them). A
- * summary row has "Mark all owned".
+ * quickly: one row per card with its scan (TCGdex has one per language;
+ * it opens the card), "001 · Pineco", its rarity, and a toggle button per
+ * variant underneath (0 ↔ 1 copy in `language`; with more copies, the card
+ * opens to edit them). A summary row has "Mark all owned".
  */
 @Component({
   selector: 'app-set-checklist',
@@ -43,17 +43,15 @@ interface ChecklistRow {
         background: none;
         cursor: pointer;
       }
-      /* One toggle per variant, stacked. */
+      /* One toggle per variant, side by side under the name and rarity. */
       .variants {
         display: flex;
-        flex-direction: column;
-        width: 136px;
-        margin-inline-start: 8px;
+        flex-wrap: wrap;
+        gap: 4px 8px;
+        margin-top: 6px;
       }
-      @media (min-width: 992px) {
-        .variants {
-          width: 160px;
-        }
+      .variants ion-button {
+        margin: 0;
       }
       .open ion-icon {
         font-size: 24px;
@@ -91,35 +89,31 @@ interface ChecklistRow {
                 <app-card-image [card]="row.card" [language]="language()" [setLine]="row.setLine" />
               </button>
               <div class="media-row-text">
-                {{ row.name }}
-                <p>
-                  {{ row.card.localId }}
-                  @if (row.card.rarity) {
-                    · {{ row.card.rarity }}
+                {{ row.card.localId }} · {{ row.name }}
+                @if (row.card.rarity) {
+                  <p>{{ row.card.rarity }}</p>
+                }
+                <div class="variants">
+                  @for (variant of row.variants; track variant.variant) {
+                    <ion-button
+                      size="small"
+                      [fill]="variant.quantity > 0 ? 'solid' : 'outline'"
+                      [disabled]="!ready()"
+                      [attr.aria-pressed]="variant.quantity > 0"
+                      [attr.aria-label]="variantLabel(row, variant)"
+                      (click)="toggle(row, variant, index)"
+                      [attr.data-testid]="'toggle-' + variant.variant"
+                    >
+                      {{ variant.label }}
+                      @if (variant.quantity > 1) {
+                        ×{{ variant.quantity }}
+                      }
+                    </ion-button>
                   }
-                </p>
+                </div>
               </div>
             </div>
           </ion-label>
-          <div slot="end" class="variants">
-            @for (variant of row.variants; track variant.variant) {
-              <ion-button
-                size="small"
-                expand="block"
-                [fill]="variant.quantity > 0 ? 'solid' : 'outline'"
-                [disabled]="!ready()"
-                [attr.aria-pressed]="variant.quantity > 0"
-                [attr.aria-label]="variantLabel(row, variant)"
-                (click)="toggle(row, variant, index)"
-                [attr.data-testid]="'toggle-' + variant.variant"
-              >
-                {{ variant.label }}
-                @if (variant.quantity > 1) {
-                  ×{{ variant.quantity }}
-                }
-              </ion-button>
-            }
-          </div>
           <ion-button
             slot="end"
             fill="clear"

@@ -95,7 +95,7 @@ describe('SetChecklistComponent', () => {
     });
   });
 
-  it('lists each card with its scan, name, number and rarity, and a toggle per variant', () => {
+  it('lists each card with its scan, number and name, rarity, then a toggle per variant', () => {
     owned.set({ 'intl:sv01-001:reverse:en': 2 });
     const checklist = create();
 
@@ -110,9 +110,10 @@ describe('SetChecklistComponent', () => {
     ]);
     const first = root().querySelector('[data-testid="checklist-sv01-001"]');
     expect(first?.querySelector('[data-testid="open-thumb"] app-card-image')).not.toBeNull();
-    expect(first?.querySelector('.media-row-text p')?.textContent.replace(/\s+/g, ' ').trim()).toBe(
-      '001 · Common'
-    );
+    const text = first?.querySelector('.media-row-text');
+    expect(text?.textContent).toContain('001 · sv01-001');
+    expect(text?.querySelector('p')?.textContent.trim()).toBe('Common');
+    expect(text?.querySelectorAll('.variants [data-testid^="toggle-"]')).toHaveLength(2);
     const reverse = chip('sv01-001', 'reverse');
     expect(reverse?.fill).toBe('solid');
     expect(reverse?.textContent.replace(/\s+/g, ' ').trim()).toBe('Reverse holo ×2');
