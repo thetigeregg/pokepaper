@@ -143,6 +143,23 @@ The Cards tab searches the catalog on the device, so it works offline too (layou
 - **Order:** results follow the sets list (newest set first), then the card's number in its set.
 - **Recent searches:** the last 10 queries (not filters), newest first and without repeats, are kept on the device (`pokepaper.cards.recentSearches`), not synced.
 
+## Rarity symbols
+
+Rarities show their symbol before the name, in the set checklist, the card detail and the rarity filter (`rarityIcon()` in `src/app/features/cards/rarity.ts`, images in `src/assets/rarity/`). TCGdex names rarities in English in every region, so the symbol depends on the catalog too:
+
+- **International:** the printed symbols: ● Common, ◆ Uncommon, ★ Rare, and the Scarlet & Violet stars (black ★★ Double rare, silver ★★ Ultra Rare, gold ★ / ★★ / ★★★ Illustration, Special illustration and Hyper rare), plus ACE SPEC, Shiny, Mega, Black White, Futuristic, RGB, Amazing (the rainbow "A"), Classic Collection (★C), Pikachu Rare (Pikachu's head) and Promo. Holo, V/VMAX/VSTAR, LV.X, PRIME, LEGEND, Radiant, Secret and Full Art Trainer rares show the plain ★.
+- **Asian:** Japanese cards print letter codes, so rarities map to them: Common C, Uncommon U, Rare R, Double rare RR, Triple Rare RRR, Illustration rare AR, Special illustration rare SAR, Ultra Rare SR (and the late Sword & Shield "Holo Rare" full arts), Hyper rare HR, Secret Rare UR, Mega Hyper Rare UR (MUR in the Mega Evolution series), Promo PR, plus CHR, CSR, ACE, K (Radiant), BWR, FUR, S, MA and Shining (the "Shiny Ultra Rare" cards of Shining Legends). Sets from before Black & White (PMCG, neo, VS, web, e, PCG) printed ●◆★, so they get the international symbols, with every rare as ★. The rarity filter has no set to go by and shows the modern codes.
+- **TCG Pocket:** its own symbols, repeated as in the game: ◆ ×1–4, ★ ×1–3, shiny ×1–2, and the crown.
+
+Images are 48 px tall, outlined in white where the source wasn't so they show in dark mode, and prefetched by the service worker. Low-resolution sources (the Japanese codes, ★C) were enlarged and look soft.
+
+**Not covered yet** (text only, to address later):
+
+- **Cards without a rarity:** 2,944 marked "None" (starter decks, high-class packs, basic Energy) and 3,900 Asian cards without a value (mostly Chinese sets, Shiny Treasure ex and Shiny Star V). Some are gaps in TCGdex's data: Crimson Haze (SV5a) has none, and the international 30th Classic Collection (30th-c) is all "None", so it doesn't get ★C.
+- **Unverified mappings:** Celebrations Classic Collection (cel25cc, 25 cards) shows ★C, but TCGdex has no scans to confirm the English printings use it. Full Art Trainer (Silver Tempest Trainer Gallery TG23–TG28) shows the plain ★ on a guess, for the same reason.
+- **Unused images:** `jp/ssr` and `jp/tr` match no TCGdex rarity; `jp/s` only shows if TCGdex adds rarities to the Japanese shiny sets.
+- **Rarities with no symbol in a region:** a rarity that isn't in its region's table (a new TCGdex name, say) shows text only until it's added.
+
 ## Storage
 
 The catalog lives in **`catalog.db`**, next to `pokepaper.db` in `DATA_DIR`, with its own migrations in `server/src/catalog/migrations/`. It holds no user data and can be rebuilt from TCGdex, so it's **not included in the server's backups** (it would add about 90 MB to each). To rebuild it from scratch, stop the server, delete `catalog.db` (and any `catalog.db-wal` / `catalog.db-shm`), and start it again: the first run is a full refresh.
@@ -160,4 +177,4 @@ Cached images live in `DATA_DIR/images/catalog/` and are also rebuildable (delet
 
 ## Attribution
 
-Card data: [TCGdex](https://github.com/tcgdex/cards-database) (MIT License). Energy and rarity symbol icons: from ilkcmp's [Neo Neo Blank Symbolsheet](https://www.deviantart.com/ilkcmp/art/Neo-Neo-Blank-Symbolsheet-486883197) (free for non-commercial use). Card images, energy and rarity symbols, and names are © The Pokémon Company, Nintendo, Game Freak and Creatures. PokePaper is a personal, non-commercial project not affiliated with them.
+Card data: [TCGdex](https://github.com/tcgdex/cards-database) (MIT License). Energy symbol icons: from ilkcmp's [Neo Neo Blank Symbolsheet](https://www.deviantart.com/ilkcmp/art/Neo-Neo-Blank-Symbolsheet-486883197) (free for non-commercial use). Rarity symbol icons: collected from community sources. Card images, energy and rarity symbols, and names are © The Pokémon Company, Nintendo, Game Freak and Creatures. PokePaper is a personal, non-commercial project not affiliated with them.

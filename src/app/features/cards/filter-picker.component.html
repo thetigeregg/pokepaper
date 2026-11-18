@@ -122,7 +122,12 @@
               @if (option.energy; as energy) {
                 <app-energy-icon [type]="energy" />
               }
-              <div class="media-row-text">{{ option.label }}</div>
+              <div class="media-row-text">
+                @if (option.rarity; as rarity) {
+                  <app-rarity-icon [rarity]="rarity" [region]="region()" />
+                }
+                {{ option.label }}
+              </div>
             </div>
           </ion-checkbox>
           <ion-note slot="end">{{ option.count | number }}</ion-note>

@@ -138,6 +138,11 @@ describe('CardDetailsComponent', () => {
     );
     expect(detail(fixture, 'set')).toBe('SVI · 004/198');
     expect(detail(fixture, 'rarity')).toBe('Common');
+    expect(
+      root
+        .querySelector('[data-testid="detail-rarity"] [data-testid="rarity-icon"]')
+        ?.getAttribute('src')
+    ).toBe('assets/rarity/common.png');
     expect(detail(fixture, 'illustrator')).toBe('Ken Sugimori');
     expect(detail(fixture, 'regulation-mark')).toBe('G');
     expect(detail(fixture, 'legal')).toBe('Expanded');

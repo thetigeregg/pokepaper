@@ -65,8 +65,11 @@ describe('search filters', () => {
       rarityOptions([
         { value: 'Common', count: 9 },
         { value: 'Rare', count: 2 },
-      ]).map((option) => option.label)
-    ).toEqual(['Common', 'Rare']);
+      ]).map((option) => [option.label, option.rarity])
+    ).toEqual([
+      ['Common', 'Common'],
+      ['Rare', 'Rare'],
+    ]);
   });
 
   it('lists sets by series, keeping those whose name or series matches', () => {

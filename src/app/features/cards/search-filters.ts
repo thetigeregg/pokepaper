@@ -33,6 +33,8 @@ export interface FilterOption {
   count?: number;
   /** Energy type shown beside the label. */
   energy?: string;
+  /** Rarity whose symbol is shown before the label. */
+  rarity?: string;
   /** Set whose logo is shown beside the label. */
   set?: CatalogSet;
 }
@@ -133,7 +135,7 @@ export function collectionOptions(
 
 /** Rarities, most common first. */
 export function rarityOptions(counts: readonly FilterCount[]): FilterOption[] {
-  return counts.map(({ value, count }) => ({ value, label: value, count }));
+  return counts.map(({ value, count }) => ({ value, label: value, count, rarity: value }));
 }
 
 /**

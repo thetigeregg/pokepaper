@@ -31,6 +31,7 @@ import {
   type SearchFilters,
 } from '../../core/services/catalog-search.service';
 import { EnergyIconComponent } from './energy-icon.component';
+import { RarityIconComponent } from './rarity-icon.component';
 import {
   FILTER_FIELDS,
   FILTER_TITLES,
@@ -89,6 +90,7 @@ import { SetLogoComponent } from './set-logo.component';
     IonNote,
     IonThumbnail,
     EnergyIconComponent,
+    RarityIconComponent,
     SetLogoComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -109,6 +111,8 @@ export class FilterPickerComponent implements OnInit {
   readonly title = computed(() => FILTER_TITLES[this.kind()]);
   readonly setQuery = signal('');
   readonly language = this.browse.language;
+  /** The searched catalog, for its rarity symbols. */
+  readonly region = this.browse.region;
 
   /**
    * Grouped options (categories, series), or null for a flat list. Only
