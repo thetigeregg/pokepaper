@@ -101,3 +101,7 @@
 ## v0.16.2 - 2026-11-18
 
 - aec20c7 fix(ci): mask the backend host and build TestFlight with Xcode 27 (#34)
+
+## v0.16.3 - 2026-11-18
+
+- cfde1b3 ci(review): skip Claude review on bot-authored PRs (#35)
