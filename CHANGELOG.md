@@ -53,3 +53,7 @@
 ## v0.7.0 - 2026-11-18
 
 - 8ed92c6 feat(catalog): browse sets and cards by catalog and language (#21)
+
+## v0.7.1 - 2026-11-18
+
+- 2ee4bd7 test(vitest): add Angular compiler plugin and component specs (#22)
