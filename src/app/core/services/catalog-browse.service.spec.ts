@@ -145,4 +145,17 @@ describe('CatalogBrowseService', () => {
       expect(service.groups()[0]?.sets[0]?.id).toBe('sv03');
     });
   });
+
+  it('keeps a catalog picked before the stored one has loaded', async () => {
+    preferences.set(CATALOG_REGION_KEY, 'intl');
+    const service = TestBed.inject(CatalogBrowseService);
+
+    await service.setRegion('asia');
+    TestBed.tick();
+    await vi.waitFor(() => {
+      expect(service.loaded()).toBe(true);
+    });
+
+    expect(service.region()).toBe('asia');
+  });
 });

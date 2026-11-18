@@ -29,6 +29,8 @@ export const LANGUAGE_LABELS: Readonly<Record<CatalogLanguage, { short: string; 
 export class CatalogLanguageService {
   private readonly repository = inject(LocalUserDataRepository);
   private readonly settings = signal<UserSettings>({ ...DEFAULT_SETTINGS });
+  /** Bumped by each pick, so a load that started before it is dropped. */
+  private generation = 0;
 
   readonly languages = computed<Record<CatalogRegion, CatalogLanguage>>(() => ({
     ...DEFAULT_CATALOG_LANGUAGES,
@@ -57,19 +59,35 @@ export class CatalogLanguageService {
 
   /** Remembers `language` for its catalog (saved locally, then synced). */
   async pick(region: CatalogRegion, language: CatalogLanguage): Promise<void> {
-    const current = this.settings();
     if (this.languages()[region] === language) {
       return;
     }
-    const next: UserSettings = {
-      ...current,
-      catalogLanguages: { ...current.catalogLanguages, [region]: language },
-    };
+    // Show it at once; a load already in flight must not undo it.
+    const generation = ++this.generation;
+    this.settings.update((current) => withLanguage(current, region, language));
+    // Merge into the stored settings, not the in-memory copy, which may not
+    // have loaded yet (it would drop the other catalog's language).
+    const next = withLanguage(await this.repository.getSettings(), region, language);
+    if (generation !== this.generation) {
+      return; // A newer pick saves instead.
+    }
     this.settings.set(next);
     await this.repository.updateSettings(next);
   }
 
   private async load(): Promise<void> {
-    this.settings.set(await this.repository.getSettings());
+    const generation = this.generation;
+    const stored = await this.repository.getSettings();
+    if (generation === this.generation) {
+      this.settings.set(stored);
+    }
   }
+}
+
+function withLanguage(
+  settings: UserSettings,
+  region: CatalogRegion,
+  language: CatalogLanguage
+): UserSettings {
+  return { ...settings, catalogLanguages: { ...settings.catalogLanguages, [region]: language } };
 }

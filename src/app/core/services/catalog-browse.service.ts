@@ -38,6 +38,8 @@ export class CatalogBrowseService {
   private readonly catalogLanguage = inject(CatalogLanguageService);
 
   private readonly _region = signal<CatalogRegion>('intl');
+  /** Set once the user picks a catalog, so the stored one can't override it. */
+  private regionPicked = false;
   readonly region = this._region.asReadonly();
   /** The language the current catalog's names are shown in. */
   readonly language = computed(() => this.catalogLanguage.languages()[this._region()]);
@@ -77,7 +79,7 @@ export class CatalogBrowseService {
 
   constructor() {
     void this.preferences.getItem(CATALOG_REGION_KEY).then((stored) => {
-      if (stored === 'intl' || stored === 'asia') {
+      if (!this.regionPicked && (stored === 'intl' || stored === 'asia')) {
         this._region.set(stored);
       }
     });
@@ -91,6 +93,7 @@ export class CatalogBrowseService {
   }
 
   async setRegion(region: CatalogRegion): Promise<void> {
+    this.regionPicked = true;
     this._region.set(region);
     await this.preferences.setItem(CATALOG_REGION_KEY, region);
   }

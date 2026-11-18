@@ -1,7 +1,6 @@
 import { catalogSetImageUrl, type CatalogCard } from '@pokepaper/shared';
 import { makeContractCard, makeContractPack } from '../../core/data/storage-engine.contract';
-import { cardSubtitle, cardText, cardTint, formatStage } from './card-display';
-import { setLine, setLogoUrl } from '../../cards/set/set.page';
+import { cardSubtitle, cardText, cardTint, formatStage, setLine, setLogoUrl } from './card-display';
 import { energyIconUrl } from './energy-icon.component';
 
 const card = (overrides: Partial<CatalogCard>): CatalogCard => ({

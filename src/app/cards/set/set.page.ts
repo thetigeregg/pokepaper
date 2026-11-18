@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   OnInit,
   computed,
   effect,
@@ -26,14 +27,10 @@ import {
   IonToolbar,
   ModalController,
 } from '@ionic/angular';
-import {
-  catalogSetImageUrl,
-  type CatalogCard,
-  type CatalogLanguage,
-  type CatalogRegion,
-  type CatalogSet,
-} from '@pokepaper/shared';
+import type { CatalogCard, CatalogLanguage, CatalogRegion, CatalogSet } from '@pokepaper/shared';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { addIcons } from 'ionicons';
+import { debounceTime } from 'rxjs';
 import { cloudDoneOutline, cloudDownloadOutline } from 'ionicons/icons';
 import { catalogKey, type StorageEngine } from '../../core/data/storage-engine';
 import { StorageEngineFactory } from '../../core/data/storage-engine.factory';
@@ -42,28 +39,14 @@ import {
   CatalogLanguageService,
   LANGUAGE_LABELS,
 } from '../../core/services/catalog-language.service';
+import { CatalogSyncService } from '../../core/services/catalog-sync.service';
 import { ImageCacheService } from '../../core/services/image-cache.service';
 import { ImageDownloadService } from '../../core/services/image-download.service';
-import { LayoutService, WIDE_LAYOUT_QUERY } from '../../core/services/layout.service';
+import { LayoutService } from '../../core/services/layout.service';
 import { CardDetailComponent } from '../../features/cards/card-detail.component';
-import { cardText } from '../../features/cards/card-display';
+import { cardText, setLine, setLogoUrl } from '../../features/cards/card-display';
 import { CardImageComponent } from '../../features/cards/card-image.component';
 import { LanguageButtonComponent } from '../../features/cards/language-button.component';
-
-/** "SVI · 001/198" for a card in its set (bottom line of no-scan cards). */
-export function setLine(set: CatalogSet, card: CatalogCard): string {
-  const prefix = set.abbreviation ?? set.id;
-  const total = set.cardCount.official > 0 ? `/${String(set.cardCount.official)}` : '';
-  return `${prefix} · ${card.localId}${total}`;
-}
-
-/** The set's logo in `language`, else in another language; null without one. */
-export function setLogoUrl(set: CatalogSet, language: CatalogLanguage): string | null {
-  const logoLanguage =
-    (set.logos[language] ? language : undefined) ??
-    (Object.keys(set.logos) as CatalogLanguage[]).at(0);
-  return logoLanguage ? catalogSetImageUrl(set, { kind: 'logo', language: logoLanguage }) : null;
-}
 
 /**
  * A set's cards (docs/ui.md → Cards): an IonGrid of card images with
@@ -124,6 +107,8 @@ export class SetPage implements OnInit {
   private readonly actionSheets = inject(ActionSheetController);
   private readonly modals = inject(ModalController);
   private readonly imageCache = inject(ImageCacheService);
+  private readonly catalogSync = inject(CatalogSyncService);
+  private readonly destroyRef = inject(DestroyRef);
   readonly layout = inject(LayoutService);
 
   /** Route parameters (component input binding). */
@@ -181,17 +166,26 @@ export class SetPage implements OnInit {
 
   ngOnInit(): void {
     void this.load();
+    // Follow catalog updates (the set's pack replaced, or arriving on first run).
+    this.catalogSync.changed$
+      .pipe(debounceTime(300), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => void this.load());
   }
 
   private async load(): Promise<void> {
-    const [sets, cards] = await Promise.all([
-      this.engine.listCatalogSets(this.region()),
-      this.engine.listCatalogCards(this.region(), this.setId()),
-    ]);
-    this.set.set(sets.find((stored) => stored.set.id === this.setId())?.set ?? null);
-    this.cards.set(cards);
-    this.loaded.set(true);
-    void this.downloads.refresh();
+    try {
+      const [sets, cards] = await Promise.all([
+        this.engine.listCatalogSets(this.region()),
+        this.engine.listCatalogCards(this.region(), this.setId()),
+      ]);
+      this.set.set(sets.find((stored) => stored.set.id === this.setId())?.set ?? null);
+      this.cards.set(cards);
+      void this.downloads.refresh();
+    } catch (error: unknown) {
+      console.error('catalog.set_load_failed', error);
+    } finally {
+      this.loaded.set(true);
+    }
   }
 
   name(card: CatalogCard): string {
@@ -249,7 +243,7 @@ export class SetPage implements OnInit {
       return;
     }
     // A sheet on phones, a centered dialog on desktop (docs/ui.md).
-    const sheet = !window.matchMedia(WIDE_LAYOUT_QUERY).matches;
+    const sheet = !this.layout.wide();
     const modal = await this.modals.create({
       component: CardDetailComponent,
       componentProps: { setProp: set, cardsProp: this.cards(), startIndex: index },

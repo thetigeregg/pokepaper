@@ -1,11 +1,10 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { IonItem, IonLabel, IonList, IonListHeader, IonNote } from '@ionic/angular';
 import type { CatalogCard, CatalogLanguage, CatalogSet } from '@pokepaper/shared';
-import { cardSubtitle, cardText } from './card-display';
+import { cardSubtitle, cardText, setLine } from './card-display';
 import { CardImageComponent } from './card-image.component';
 import { CardTextComponent } from './card-text.component';
 import { EnergyIconComponent } from './energy-icon.component';
-import { setLine } from '../../cards/set/set.page';
 
 /**
  * One card's scan and full text in `language` (docs/ui.md → Card detail):

@@ -78,6 +78,7 @@ export class CardDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   ngOnInit(): void {
     this.set.set(this.setProp);
     this.cards.set(this.cardsProp);
+    this.index.set(this.startIndex);
   }
   readonly current = computed(() => this.cards().at(this.index()));
   readonly title = computed(() => {
@@ -86,7 +87,6 @@ export class CardDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   });
 
   ngAfterViewInit(): void {
-    this.index.set(this.startIndex);
     const element = this.host.nativeElement.querySelector<HTMLElement>('.swiper');
     if (!element) {
       return;

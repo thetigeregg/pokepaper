@@ -12,6 +12,7 @@ import {
 } from '@angular/core';
 import { IonIcon } from '@ionic/angular';
 import { catalogSetImageUrl, type CatalogLanguage, type CatalogSet } from '@pokepaper/shared';
+import { setLogoUrl } from './card-display';
 import { ImageCacheService } from '../../core/services/image-cache.service';
 import { addIcons } from 'ionicons';
 import { albumsOutline } from 'ionicons/icons';
@@ -58,11 +59,9 @@ export class SetLogoComponent {
 
   private readonly candidates = computed(() => {
     const set = this.set();
-    const logoLanguage =
-      (set.logos[this.language()] ? this.language() : undefined) ??
-      (Object.keys(set.logos) as CatalogLanguage[]).at(0);
+    const logo = setLogoUrl(set, this.language());
     return [
-      ...(logoLanguage ? [catalogSetImageUrl(set, { kind: 'logo', language: logoLanguage })] : []),
+      ...(logo ? [logo] : []),
       ...(set.symbol ? [catalogSetImageUrl(set, { kind: 'symbol' })] : []),
     ];
   });
@@ -96,6 +95,9 @@ export class SetLogoComponent {
     for (const url of candidates) {
       try {
         const src = await this.imageCache.resolve(url);
+        if (candidates !== this.candidates()) {
+          return; // The set or language changed meanwhile; a newer load decides.
+        }
         if (src) {
           this.src.set(src);
           return;
@@ -104,6 +106,8 @@ export class SetLogoComponent {
         // Offline and not cached: try the next, else show the icon.
       }
     }
-    this.src.set(null);
+    if (candidates === this.candidates()) {
+      this.src.set(null);
+    }
   }
 }

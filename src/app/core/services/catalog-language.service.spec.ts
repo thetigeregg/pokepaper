@@ -79,4 +79,46 @@ describe('CatalogLanguageService', () => {
       expect(service.languages().asia).toBe('zh-tw');
     });
   });
+
+  it('keeps the other catalog’s stored language when picking before settings load', async () => {
+    stored = { cardLanguage: 'en', catalogLanguages: { asia: 'zh-tw' } };
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: LocalUserDataRepository, useValue: repository },
+        { provide: SyncService, useValue: { dataChanged$: dataChanged.asObservable() } },
+      ],
+    });
+    const service = TestBed.inject(CatalogLanguageService); // Initial load still pending.
+
+    await service.pick('intl', 'de');
+
+    expect(stored.catalogLanguages).toEqual({ asia: 'zh-tw', intl: 'de' });
+    expect(service.languages()).toEqual({ intl: 'de', asia: 'zh-tw' });
+  });
+
+  it('ignores a settings load that started before a pick', async () => {
+    const service = await create();
+    let release: (settings: UserSettings) => void = () => undefined;
+    repository.getSettings.mockImplementationOnce(
+      () => new Promise<UserSettings>((resolve) => (release = resolve))
+    );
+    dataChanged.next(new Set(['settings'])); // Load in flight with old settings.
+
+    await service.pick('intl', 'fr');
+    release({ cardLanguage: 'en' });
+    await Promise.resolve();
+
+    expect(service.languages().intl).toBe('fr');
+  });
+
+  it('saves only the latest of two quick picks', async () => {
+    const service = await create();
+
+    await Promise.all([service.pick('intl', 'fr'), service.pick('intl', 'it')]);
+
+    expect(service.languages().intl).toBe('it');
+    expect(stored.catalogLanguages?.intl).toBe('it');
+    expect(repository.updateSettings).toHaveBeenCalledTimes(1);
+  });
 });
