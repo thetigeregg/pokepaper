@@ -85,3 +85,7 @@
 ## v0.14.0 - 2026-11-18
 
 - 80c09d8 feat(ui): collapse extra header actions into a More menu on phones (#29)
+
+## v0.15.0 - 2026-11-18
+
+- f232c83 feat(ios): add Capacitor iOS shell with DEV/PROD targets (#30)
