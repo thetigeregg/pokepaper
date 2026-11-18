@@ -1,3 +1,4 @@
+import angular from '@analogjs/vite-plugin-angular';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
@@ -6,6 +7,9 @@ export default defineConfig({
     projects: [
       {
         extends: true,
+        // Angular's compiler (AOT-style transforms) so specs can set signal
+        // inputs, resolve signal queries, and load styleUrl/templateUrl.
+        plugins: [angular({ tsconfig: 'tsconfig.spec.json' })],
         test: {
           name: 'app',
           environment: 'jsdom',
