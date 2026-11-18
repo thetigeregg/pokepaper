@@ -14,7 +14,9 @@ import {
   type PreparedName,
 } from '../utils/search-text.util';
 import { CatalogBrowseService } from './catalog-browse.service';
+import { CatalogLanguageService } from './catalog-language.service';
 import { CatalogSyncService } from './catalog-sync.service';
+import { CollectionService } from './collection.service';
 
 /** Sync metadata: the `CATALOG_SEARCH_ROW_VERSION` the stored search rows were built with. */
 export const SEARCH_ROW_VERSION_KEY = 'catalogSearchRowVersion';
@@ -35,7 +37,14 @@ export interface SearchFilters {
   series: string[];
   /** Set keys (`region:id`). */
   sets: string[];
+  /**
+   * Collection status (docs/collection.md): `owned` and/or `missing`, by the
+   * copies owned in the language the card's set opens in.
+   */
+  owned: OwnedValue[];
 }
+
+export type OwnedValue = 'owned' | 'missing';
 
 export const NO_FILTERS: SearchFilters = {
   categories: [],
@@ -43,6 +52,7 @@ export const NO_FILTERS: SearchFilters = {
   rarities: [],
   series: [],
   sets: [],
+  owned: [],
 };
 
 /** Matching cards, ordered like the sets list (newest set first), then by number. */
@@ -83,6 +93,8 @@ export class CatalogSearchService {
   private readonly storageEngineFactory = inject(StorageEngineFactory);
   private readonly preferences = inject(PreferenceStorageService);
   private readonly browse = inject(CatalogBrowseService);
+  private readonly catalogLanguage = inject(CatalogLanguageService);
+  private readonly collection = inject(CollectionService);
 
   readonly region = this.browse.region;
   /** The language the current catalog's names are shown in. */
@@ -122,7 +134,65 @@ export class CatalogSearchService {
     return sets;
   });
 
-  /** The current catalog's series names by key. */
+  /** The language each set opens in, by set key: collection status is counted in it. */
+  private readonly setLanguages = computed(
+    () =>
+      new Map(
+        [...this.sets()].map(([key, { set }]) => [
+          key,
+          this.catalogLanguage.forSet(set.region, set.languages),
+        ])
+      )
+  );
+
+  /**
+   * Bumped whenever the search changes (query, filters, showing search), so
+   * collection status is read afresh then (see `ownedTest`).
+   */
+  private readonly searchChanges = signal(0);
+
+  /**
+   * Whether a card is owned in the language its set opens in (any variant).
+   * Status is read when the search changes, the catalog or its language
+   * changes, or the collection first loads, not on every quantity change:
+   * adding a copy from the card modal while Missing is picked keeps the card
+   * in the results (its badge updates) instead of reshuffling the list the
+   * modal is paging through.
+   */
+  private readonly ownedTest = computed(() => {
+    this.searchChanges();
+    this.collection.loaded();
+    const languages = this.setLanguages();
+    const fallback = this.language();
+    return (row: CatalogSearchRow): OwnedValue =>
+      untracked(() =>
+        this.collection.cardTotalByKey(row.key, languages.get(row.setKey) ?? fallback)
+      ) > 0
+        ? 'owned'
+        : 'missing';
+  });
+
+  /**
+   * How many cards the search leaves owned and missing, both always listed:
+   * counted over the query and every other filter, like `counts`. Kept apart
+   * so status is only looked up while the Collection picker shows.
+   */
+  readonly ownedCounts = computed<{ value: OwnedValue; count: number }[]>(() => {
+    const owned = this.ownedTest();
+    const filters = { ...this._filters(), owned: [] };
+    const sets = this.sets();
+    const tally: Record<OwnedValue, number> = { owned: 0, missing: 0 };
+    for (const { row } of this.queryMatches()) {
+      if (matchesFilters(row, filters, sets.get(row.setKey)?.seriesKey, owned)) {
+        tally[owned(row)] += 1;
+      }
+    }
+    return [
+      { value: 'owned', count: tally.owned },
+      { value: 'missing', count: tally.missing },
+    ];
+  });
+
   /** What the current catalog calls its sets and series, for labeling filter picks. */
   readonly setNames = computed(() => ({
     sets: this.sets(),
@@ -152,8 +222,9 @@ export class CatalogSearchService {
     }
     const filters = this._filters();
     const sets = this.sets();
+    const owned = this.ownedTest();
     const matches = this.queryMatches().filter((card) =>
-      matchesFilters(card.row, filters, sets.get(card.row.setKey)?.seriesKey)
+      matchesFilters(card.row, filters, sets.get(card.row.setKey)?.seriesKey, owned)
     );
     const order = (setKey: string) => sets.get(setKey)?.order ?? Number.MAX_SAFE_INTEGER;
     matches.sort(
@@ -180,10 +251,11 @@ export class CatalogSearchService {
     const cards = this.queryMatches();
     const filters = this._filters();
     const sets = this.sets();
+    const owned = this.ownedTest();
     const matching = (except: Partial<SearchFilters>) => {
       const others = { ...filters, ...except };
       return cards.filter(({ row }) =>
-        matchesFilters(row, others, sets.get(row.setKey)?.seriesKey)
+        matchesFilters(row, others, sets.get(row.setKey)?.seriesKey, owned)
       );
     };
     const tally = (rows: IndexedCard[], values: (row: CatalogSearchRow) => readonly string[]) => {
@@ -237,11 +309,13 @@ export class CatalogSearchService {
   setQuery(query: string): void {
     this._query.set(query);
     this._active.set(true);
+    this.searchChanges.update((count) => count + 1);
   }
 
   setFilters(filters: SearchFilters): void {
     this._filters.set(filters);
     this._active.set(true);
+    this.searchChanges.update((count) => count + 1);
   }
 
   /** Loads the current catalog's search rows again after a failure. */
@@ -254,6 +328,7 @@ export class CatalogSearchService {
       this.retry();
     }
     this._active.set(true);
+    this.searchChanges.update((count) => count + 1);
   }
 
   /** Hides search, keeping the query and filters (desktop: a set was opened). */
@@ -359,10 +434,12 @@ export class CatalogSearchService {
   }
 }
 
+/** `owned` tells a card's collection status; it's only asked while the Collection filter is used. */
 function matchesFilters(
   row: CatalogSearchRow,
   filters: SearchFilters,
-  seriesKey: string | undefined
+  seriesKey: string | undefined,
+  owned: (row: CatalogSearchRow) => OwnedValue
 ): boolean {
   const any = (values: string[], test: (value: string) => boolean) =>
     values.length === 0 || values.some(test);
@@ -371,6 +448,7 @@ function matchesFilters(
     any(filters.categories, (value) => categories.includes(value)) &&
     any(filters.types, (type) => row.types.includes(type)) &&
     any(filters.rarities, (rarity) => row.rarity === rarity) &&
+    (filters.owned.length === 0 || filters.owned.includes(owned(row))) &&
     (filters.series.length === 0 && filters.sets.length === 0
       ? true
       : filters.sets.includes(row.setKey) ||

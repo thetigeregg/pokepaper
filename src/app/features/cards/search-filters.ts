@@ -1,15 +1,26 @@
 import type { CatalogLanguage, CatalogSet } from '@pokepaper/shared';
 import type { SeriesGroup } from '../../core/services/catalog-browse.service';
 import { localized } from '../../core/services/catalog-browse.service';
-import type { FilterCount, SearchFilters } from '../../core/services/catalog-search.service';
+import type {
+  FilterCount,
+  OwnedValue,
+  SearchFilters,
+} from '../../core/services/catalog-search.service';
 import { normalizeSearchText } from '../../core/utils/search-text.util';
 import { ENERGY_TYPES } from './energy';
 
 /** The filter chips on the search results (docs/ui.md → Cards → Search). */
-export type FilterKind = 'category' | 'type' | 'rarity' | 'set';
-export const FILTER_KINDS: readonly FilterKind[] = ['category', 'type', 'rarity', 'set'];
+export type FilterKind = 'collection' | 'category' | 'type' | 'rarity' | 'set';
+export const FILTER_KINDS: readonly FilterKind[] = [
+  'collection',
+  'category',
+  'type',
+  'rarity',
+  'set',
+];
 
 export const FILTER_TITLES: Readonly<Record<FilterKind, string>> = {
+  collection: 'Collection',
   category: 'Category',
   type: 'Type',
   rarity: 'Rarity',
@@ -35,6 +46,7 @@ export interface FilterGroup extends FilterOption {
 export const FILTER_FIELDS: Readonly<
   Record<FilterKind, { groups: keyof SearchFilters | null; options: keyof SearchFilters }>
 > = {
+  collection: { groups: null, options: 'owned' },
   category: { groups: 'categories', options: 'categories' },
   type: { groups: null, options: 'types' },
   rarity: { groups: null, options: 'rarities' },
@@ -104,6 +116,19 @@ export function typeOptions(counts: readonly FilterCount[]): FilterOption[] {
   return [...counts]
     .sort((a, b) => rank(a.value) - rank(b.value) || a.value.localeCompare(b.value))
     .map(({ value, count }) => ({ value, label: value, count, energy: value }));
+}
+
+const OWNED_LABELS: Readonly<Record<OwnedValue, string>> = { owned: 'Owned', missing: 'Missing' };
+
+function isOwnedValue(value: string): value is OwnedValue {
+  return Object.hasOwn(OWNED_LABELS, value);
+}
+
+/** Owned, then Missing (docs/collection.md), both always offered. */
+export function collectionOptions(
+  counts: readonly { value: OwnedValue; count: number }[]
+): FilterOption[] {
+  return counts.map(({ value, count }) => ({ value, label: OWNED_LABELS[value], count }));
 }
 
 /** Rarities, most common first. */
@@ -188,6 +213,8 @@ export interface SetNames {
 export function valueLabel(kind: FilterKind, names: SetNames): (value: string) => string {
   return (value) => {
     switch (kind) {
+      case 'collection':
+        return isOwnedValue(value) ? OWNED_LABELS[value] : value;
       case 'category':
         return categoryLabel(value);
       case 'set': {

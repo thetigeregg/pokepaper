@@ -24,6 +24,11 @@
     <ion-toolbar>
       <ion-title>Cards</ion-title>
       <ion-buttons slot="end">
+        <app-language-button
+          [languages]="browse.languages()"
+          [value]="browse.language()"
+          (changed)="browse.pickLanguage($event)"
+        />
         <app-filters-button />
       </ion-buttons>
     </ion-toolbar>

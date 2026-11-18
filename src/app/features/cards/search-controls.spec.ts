@@ -135,19 +135,21 @@ describe('card searchbar and filter chips', () => {
         categories: ['Trainer/Supporter'],
         sets: ['intl:sv01'],
         series: ['intl:swsh', 'intl:gone'],
+        owned: ['missing'],
       });
       const chips = create();
 
       expect(chips.chips().map((chip) => [chip.kind, chip.active, chip.label])).toEqual([
+        ['collection', true, 'Collection: Missing'],
         ['category', true, 'Category: Supporter'],
         ['type', false, 'Type'],
         ['rarity', false, 'Rarity'],
         ['set', true, 'Set: Sword & Shield +2'],
       ]);
       filters.set({ ...NO_FILTERS, series: ['intl:gone'], sets: ['intl:sv01'] });
-      expect(chips.chips()[3]?.label).toBe('Set: intl:gone +1');
+      expect(chips.chips()[4]?.label).toBe('Set: intl:gone +1');
       filters.set({ ...NO_FILTERS, sets: ['intl:sv01'] });
-      expect(chips.chips()[3]?.label).toBe('Set: Scarlet & Violet');
+      expect(chips.chips()[4]?.label).toBe('Set: Scarlet & Violet');
     });
 
     it('clears one filter or all of them', () => {
@@ -195,18 +197,28 @@ describe('card searchbar and filter chips', () => {
 
     const root = () => fixture.nativeElement as HTMLElement;
 
-    it('counts the picked values in a badge before the button', () => {
+    it('counts the picked values in a badge over the button, including collection picks', () => {
       const button = create();
       expect(button.count()).toBe(0);
       expect(root().querySelector('[data-testid="filters-count"]')).toBeNull();
 
-      filters.set({ ...NO_FILTERS, types: ['Fire'], series: ['intl:sv'], sets: ['intl:sv01'] });
+      filters.set({
+        ...NO_FILTERS,
+        types: ['Fire'],
+        series: ['intl:sv'],
+        sets: ['intl:sv01'],
+        owned: ['missing'],
+      });
       fixture.detectChanges();
 
-      expect(button.count()).toBe(3);
+      expect(button.count()).toBe(4);
       const badge = root().querySelector('[data-testid="filters-count"]');
-      expect(badge?.textContent).toBe('3');
-      expect(badge?.nextElementSibling?.getAttribute('data-testid')).toBe('filters-button');
+      expect(badge?.textContent.trim()).toBe('4');
+      expect(badge?.classList).toContain('count'); // Positioned over the icon.
+      expect(badge?.previousElementSibling?.getAttribute('data-testid')).toBe('filters-button');
+      expect(
+        root().querySelector('[data-testid="filters-button"]')?.getAttribute('aria-label')
+      ).toBe('Filters, 4 picked');
     });
 
     it('shows search and opens the filters sheet', async () => {
@@ -244,6 +256,7 @@ describe('card searchbar and filter chips', () => {
       const sheet = create();
 
       expect(sheet.rows().map((row) => [row.title, row.summary])).toEqual([
+        ['Collection', null],
         ['Category', 'Item'],
         ['Type', null],
         ['Rarity', null],

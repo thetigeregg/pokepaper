@@ -48,6 +48,7 @@ describe('CatalogBrowseService', () => {
   const preferences = new Map<string, string>();
   const changed = new Subject<void>();
   const languages = signal({ intl: 'en' as const, asia: 'ja' as const });
+  const pick = vi.fn(() => Promise.resolve());
 
   async function create(): Promise<CatalogBrowseService> {
     const service = TestBed.inject(CatalogBrowseService);
@@ -79,7 +80,7 @@ describe('CatalogBrowseService', () => {
             },
           },
         },
-        { provide: CatalogLanguageService, useValue: { languages } },
+        { provide: CatalogLanguageService, useValue: { languages, pick } },
         { provide: CatalogSyncService, useValue: { changed$: changed.asObservable() } },
       ],
     });
@@ -133,6 +134,25 @@ describe('CatalogBrowseService', () => {
 
     expect(service.groups()[0]?.name).toBe('Karmesin & Purpur');
     languages.set({ intl: 'en', asia: 'ja' });
+  });
+
+  it('lists the languages of the catalog’s sets in display order, and picks one', async () => {
+    const swsh1 = pack('intl', 'swsh1', 'swsh', '2020-02-07', 'Sword & Shield');
+    await engine.replaceCatalogSet({ ...swsh1, set: { ...swsh1.set, languages: ['fr', 'de'] } });
+    const service = await create();
+
+    expect(service.languages()).toEqual(['en', 'de', 'fr']);
+
+    service.pickLanguage('de');
+    expect(pick).toHaveBeenCalledWith('intl', 'de');
+
+    await service.setRegion('asia');
+    TestBed.tick();
+    await vi.waitFor(() => {
+      expect(service.languages()).toEqual(['en']); // The contract's Asian set lists English.
+    });
+    service.pickLanguage('ja');
+    expect(pick).toHaveBeenLastCalledWith('asia', 'ja');
   });
 
   it('reloads when the catalog changes', async () => {

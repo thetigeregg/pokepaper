@@ -38,6 +38,10 @@ describe('FilterPickerComponent', () => {
         ['intl:sv02', 2],
       ]),
     }),
+    ownedCounts: signal([
+      { value: 'owned', count: 0 },
+      { value: 'missing', count: 42 },
+    ]),
   };
   const sv01 = { ...makeContractPack('intl', 'sv01', []).set, names: { en: 'Scarlet & Violet' } };
   const sv02 = { ...makeContractPack('intl', 'sv02', []).set, names: { en: 'Paldea Evolved' } };
@@ -198,5 +202,21 @@ describe('FilterPickerComponent', () => {
 
     create('type', false).done();
     expect(popovers.dismiss).toHaveBeenCalled();
+  });
+
+  it('offers Owned and Missing for the collection, even with none owned, and picks them', () => {
+    const picker = create('collection');
+
+    expect(picker.title()).toBe('Collection');
+    expect(testIds('filter-option-')).toEqual(['filter-option-owned', 'filter-option-missing']);
+    expect(picker.options().map((option) => [option.label, option.count])).toEqual([
+      ['Owned', 0],
+      ['Missing', 42],
+    ]);
+
+    picker.toggleOption(picker.options()[1], true);
+    expect(filters()).toEqual({ ...NO_FILTERS, owned: ['missing'] });
+    picker.toggleOption(picker.options()[1], false);
+    expect(filters()).toEqual(NO_FILTERS);
   });
 });

@@ -5,7 +5,7 @@ import { debounceTime } from 'rxjs';
 import { catalogKey, type StorageEngine } from '../data/storage-engine';
 import { StorageEngineFactory } from '../data/storage-engine.factory';
 import { PreferenceStorageService } from '../storage/preference-storage.service';
-import { CatalogLanguageService } from './catalog-language.service';
+import { CatalogLanguageService, inDisplayOrder } from './catalog-language.service';
 import { CatalogSyncService } from './catalog-sync.service';
 
 /** Preference: the catalog last shown on the Cards tab. */
@@ -43,6 +43,10 @@ export class CatalogBrowseService {
   readonly region = this._region.asReadonly();
   /** The language the current catalog's names are shown in. */
   readonly language = computed(() => this.catalogLanguage.languages()[this._region()]);
+  /** Every language the current catalog's sets come in, in display order (the language button). */
+  readonly languages = computed(() =>
+    inDisplayOrder([...new Set(this.sets().flatMap((set) => set.languages))])
+  );
 
   private readonly series = signal<
     { key: string; names: Partial<Record<CatalogLanguage, string>> }[]
@@ -96,6 +100,11 @@ export class CatalogBrowseService {
     this.regionPicked = true;
     this._region.set(region);
     await this.preferences.setItem(CATALOG_REGION_KEY, region);
+  }
+
+  /** Shows the current catalog in `language`, remembered (and synced) like a pick in a set. */
+  pickLanguage(language: CatalogLanguage): void {
+    void this.catalogLanguage.pick(this._region(), language);
   }
 
   private async safeReload(): Promise<void> {

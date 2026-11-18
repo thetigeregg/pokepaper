@@ -5,10 +5,12 @@ import {
   categoryGroups,
   categoryLabel,
   chipLabel,
+  collectionOptions,
   kindActive,
   rarityOptions,
   setGroups,
   typeOptions,
+  valueLabel,
   withPicked,
   withoutKind,
 } from './search-filters';
@@ -172,5 +174,28 @@ describe('search filters', () => {
     expect(kindActive(filters, 'rarity')).toBe(false);
     expect(withoutKind(filters, 'set')).toEqual({ ...NO_FILTERS, types: ['Fire'] });
     expect(withoutKind(filters, 'type')).toEqual({ ...filters, types: [] });
+  });
+
+  it('labels the collection filter', () => {
+    expect(
+      collectionOptions([
+        { value: 'owned', count: 2 },
+        { value: 'missing', count: 9 },
+      ])
+    ).toEqual([
+      { value: 'owned', label: 'Owned', count: 2 },
+      { value: 'missing', label: 'Missing', count: 9 },
+    ]);
+    const label = valueLabel('collection', {
+      sets: new Map(),
+      seriesNames: new Map(),
+      language: 'en',
+    });
+    expect(chipLabel('collection', { ...NO_FILTERS, owned: ['owned', 'missing'] }, label)).toBe(
+      'Collection: Owned +1'
+    );
+    expect(label('toString')).toBe('toString'); // Only its own statuses get labels.
+    expect(kindActive(NO_FILTERS, 'collection')).toBe(false);
+    expect(withoutKind({ ...NO_FILTERS, owned: ['owned'] }, 'collection')).toEqual(NO_FILTERS);
   });
 });
