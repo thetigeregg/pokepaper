@@ -32,7 +32,8 @@ import { cloudDoneOutline } from 'ionicons/icons';
 /**
  * The current catalog's sets, grouped by series under sticky
  * IonItemDividers, newest first (docs/ui.md → Cards). Sets with owned cards
- * show progress ("87 / 198 owned") in the language the set opens in.
+ * show progress ("87 / 198 owned") on a line of its own, counted in the
+ * language the set opens in.
  */
 @Component({
   selector: 'app-sets-list',

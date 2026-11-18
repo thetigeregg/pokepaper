@@ -6,9 +6,9 @@ Status: storage, sync and the Cards tab screens (quantity stepper, owned badges,
 
 ## Screens
 
-- **Card detail:** a "Collection · English" section at the top lists the card's variants, each with a − count + stepper for the copies in the current language. Switch the language button to German to see and edit German copies. A note lists copies in the set's other languages.
-- **Card grids** (set page, search results): owned cards get a badge with the copies owned in the grid's language. Unowned cards look unchanged.
-- **Sets list:** "87 / 198 owned" replaces "198 cards" once any card of the set is owned, counted in the language the set opens in.
+- **Card detail:** a "Collection · English" section, after the attacks and before Details, lists the card's variants, each with a − count + stepper for the copies in the current language. Switch the language button to German to see and edit German copies. A note lists copies in the set's other languages.
+- **Card grids** (set page, search results): owned cards get a red badge (bottom right) with the copies owned in the grid's language. Unowned cards look unchanged.
+- **Sets list:** a second line, "87 / 198 owned", appears under "date · 198 cards" once any card of the set is owned, counted in the language the set opens in.
 - The old Collection tab is gone; `/tabs/collection` redirects to Cards. UI details are in [`ui.md`](ui.md) → Cards.
 
 ## Data model

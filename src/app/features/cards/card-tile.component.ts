@@ -24,8 +24,8 @@ import { CardImageComponent } from './card-image.component';
       }
       .owned {
         position: absolute;
-        top: 6%;
-        left: 6%;
+        right: 6%;
+        bottom: 6%;
       }
       .caption {
         margin: 4px 0 8px;
@@ -39,7 +39,7 @@ import { CardImageComponent } from './card-image.component';
     <button class="card-button" type="button" (click)="opened.emit()" [attr.aria-label]="label()">
       <app-card-image [card]="card()" [language]="language()" [setLine]="setLine()" />
       @if (owned()) {
-        <ion-badge class="owned" color="primary" aria-hidden="true" data-testid="owned-badge">
+        <ion-badge class="owned" color="danger" aria-hidden="true" data-testid="owned-badge">
           {{ owned() }}
         </ion-badge>
       }

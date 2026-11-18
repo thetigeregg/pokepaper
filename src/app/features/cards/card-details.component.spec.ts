@@ -120,7 +120,7 @@ describe('CardDetailsComponent', () => {
     expect(root.querySelector('h2')?.textContent).toBe('Bulbasaur');
     expect(root.textContent).toContain('HP 110 · Stage 1');
     expect(root.textContent).toContain('Evolves from Seed');
-    expect(headers(fixture)).toEqual(['Collection · English', 'Attacks', 'Details']);
+    expect(headers(fixture)).toEqual(['Attacks', 'Collection · English', 'Details']);
 
     const costs = [...root.querySelectorAll('.cost')];
     expect(costs.map((cost) => cost.getAttribute('aria-label'))).toEqual([
@@ -150,7 +150,7 @@ describe('CardDetailsComponent', () => {
       }),
     });
 
-    expect(headers(fixture)).toEqual(['Collection · English', 'Abilities', 'Attacks', 'Details']);
+    expect(headers(fixture)).toEqual(['Abilities', 'Attacks', 'Collection · English', 'Details']);
     expect(element(fixture).querySelector('[data-testid="ability-name"]')?.textContent.trim()).toBe(
       'Ability: Overgrow'
     );
@@ -205,7 +205,7 @@ describe('CardDetailsComponent', () => {
     });
     const root = element(fixture);
 
-    expect(headers(fixture)).toEqual(['Collection · English', 'Effect', 'Details']);
+    expect(headers(fixture)).toEqual(['Effect', 'Collection · English', 'Details']);
     expect(root.textContent).toContain('Draw 2 cards.');
     expect(root.querySelector('.stats')).toBeNull();
     expect(root.querySelector('.types')).toBeNull();
@@ -270,7 +270,7 @@ describe('CardDetailsComponent', () => {
       await settle(fixture);
 
       expect(element(fixture).querySelector('[data-testid="collection-header"]')?.textContent).toBe(
-        'Collection · Deutsch'
+        'Collection · German'
       );
       expect(rows(fixture)[1]?.quantity).toBe('1');
       expect(repository.setCollectionQuantity.mock.calls.map(([, quantity]) => quantity)).toEqual([
@@ -279,7 +279,7 @@ describe('CardDetailsComponent', () => {
       expect([...stored.values()]).toEqual([entry({ variant: 'reverse', language: 'de' })]);
     });
 
-    it('notes copies owned in the set’s other languages', async () => {
+    it('notes copies owned in the set’s other languages, in English and display order', async () => {
       stored.set('intl:sv01-004:normal:de', entry({ language: 'de', quantity: 2 }));
       stored.set('intl:sv01-004:holo:fr', entry({ language: 'fr', variant: 'holo' }));
       stored.set('intl:sv01-004:normal:en', entry({}));
@@ -288,7 +288,7 @@ describe('CardDetailsComponent', () => {
 
       expect(
         element(fixture).querySelector('[data-testid="other-languages"]')?.textContent.trim()
-      ).toBe('Also 1 in Français · 2 in Deutsch');
+      ).toBe('Also 2 in German · 1 in French');
     });
 
     it('has no other-languages note when only this language is owned', async () => {

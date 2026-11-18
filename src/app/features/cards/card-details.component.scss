@@ -96,3 +96,14 @@
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
+
+/* Desktop: larger targets for a mouse in the dialog. */
+@media (min-width: 992px) {
+  .stepper ion-icon {
+    font-size: 28px;
+  }
+
+  .quantity {
+    font-size: 1.15rem;
+  }
+}

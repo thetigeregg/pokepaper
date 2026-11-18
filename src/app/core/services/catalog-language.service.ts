@@ -11,16 +11,39 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { LocalUserDataRepository } from '../data/local-user-data-repository';
 import { SyncService } from './sync.service';
 
-/** Short labels for language buttons, and full names for pickers. */
-export const LANGUAGE_LABELS: Readonly<Record<CatalogLanguage, { short: string; name: string }>> = {
-  en: { short: 'EN', name: 'English' },
-  fr: { short: 'FR', name: 'Français' },
-  it: { short: 'IT', name: 'Italiano' },
-  de: { short: 'DE', name: 'Deutsch' },
-  ja: { short: 'JA', name: '日本語' },
-  'zh-tw': { short: '繁中', name: '繁體中文' },
-  'zh-cn': { short: '简中', name: '简体中文' },
+/**
+ * Labels per language: `short` for badges, `name` (the language's own name)
+ * for pickers, and `english` for app text ("Collection · German").
+ */
+export const LANGUAGE_LABELS: Readonly<
+  Record<CatalogLanguage, { short: string; name: string; english: string }>
+> = {
+  en: { short: 'EN', name: 'English', english: 'English' },
+  fr: { short: 'FR', name: 'Français', english: 'French' },
+  it: { short: 'IT', name: 'Italiano', english: 'Italian' },
+  de: { short: 'DE', name: 'Deutsch', english: 'German' },
+  ja: { short: 'JA', name: '日本語', english: 'Japanese' },
+  'zh-tw': { short: '繁中', name: '繁體中文', english: 'Traditional Chinese' },
+  'zh-cn': { short: '简中', name: '简体中文', english: 'Simplified Chinese' },
 };
+
+/** The order languages are listed in pickers and app text. */
+const LANGUAGE_DISPLAY_ORDER: readonly CatalogLanguage[] = [
+  'en',
+  'de',
+  'fr',
+  'it',
+  'ja',
+  'zh-tw',
+  'zh-cn',
+];
+
+/** `languages` in display order (English, German, French, Italian, then Asian languages). */
+export function inDisplayOrder(languages: readonly CatalogLanguage[]): CatalogLanguage[] {
+  return [...languages].sort(
+    (a, b) => LANGUAGE_DISPLAY_ORDER.indexOf(a) - LANGUAGE_DISPLAY_ORDER.indexOf(b)
+  );
+}
 
 /**
  * The language sets and cards open in: the last one picked in each catalog

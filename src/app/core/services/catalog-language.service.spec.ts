@@ -3,7 +3,7 @@ import { DEFAULT_SETTINGS, type SyncEntityType, type UserSettings } from '@pokep
 import { Subject } from 'rxjs';
 import { vi } from 'vitest';
 import { LocalUserDataRepository } from '../data/local-user-data-repository';
-import { CatalogLanguageService } from './catalog-language.service';
+import { CatalogLanguageService, inDisplayOrder } from './catalog-language.service';
 import { SyncService } from './sync.service';
 
 describe('CatalogLanguageService', () => {
@@ -170,5 +170,20 @@ describe('CatalogLanguageService', () => {
 
     expect(stored.catalogLanguages).toEqual({ kr: 'ko', asia: 'zh-cn' });
     expect(service.languages()).toEqual({ intl: 'en', asia: 'zh-cn' });
+  });
+});
+
+describe('inDisplayOrder', () => {
+  it('lists English, then German, French and Italian, then Asian languages', () => {
+    expect(inDisplayOrder(['en', 'fr', 'it', 'de'])).toEqual(['en', 'de', 'fr', 'it']);
+    expect(inDisplayOrder(['zh-cn', 'ja', 'zh-tw'])).toEqual(['ja', 'zh-tw', 'zh-cn']);
+  });
+
+  it('leaves the given array untouched', () => {
+    const languages = ['fr', 'de'] as const;
+
+    inDisplayOrder(languages);
+
+    expect(languages).toEqual(['fr', 'de']);
   });
 });
