@@ -65,3 +65,7 @@
 ## v0.9.0 - 2026-11-18
 
 - 006e55d feat(catalog): search cards by name with filters (#24)
+
+## v0.10.0 - 2026-11-18
+
+- e7a2185 feat(collection): store and sync collection entries (#25)
