@@ -15,7 +15,7 @@ import {
   PENDING_SIGN_OUT_KEY,
   SIGNED_IN_KEY,
 } from './auth.service';
-import { PasskeyClient } from './passkey-client';
+import { PASSKEY_REQUEST_IN_PROGRESS, PASSKEY_SETUP_ERROR, PasskeyClient } from './passkey-client';
 
 const isNativePlatformMock = vi.fn<() => boolean>(() => false);
 
@@ -350,8 +350,16 @@ describe('AuthService in the iOS app', () => {
   let http: HttpTestingController;
   let store: Map<string, string>;
   let syncStatus: ReturnType<typeof signal<SyncStatus>>;
-  let keychain: { token: string | null };
-  let tokens: { load: Mock; token: () => string | null; set: Mock; clear: Mock };
+  let keychain: { token: string | null; toRevoke: string | null; failWrites: boolean };
+  let tokens: {
+    load: Mock;
+    token: () => string | null;
+    tokenToRevoke: () => string | null;
+    set: Mock;
+    clear: Mock;
+    retireForRevocation: Mock;
+    clearRevocation: Mock;
+  };
   let passkeys: { register: Mock; authenticate: Mock };
 
   beforeEach(() => {
@@ -359,12 +367,23 @@ describe('AuthService in the iOS app', () => {
     isNativePlatformMock.mockReturnValue(true);
     store = new Map();
     syncStatus = signal<SyncStatus>('idle');
-    keychain = { token: null };
+    keychain = { token: null, toRevoke: null, failWrites: false };
     tokens = {
       load: vi.fn(() => Promise.resolve()),
       token: () => keychain.token,
-      set: vi.fn((token: string) => Promise.resolve(void (keychain.token = token))),
+      tokenToRevoke: () => keychain.toRevoke,
+      set: vi.fn((token: string) =>
+        keychain.failWrites
+          ? Promise.reject(new Error('keychain locked'))
+          : Promise.resolve(void (keychain.token = token))
+      ),
       clear: vi.fn(() => Promise.resolve(void (keychain.token = null))),
+      retireForRevocation: vi.fn(() => {
+        keychain.toRevoke = keychain.token;
+        keychain.token = null;
+        return Promise.resolve();
+      }),
+      clearRevocation: vi.fn(() => Promise.resolve(void (keychain.toRevoke = null))),
     };
     passkeys = {
       register: vi.fn(() => Promise.resolve({ id: 'ios-reg' })),
@@ -481,20 +500,72 @@ describe('AuthService in the iOS app', () => {
     expect(service.signedIn()).toBe(false);
   });
 
-  it('keeps the token for a pending sign-out, then drops it once that completes', async () => {
+  it('signs out offline at once, keeping the token only to revoke it later', async () => {
     await signedIn();
 
     const offline = service.signOut();
     http.expectOne('/api/auth/logout').error(new ProgressEvent('offline'));
     await offline;
-    expect(keychain.token).toBe('tok-old');
+    expect(keychain.token).toBeNull();
+    expect(keychain.toRevoke).toBe('tok-old');
     expect(store.get(PENDING_SIGN_OUT_KEY)).toBe('true');
+    expect(service.signedIn()).toBe(false);
 
     const online = service.completePendingSignOut();
     await flush();
-    http.expectOne('/api/auth/logout').flush(null);
+    const logout = http.expectOne('/api/auth/logout');
+    expect(logout.request.headers.get('Authorization')).toBe('Bearer tok-old');
+    logout.flush(null);
     await expect(online).resolves.toBe(true);
-    expect(keychain.token).toBeNull();
+    expect(keychain.toRevoke).toBeNull();
+    expect(store.has(PENDING_SIGN_OUT_KEY)).toBe(false);
+  });
+
+  it('finishes a pending sign-out after a reinstall wiped Preferences', async () => {
+    keychain.toRevoke = 'tok-retired';
+
+    const done = service.completePendingSignOut();
+    await flush();
+    const logout = http.expectOne('/api/auth/logout');
+    expect(logout.request.headers.get('Authorization')).toBe('Bearer tok-retired');
+    logout.flush(null, { status: 401, statusText: 'Unauthorized' });
+
+    await expect(done).resolves.toBe(true);
+    expect(keychain.toRevoke).toBeNull();
+  });
+
+  it('keeps a pending revocation through a new sign-in and retries it', async () => {
+    keychain.toRevoke = 'tok-retired';
+
+    const done = service.signIn();
+    http.expectOne('/api/auth/login/options').flush({ challenge: 'c2' });
+    await flush();
+    http.expectOne('/api/auth/login/verify').flush({ token: 'tok-new' });
+    await done;
+    await flush();
+
+    expect(keychain.token).toBe('tok-new');
+    const retry = http.expectOne('/api/auth/logout');
+    expect(retry.request.headers.get('Authorization')).toBe('Bearer tok-retired');
+    retry.flush(null);
+    await flush();
+    expect(keychain.toRevoke).toBeNull();
+  });
+
+  it('revokes a new session it could not save to the Keychain', async () => {
+    keychain.failWrites = true;
+
+    const done = service.signIn();
+    http.expectOne('/api/auth/login/options').flush({ challenge: 'c2' });
+    await flush();
+    http.expectOne('/api/auth/login/verify').flush({ token: 'tok-unsaved' });
+    await flush();
+    const logout = http.expectOne('/api/auth/logout');
+    expect(logout.request.headers.get('Authorization')).toBe('Bearer tok-unsaved');
+    logout.flush(null);
+
+    await expect(done).rejects.toThrow("Couldn't save the sign-in on this device.");
+    expect(service.signedIn()).toBe(false);
   });
 
   it('drops the token when a signed-in call gets a 401', async () => {
@@ -519,6 +590,28 @@ describe('AuthService in the iOS app', () => {
 
     expect(keychain.token).toBeNull();
     expect(service.signedIn()).toBe(false);
+  });
+
+  it('explains a passkey prompt that is already open', async () => {
+    passkeys.authenticate.mockRejectedValue(
+      Object.assign(new Error('busy'), { name: PASSKEY_REQUEST_IN_PROGRESS })
+    );
+
+    const done = service.signIn();
+    http.expectOne('/api/auth/login/options').flush({ challenge: 'c2' });
+
+    await expect(done).rejects.toThrow('A passkey prompt is already open.');
+  });
+
+  it('points at the associated domain when AuthenticationServices fails outright', async () => {
+    passkeys.authenticate.mockRejectedValue(
+      Object.assign(new Error('not associated'), { name: PASSKEY_SETUP_ERROR })
+    );
+
+    const done = service.signIn();
+    http.expectOne('/api/auth/login/options').flush({ challenge: 'c2' });
+
+    await expect(done).rejects.toThrow(/associated domain/);
   });
 
   it('describes a device without passkeys', async () => {

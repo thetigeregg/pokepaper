@@ -212,7 +212,14 @@ test('resolvePasskeyDomain returns null when no domain is configured', () => {
 });
 
 test('resolvePasskeyDomain rejects invalid values', () => {
-  for (const value of ['not a domain', 'localhost', 'https://example.com', 'example.com/x']) {
+  for (const value of [
+    'not a domain',
+    'localhost',
+    'https://example.com',
+    'example.com/x',
+    '192.168.1.50',
+    '-bad.example.com',
+  ]) {
     assert.throws(
       () => resolvePasskeyDomain({ IOS_PASSKEY_DOMAIN: value }),
       /IOS_PASSKEY_DOMAIN must be a hostname/,

@@ -124,7 +124,10 @@ export const environment = {
 export function resolvePasskeyDomain(envValues = {}) {
   const explicitDomain = envValues.IOS_PASSKEY_DOMAIN?.trim().toLowerCase();
   if (explicitDomain) {
-    if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(explicitDomain)) {
+    // A dotted hostname whose last label has a letter (so not an IP address:
+    // associated domains can't be verified for those).
+    const hostname = /^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]([a-z0-9-]*[a-z0-9])?$/;
+    if (!hostname.test(explicitDomain)) {
       throw new Error(
         `IOS_PASSKEY_DOMAIN must be a hostname like pokepaper.example.com (got "${explicitDomain}")`
       );
@@ -193,6 +196,9 @@ function main() {
   loadDotEnv();
 
   try {
+    // Validate everything before writing anything, so a bad value can't
+    // leave the environment file and the xcconfig out of step.
+    resolvePasskeyDomain(process.env);
     const result = generateEnvironmentIos({ variant });
     console.log(
       `[write-environment-ios] Wrote ${result.outputPath.replace(`${REPO_ROOT}/`, '')} (apiUrl: ${result.apiUrl})`

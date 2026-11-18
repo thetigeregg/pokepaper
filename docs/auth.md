@@ -29,7 +29,7 @@ Once a passkey exists, setup is closed even with the token. Further passkeys can
 - Created on setup and on every passkey sign-in: 32 random bytes, stored only as a SHA-256 hash. The `sessions.id` shown in device lists is a separate random identifier.
 - **Sliding expiry:** `SESSION_TTL_DAYS` (default 90), extended at most hourly while in use. A device you use at least every 90 days stays signed in.
 - **Web:** an `__Host-pokepaper_session` cookie, `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/`. JavaScript can't read it, and the `__Host-` prefix stops any other host from setting it.
-- **iOS:** the app signs in with `client: 'ios'`, so the server returns the token in the response body instead of setting a cookie. The app keeps it in the Keychain and sends it as `Authorization: Bearer …` ([`ios.md`](ios.md) → Passkeys). It's dropped when the server ends the session, and kept for a pending offline sign-out until that completes.
+- **iOS:** the app signs in with `client: 'ios'`, so the server returns the token in the response body instead of setting a cookie. The app keeps it in the Keychain and sends it as `Authorization: Bearer …` ([`ios.md`](ios.md) → Passkeys). It's dropped when the server ends the session. A sign-out the server couldn't confirm signs the app out at once and keeps the token in a separate Keychain entry, only to revoke the session later.
 - Removing a passkey signs out every session created with it.
 
 ### What requires a session

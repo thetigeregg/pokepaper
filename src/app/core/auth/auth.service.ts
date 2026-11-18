@@ -19,7 +19,7 @@ import { SyncService } from '../services/sync.service';
 import { PreferenceStorageService } from '../storage/preference-storage.service';
 import { isNativePlatform } from '../utils/native-platform.util';
 import { AuthTokenStore } from './auth-token.store';
-import { PasskeyClient } from './passkey-client';
+import { PASSKEY_REQUEST_IN_PROGRESS, PASSKEY_SETUP_ERROR, PasskeyClient } from './passkey-client';
 
 /** Local marker: this device has signed in and hasn't since been told the session ended. */
 export const SIGNED_IN_KEY = 'pokepaper.auth.signedIn';
@@ -51,9 +51,9 @@ export class AuthFlowError extends Error {
  *
  * Sync only runs while signed in. A sign-out made offline is remembered and
  * completed on the server before the sign-in screen next checks the session,
- * so a surviving cookie (or, in the iOS app, Keychain token) can't silently
- * sign the user back in. The iOS token is kept until that server sign-out
- * succeeds, because completing it needs the token.
+ * so a surviving cookie can't silently sign the user back in. In the iOS app
+ * the token stops being this device's session right away; it's kept in the
+ * Keychain only to finish that server sign-out (`AuthTokenStore`).
  */
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -80,8 +80,11 @@ export class AuthService {
    * an app initializer, before the first navigation and the first API request.
    */
   async initialize(): Promise<void> {
-    await this.tokens.load();
-    const signedIn = (await this.preferences.getItem(SIGNED_IN_KEY)) === 'true';
+    const [, marker] = await Promise.all([
+      this.tokens.load(),
+      this.preferences.getItem(SIGNED_IN_KEY),
+    ]);
+    const signedIn = marker === 'true';
     this._signedIn.set(signedIn);
     if (!signedIn) {
       this.syncService.pause();
@@ -94,18 +97,18 @@ export class AuthService {
    * may be adopted), false while it still can't be completed.
    */
   async completePendingSignOut(): Promise<boolean> {
-    if ((await this.preferences.getItem(PENDING_SIGN_OUT_KEY)) !== 'true') {
+    // iOS: the retired token lives in the Keychain, so a pending sign-out
+    // survives a reinstall (which wipes Preferences) and a later sign-in.
+    const tokenToRevoke = this.tokens.tokenToRevoke();
+    const pending =
+      tokenToRevoke !== null || (await this.preferences.getItem(PENDING_SIGN_OUT_KEY)) === 'true';
+    if (!pending) {
       return true;
     }
-    try {
-      await firstValueFrom(this.http.post(this.url('/logout'), {}));
-    } catch (error: unknown) {
-      // A 401 means the session is already gone: that also completes it.
-      if (!(error instanceof HttpErrorResponse && error.status === 401)) {
-        return false;
-      }
+    if (!(await this.endServerSession(tokenToRevoke))) {
+      return false;
     }
-    await this.tokens.clear();
+    await this.tokens.clearRevocation();
     await this.preferences.removeItem(PENDING_SIGN_OUT_KEY);
     return true;
   }
@@ -205,21 +208,32 @@ export class AuthService {
    * the sign-in screen. Local data and queued changes are kept.
    */
   async signOut(): Promise<void> {
-    let serverSessionEnded = true;
-    try {
-      await firstValueFrom(this.http.post(this.url('/logout'), {}));
-    } catch (error: unknown) {
-      // Already expired (401) needs nothing more. Otherwise (offline, server
-      // down) finish the server sign-out before the next sign-in check.
-      if (!(error instanceof HttpErrorResponse && error.status === 401)) {
-        serverSessionEnded = false;
-        await this.preferences.setItem(PENDING_SIGN_OUT_KEY, 'true');
-      }
-    }
-    if (serverSessionEnded) {
+    if (await this.endServerSession()) {
       await this.tokens.clear();
+    } else {
+      // Offline or server down: finish the server sign-out before the next
+      // sign-in check. The iOS token is kept only for that (`tokenToRevoke`),
+      // so nothing sends it as this device's session anymore.
+      await this.preferences.setItem(PENDING_SIGN_OUT_KEY, 'true');
+      await this.tokens.retireForRevocation();
     }
     await this.endLocalSession();
+  }
+
+  /**
+   * Ends a session on the server: the current one, or the one `token`
+   * belongs to (iOS). True when it's gone, including when it had already
+   * expired (401); false when the server couldn't be reached.
+   */
+  private async endServerSession(token: string | null = null): Promise<boolean> {
+    try {
+      await firstValueFrom(
+        this.http.post(this.url('/logout'), {}, token ? { headers: bearer(token) } : {})
+      );
+      return true;
+    } catch (error: unknown) {
+      return error instanceof HttpErrorResponse && error.status === 401;
+    }
   }
 
   /**
@@ -232,12 +246,22 @@ export class AuthService {
       if (!session.token) {
         throw new AuthFlowError('The server did not return a session. Please try again.');
       }
-      await this.tokens.set(session.token);
+      try {
+        await this.tokens.set(session.token);
+      } catch {
+        // Don't leave behind a server session this device can't use.
+        await this.endServerSession(session.token);
+        throw new AuthFlowError("Couldn't save the sign-in on this device. Please try again.");
+      }
     }
     await this.preferences.removeItem(PENDING_SIGN_OUT_KEY);
     await this.preferences.setItem(SIGNED_IN_KEY, 'true');
     this._signedIn.set(true);
     void this.syncService.resumeAfterReauth();
+    if (this.tokens.tokenToRevoke()) {
+      // An earlier offline sign-out is still waiting: retry it now.
+      void this.completePendingSignOut();
+    }
   }
 
   /** The server rejected the session: its token is useless, so drop it too. */
@@ -289,6 +313,14 @@ export class AuthService {
       if (name === 'InvalidStateError') {
         throw new AuthFlowError('This device already has a PokePaper passkey.');
       }
+      if (name === PASSKEY_REQUEST_IN_PROGRESS) {
+        throw new AuthFlowError('A passkey prompt is already open.');
+      }
+      if (name === PASSKEY_SETUP_ERROR) {
+        throw new AuthFlowError(
+          "Passkey sign-in failed. If this keeps happening, check the app's associated domain setup."
+        );
+      }
       throw new AuthFlowError(
         isNativePlatform()
           ? 'Passkeys are not available on this device.'
@@ -296,6 +328,10 @@ export class AuthService {
       );
     }
   }
+}
+
+function bearer(token: string): Record<string, string> {
+  return { Authorization: `Bearer ${token}` };
 }
 
 export function describeHttpError(error: unknown): string {

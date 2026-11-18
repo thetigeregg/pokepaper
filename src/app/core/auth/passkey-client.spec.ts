@@ -7,7 +7,7 @@ import {
 } from '@simplewebauthn/browser';
 import { vi } from 'vitest';
 import { environment } from '../../../environments/environment';
-import { PasskeyClient } from './passkey-client';
+import { PASSKEY_REQUEST_IN_PROGRESS, PASSKEY_SETUP_ERROR, PasskeyClient } from './passkey-client';
 
 const isNativePlatformMock = vi.fn<() => boolean>();
 
@@ -42,8 +42,15 @@ const requestOptions = {
 } as PublicKeyCredentialRequestOptionsJSON;
 
 /** A Capacitor plugin rejection: the WebAuthn error name travels as `code`. */
-function pluginError(code: string): Error {
-  return Object.assign(new Error('The operation was cancelled.'), { code });
+function pluginError(
+  code: string,
+  message = 'The operation was cancelled.',
+  nativeCode?: number
+): Error {
+  return Object.assign(new Error(message), {
+    code,
+    data: nativeCode === undefined ? { name: code } : { name: code, native: { code: nativeCode } },
+  });
 }
 
 describe('PasskeyClient', () => {
@@ -118,6 +125,30 @@ describe('PasskeyClient', () => {
       });
       await expect(client.register(creationOptions)).rejects.toMatchObject({
         name: 'InvalidStateError',
+      });
+    });
+
+    it('tells a prompt that is already open from an existing passkey', async () => {
+      getCredential.mockRejectedValue(
+        pluginError('InvalidStateError', 'Another passkey request is already in progress.')
+      );
+
+      await expect(client.authenticate(requestOptions)).rejects.toMatchObject({
+        name: PASSKEY_REQUEST_IN_PROGRESS,
+      });
+    });
+
+    it('tells an outright AuthenticationServices failure from a cancel', async () => {
+      for (const nativeCode of [1003, 1004]) {
+        getCredential.mockRejectedValueOnce(pluginError('NotAllowedError', 'failed', nativeCode));
+        await expect(client.authenticate(requestOptions)).rejects.toMatchObject({
+          name: PASSKEY_SETUP_ERROR,
+        });
+      }
+
+      getCredential.mockRejectedValueOnce(pluginError('NotAllowedError', 'canceled', 1001));
+      await expect(client.authenticate(requestOptions)).rejects.toMatchObject({
+        name: 'NotAllowedError',
       });
     });
 
