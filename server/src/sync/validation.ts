@@ -1,4 +1,7 @@
 import {
+  collectionEntryId,
+  isCollectionEntry,
+  isCollectionEntryId,
   isSyncEntityType,
   isUserSettings,
   SETTINGS_ENTITY_ID,
@@ -18,7 +21,8 @@ const ISO_UTC_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
 
 interface EntityRules {
   validEntityId(entityId: string): boolean;
-  validPayload(payload: unknown): boolean;
+  /** Checks an upsert's payload, which must also agree with its (already valid) entity ID. */
+  validPayload(payload: unknown, entityId: string): boolean;
 }
 
 /** Per-entity validation. Adding a `SyncEntityType` without rules here fails type-checking. */
@@ -26,6 +30,11 @@ const ENTITY_RULES: Record<SyncEntityType, EntityRules> = {
   settings: {
     validEntityId: (entityId) => entityId === SETTINGS_ENTITY_ID,
     validPayload: isUserSettings,
+  },
+  collectionEntry: {
+    validEntityId: isCollectionEntryId,
+    validPayload: (payload, entityId) =>
+      isCollectionEntry(payload) && collectionEntryId(payload) === entityId,
   },
 };
 
@@ -94,7 +103,7 @@ export function validateOperation(raw: RawOperation): ValidationResult {
     return reject('clientTimestamp must be a UTC ISO 8601 timestamp like 2026-01-01T00:00:00.000Z');
   }
 
-  if (operation === 'upsert' && !rules.validPayload(payload)) {
+  if (operation === 'upsert' && !rules.validPayload(payload, entityId)) {
     return reject(`Invalid ${entityType} payload`);
   }
 

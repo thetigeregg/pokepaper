@@ -29,6 +29,52 @@ describe('sync routes', () => {
     });
   });
 
+  it('syncs collection entries, and deletes them as tombstones', async () => {
+    const { app, headers } = testApp();
+    const entityId = 'intl:sv01-001:reverse:en';
+    const payload = {
+      region: 'intl',
+      cardId: 'sv01-001',
+      setId: 'sv01',
+      variant: 'reverse',
+      language: 'en',
+      quantity: 2,
+    };
+    const upsert = settingsOp({ entityType: 'collectionEntry', entityId, payload });
+    const remove = settingsOp({
+      entityType: 'collectionEntry',
+      entityId,
+      operation: 'delete',
+      payload: null,
+      clientTimestamp: '2026-01-02T00:00:00.000Z',
+    });
+
+    const pushes = [];
+    for (const op of [upsert, remove]) {
+      const push = await app.inject({
+        method: 'POST',
+        url: '/api/sync/push',
+        headers,
+        payload: { operations: [op] },
+      });
+      pushes.push(push.json());
+    }
+    expect(pushes).toEqual([
+      { results: [{ opId: upsert.opId, status: 'applied' }] },
+      { results: [{ opId: remove.opId, status: 'applied' }] },
+    ]);
+
+    const pull = await app.inject({
+      method: 'POST',
+      url: '/api/sync/pull',
+      headers,
+      payload: { cursor: '0' },
+    });
+    expect(pull.json()).toMatchObject({
+      changes: [{ entityType: 'collectionEntry', entityId, operation: 'delete', payload: null }],
+    });
+  });
+
   it('pull without a cursor starts from the beginning', async () => {
     const { app, headers } = testApp();
 

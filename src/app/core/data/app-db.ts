@@ -1,6 +1,6 @@
 import Dexie, { Table } from 'dexie';
 import { Injectable } from '@angular/core';
-import type { CatalogCard, CatalogSeries, UserSettings } from '@pokepaper/shared';
+import type { CatalogCard, CatalogSeries, CollectionEntry, UserSettings } from '@pokepaper/shared';
 import type {
   CatalogSearchRow,
   DownloadedSet,
@@ -26,6 +26,12 @@ export interface CatalogCardRow {
   card: CatalogCard;
 }
 
+/** A collection entry, keyed by its `collectionEntryId`. */
+export interface CollectionRow {
+  key: string;
+  entry: CollectionEntry;
+}
+
 /**
  * IndexedDB schema for the web storage engine. Add a new `this.version(n)`
  * block (never edit an existing one) when a feature adds or re-indexes a
@@ -43,6 +49,7 @@ export class AppDb extends Dexie {
   catalogCardSearch!: Table<CatalogSearchRow, string>;
   imagePins!: Table<ImagePin, [string, string]>;
   downloadedSets!: Table<DownloadedSet, string>;
+  collection!: Table<CollectionRow, string>;
 
   constructor() {
     super('pokepaper');
@@ -72,6 +79,11 @@ export class AppDb extends Dexie {
     // get their rows from CatalogSearchService's rebuild.
     this.version(4).stores({
       catalogCardSearch: 'key, region, setKey',
+    });
+
+    // Collection entries (docs/collection.md). Matches SQLite schema version 5.
+    this.version(5).stores({
+      collection: 'key',
     });
   }
 }

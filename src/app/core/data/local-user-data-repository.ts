@@ -1,5 +1,16 @@
 import { Injectable, inject } from '@angular/core';
-import { DEFAULT_SETTINGS, SETTINGS_ENTITY_ID, type UserSettings } from '@pokepaper/shared';
+import {
+  collectionEntry,
+  collectionEntryId,
+  DEFAULT_SETTINGS,
+  isCollectionQuantity,
+  isCollectionTarget,
+  MAX_COLLECTION_QUANTITY,
+  SETTINGS_ENTITY_ID,
+  type CollectionEntry,
+  type CollectionTarget,
+  type UserSettings,
+} from '@pokepaper/shared';
 import { OutboxEntry, StorageEngine, StorageScope } from './storage-engine';
 import { StorageEngineFactory } from './storage-engine.factory';
 import { SYNC_OUTBOX_WRITER, SyncOutboxWriter } from './sync-outbox-writer';
@@ -10,8 +21,8 @@ import { SYNC_OUTBOX_WRITER, SyncOutboxWriter } from './sync-outbox-writer';
  * one transaction, then fires a best-effort sync attempt. Reads go straight
  * to the local engine (instant, offline-capable).
  *
- * Ported from go-gather's repository of the same name. Collection and deck
- * writes follow the same `withOutboxTransaction` + `queueOperation` pattern.
+ * Ported from go-gather's repository of the same name. Deck writes will
+ * follow the same `withOutboxTransaction` + `queueOperation` pattern.
  */
 @Injectable({ providedIn: 'root' })
 export class LocalUserDataRepository {
@@ -45,6 +56,39 @@ export class LocalUserDataRepository {
         settings,
         clientTimestamp
       );
+    });
+  }
+
+  listCollection(): Promise<CollectionEntry[]> {
+    return this.engine.listCollectionEntries();
+  }
+
+  /**
+   * Sets how many copies of `target` the user owns (0 to
+   * `MAX_COLLECTION_QUANTITY`). 0 deletes the entry, locally and on the server.
+   * Rejects targets the server would reject, so nothing unsyncable is stored.
+   */
+  async setCollectionQuantity(target: CollectionTarget, quantity: number): Promise<void> {
+    if (!isCollectionQuantity(quantity)) {
+      throw new RangeError(
+        `Collection quantity must be an integer from 0 to ${String(MAX_COLLECTION_QUANTITY)}`
+      );
+    }
+    if (!isCollectionTarget(target)) {
+      throw new TypeError('Invalid collection target');
+    }
+    const key = collectionEntryId(target);
+    const clientTimestamp = new Date().toISOString();
+
+    await this.withOutboxTransaction(['collection'], async () => {
+      if (quantity === 0) {
+        await this.engine.deleteCollectionEntry(key);
+        await this.queueOperation('collectionEntry', key, 'delete', null, clientTimestamp);
+        return;
+      }
+      const entry = collectionEntry(target, quantity);
+      await this.engine.putCollectionEntry(entry);
+      await this.queueOperation('collectionEntry', key, 'upsert', entry, clientTimestamp);
     });
   }
 

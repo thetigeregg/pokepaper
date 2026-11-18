@@ -6,6 +6,7 @@ import type {
   CatalogSeries,
   CatalogSet,
   CatalogSetPack,
+  CollectionEntry,
   SyncEntityType,
   SyncOperation,
   UserSettings,
@@ -29,7 +30,8 @@ export type StorageScope =
   | 'catalogCards'
   | 'catalogCardSearch'
   | 'imagePins'
-  | 'downloadedSets';
+  | 'downloadedSets'
+  | 'collection';
 
 /** Catalog rows are keyed `region:id` (IDs repeat across regions; docs/catalog.md). */
 export function catalogKey(region: CatalogRegion, id: string): string {
@@ -226,6 +228,12 @@ export interface StorageEngine {
   listCatalogSearchRows(region: CatalogRegion): Promise<CatalogSearchRow[]>;
   /** Rebuilds a stored set's search rows from its cards (after the row format changes). */
   reindexCatalogSet(region: CatalogRegion, setId: string): Promise<void>;
+
+  // Collection (docs/collection.md), keyed by `collectionEntryId`
+  /** Inserts or replaces the entry with its `collectionEntryId`. */
+  putCollectionEntry(entry: CollectionEntry): Promise<void>;
+  deleteCollectionEntry(key: string): Promise<void>;
+  listCollectionEntries(): Promise<CollectionEntry[]>;
 
   // Outbox
   getOutboxEntry(opId: string): Promise<OutboxEntry | undefined>;
