@@ -7,7 +7,7 @@ Standards for PokePaper's screens, so new pages look and behave like existing on
 - **Stock Ionic first.** Build screens from Ionic components with their default styling. Add custom CSS only where Ionic has no equivalent, and keep it small. When proposing UI, describe it by component (`IonSplitPane`, `IonItem`, `IonModal`, …).
 - **Agreed exceptions:**
   - **Swiper**, for paging through cards in the card detail modal.
-  - **The energy symbol icons** (`EnergyIconComponent`): meant to be the TCG symbols as PNGs in `src/assets/energy/<type>.png` (Bulbapedia's 85 px attack-cost icons, e.g. `Fairy-attack.png`), prefetched by the service worker so they work offline. **Deferred:** the files aren't committed yet, so `ENERGY_ICON_IMAGES` is `false` and every icon is the fallback, a colored circle with the type's letter. To finish: add the 11 PNGs (lowercase type names) and set the flag to `true`.
+  - **The energy symbol icons** (`EnergyIconComponent`): the TCG symbols as 118 px PNGs in `src/assets/energy/<type>.png` (lowercase type names, cropped from ilkcmp's symbol sheet, see `docs/catalog.md` → Attribution), prefetched by the service worker so they work offline. An unknown type or an image that fails to load falls back to a colored circle with the type's letter. Rarity symbols (`circle`, `diamond`, `star`, `three-stars`, each `-black` and `-white`, 40 px) from the same sheet are in `src/assets/rarity/`, not used yet.
   - **The type tint** on cards without a scan.
 
 ## Platforms
@@ -34,6 +34,7 @@ Standards for PokePaper's screens, so new pages look and behave like existing on
 - **Dividers between rows only:** no divider under the last row of a list. A global rule in `src/global.scss` enforces this.
 - **Label and value rows:** the label in `ion-label`, the value as `<ion-note slot="end">`.
 - **Choice rows:** an `ion-select` inside the `ion-item`, with its `label` as the row label and `interface="popover"`, e.g. "Keep recently viewed up to".
+- **Leading images and icons** (set logos, attack costs): inside the `ion-label`, not `slot="start"`, so a `lines="inset"` divider runs under them too. Inside the label, wrap them in `<div class="media-row">` with the text in `<div class="media-row-text">` (both global): the image sits beside the text, 16 px apart, and long text still truncates or wraps. The flex row is a div, not a class on `ion-label`, because Ionic's label rule (`display: block`) outranks one.
 - **Hint text** under a label: `<p class="hint">` inside the `ion-label` (styled globally with a little top padding).
 - **Grouped lists:** collapsible groups use `ion-accordion-group` (multiple open). The group row is the accordion header; its rows sit one step in (`class="child-row"`, global). Searching opens every matching group.
 - **Progress:** an `ion-progress-bar` in its own row, directly under the row it belongs to.
@@ -52,7 +53,7 @@ Standards for PokePaper's screens, so new pages look and behave like existing on
 - **Catalogs:** an `IonSegment` ("International | Japan & Asia") in a second header `IonToolbar`, remembered on the device.
 - **Desktop layout:** `IonSplitPane when="lg"` wraps `IonTabs` (`TabsPage`). Its `IonMenu` holds the segment and the sets list and is enabled only while the Cards tab is open, so other tabs stay full width. The selected set opens beside it; picking another set replaces it rather than stacking. Phones push pages: sets, then set.
 - **Tab stacks are stock Ionic:** each tab keeps its pages when you switch away, and tapping the current tab pops to its root. Sub-pages are routes at the tab level (`cards/set/:region/:setId`, `settings/downloads`); don't nest an `IonRouterOutlet` inside a tab page, because Ionic then forgets the tab's position.
-- **Sets list:** an `IonItemGroup` per series under a sticky `IonItemDivider`, newest first. Each row is an `IonItem lines="inset"` with the set logo in an `IonThumbnail`, name, "date · N cards", and a small `IonIcon` (cloud-done) when downloaded.
+- **Sets list:** an `IonItemGroup` per series under a sticky `IonItemDivider`, newest first. Each row is an `IonItem lines="inset"` with the set logo in an `IonThumbnail` (inside the label, see Lists), name, "date · N cards", and a small `IonIcon` (cloud-done) when downloaded.
 - **Set page:**
   - The header's `IonTitle` shows the set's logo (in the current language, else another) instead of its name when the set has one; the name is the image's alt text.
   - The header's end slot has two icon-only `IonButton`s: language (opening an `IonPopover` with an `IonRadioGroup`) and download (an `IonActionSheet`). An `IonProgressBar` shows while downloading.
@@ -60,7 +61,7 @@ Standards for PokePaper's screens, so new pages look and behave like existing on
 - **Card detail:**
   - An `IonModal`: a sheet on phones (`[breakpoints]="[0, 1]"`, handle), a centered dialog on desktop (`.card-detail-modal`, image beside the text).
   - Swiper with virtual slides; swipe on phones, ←/→ keys on desktop. No footer.
-  - Attacks are `IonItem lines="inset"`. The cost column is as wide as the card's longest cost, so every attack name lines up. Weakness · resistance · retreat is one centered row.
+  - Attacks are `IonItem lines="inset"`. The cost column is as wide as the card's longest cost, so every attack name lines up. Ability and attack names are bold; ability names are dark red (`--ion-color-danger-shade`). Weakness | resistance | retreat are three equal columns (label above value) with vertical dividers in the item border color; retreat is shown as Colorless energy icons.
   - Full card text in `IonList` sections.
 - **Card images:** a fallback-language scan gets an `IonBadge` with the language code. A card without any scan is a type-tinted `IonCard` (name, HP · stage, energy icon, set number) at card proportions (63:88).
 - **Language:** switched in context with the header button, and remembered per catalog in synced settings. Every set and card opens in it.

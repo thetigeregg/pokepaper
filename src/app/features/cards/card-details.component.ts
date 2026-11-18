@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { IonItem, IonLabel, IonList, IonListHeader, IonNote } from '@ionic/angular';
 import type { CatalogCard, CatalogLanguage, CatalogSet } from '@pokepaper/shared';
-import { cardSubtitle, cardText, setLine } from './card-display';
+import { cardSubtitle, cardText, retreatCost, retreatLabel, setLine } from './card-display';
 import { CardImageComponent } from './card-image.component';
 import { CardTextComponent } from './card-text.component';
 import { EnergyIconComponent } from './energy-icon.component';
@@ -47,6 +47,8 @@ export class CardDetailsComponent {
   readonly costSlots = computed(() =>
     Math.max(1, ...this.attacks().map((attack) => attack.cost.length))
   );
+  readonly retreatCost = computed(() => retreatCost(this.card()));
+  readonly retreatLabel = computed(() => retreatLabel(this.card()));
   readonly legal = computed(() => {
     const { standard, expanded } = this.card().legal;
     return [standard ? 'Standard' : null, expanded ? 'Expanded' : null].filter(Boolean).join(' · ');

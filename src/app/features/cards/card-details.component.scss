@@ -41,15 +41,45 @@
   font-weight: 600;
 }
 
+/* Ability and attack names: bold, in the full text color. */
+.name {
+  font-weight: 600;
+  color: var(--ion-text-color);
+}
+
+/* Abilities in dark red, like the card's ability label. Ionic's danger
+   shade, which the dark palette lightens for contrast. */
+.ability-name {
+  color: var(--ion-color-danger-shade);
+}
+
+/* Weakness | resistance | retreat: three equal columns, label above value,
+   divided like Ionic's item lines. */
 .stats {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 4px 16px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
 }
 
 .stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+}
+
+.stat + .stat {
+  border-inline-start: 1px solid
+    var(
+      --ion-item-border-color,
+      var(--ion-border-color, var(--ion-background-color-step-250, #c8c7cc))
+    );
+}
+
+.stat-value {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  min-height: 1.5em;
+  color: var(--ion-text-color);
 }

@@ -34,17 +34,21 @@
           (click)="selected.emit(set)"
           [attr.data-testid]="'set-' + set.id"
         >
-          <ion-thumbnail slot="start">
-            <app-set-logo [set]="set" [language]="browse.language()" />
-          </ion-thumbnail>
           <ion-label>
-            {{ name(set) }}
-            <p>
-              @if (set.releaseDate) {
-                {{ set.releaseDate | date: 'mediumDate' : 'UTC' }} ·
-              }
-              {{ set.cardCount.total }} cards
-            </p>
+            <div class="media-row">
+              <ion-thumbnail>
+                <app-set-logo [set]="set" [language]="browse.language()" />
+              </ion-thumbnail>
+              <div class="media-row-text">
+                {{ name(set) }}
+                <p>
+                  @if (set.releaseDate) {
+                    {{ set.releaseDate | date: 'mediumDate' : 'UTC' }} ·
+                  }
+                  {{ set.cardCount.total }} cards
+                </p>
+              </div>
+            </div>
           </ion-label>
           @if (downloaded().has(key(set))) {
             <ion-icon

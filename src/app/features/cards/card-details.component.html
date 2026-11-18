@@ -26,7 +26,9 @@
       @for (ability of text()?.abilities; track $index) {
         <ion-item>
           <ion-label class="ion-text-wrap">
-            <h3>{{ ability.type }}: {{ ability.name }}</h3>
+            <h3 class="name ability-name" data-testid="ability-name">
+              {{ ability.type }}: {{ ability.name }}
+            </h3>
             <p><app-card-text [text]="ability.effect" /></p>
           </ion-label>
         </ion-item>
@@ -37,21 +39,24 @@
       <ion-list-header><ion-label>Attacks</ion-label></ion-list-header>
       @for (attack of attacks(); track $index) {
         <ion-item lines="inset">
-          <div
-            slot="start"
-            class="cost"
-            [style.--cost-slots]="costSlots()"
-            [attr.aria-label]="attack.cost.join(', ') || 'No cost'"
-          >
-            @for (type of attack.cost; track $index) {
-              <app-energy-icon [type]="type" />
-            }
-          </div>
           <ion-label class="ion-text-wrap">
-            <h3>{{ attack.name }}</h3>
-            @if (attack.effect) {
-              <p><app-card-text [text]="attack.effect" /></p>
-            }
+            <div class="media-row">
+              <div
+                class="cost"
+                [style.--cost-slots]="costSlots()"
+                [attr.aria-label]="attack.cost.join(', ') || 'No cost'"
+              >
+                @for (type of attack.cost; track $index) {
+                  <app-energy-icon [type]="type" />
+                }
+              </div>
+              <div class="media-row-text">
+                <h3 class="name">{{ attack.name }}</h3>
+                @if (attack.effect) {
+                  <p><app-card-text [text]="attack.effect" /></p>
+                }
+              </div>
+            </div>
           </ion-label>
           @if (attack.damage) {
             <ion-note slot="end" class="damage">{{ attack.damage }}</ion-note>
@@ -73,23 +78,40 @@
           <p class="stats">
             <span class="stat">
               Weakness
-              @for (weakness of card().weaknesses; track $index) {
-                <app-energy-icon [type]="weakness.type" />
-                {{ weakness.value }}
-              } @empty {
-                none
-              }
+              <span class="stat-value">
+                @for (weakness of card().weaknesses; track $index) {
+                  <app-energy-icon [type]="weakness.type" />
+                  {{ weakness.value }}
+                } @empty {
+                  none
+                }
+              </span>
             </span>
             <span class="stat">
               Resistance
-              @for (resistance of card().resistances; track $index) {
-                <app-energy-icon [type]="resistance.type" />
-                {{ resistance.value }}
-              } @empty {
-                none
-              }
+              <span class="stat-value">
+                @for (resistance of card().resistances; track $index) {
+                  <app-energy-icon [type]="resistance.type" />
+                  {{ resistance.value }}
+                } @empty {
+                  none
+                }
+              </span>
             </span>
-            <span class="stat">Retreat {{ card().retreat ?? 0 }}</span>
+            <span class="stat">
+              Retreat
+              <span
+                class="stat-value"
+                [attr.aria-label]="retreatLabel()"
+                data-testid="stat-retreat"
+              >
+                @for (type of retreatCost(); track $index) {
+                  <app-energy-icon [type]="type" />
+                } @empty {
+                  none
+                }
+              </span>
+            </span>
           </p>
         </ion-label>
       </ion-item>

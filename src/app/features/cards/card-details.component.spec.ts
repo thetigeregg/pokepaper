@@ -98,7 +98,40 @@ describe('CardDetailsComponent', () => {
     });
 
     expect(headers(fixture)).toEqual(['Abilities', 'Attacks', 'Details']);
-    expect(element(fixture).textContent).toContain('Ability: Overgrow');
+    expect(element(fixture).querySelector('[data-testid="ability-name"]')?.textContent.trim()).toBe(
+      'Ability: Overgrow'
+    );
+  });
+
+  it('shows retreat as Colorless energy icons, or none', () => {
+    const retreat = (fixture: ComponentFixture<CardDetailsComponent>) =>
+      element(fixture).querySelector('[data-testid="stat-retreat"]');
+
+    const two = retreat(create({ ...base, retreat: 2 }));
+    expect(two?.getAttribute('aria-label')).toBe('2 Colorless');
+    expect(
+      [...(two?.querySelectorAll('app-energy-icon img') ?? [])].map((img) =>
+        img.getAttribute('alt')
+      )
+    ).toEqual(['Colorless', 'Colorless']);
+
+    const none = retreat(create({ ...base, retreat: 0 }));
+    expect(none?.getAttribute('aria-label')).toBeNull();
+    expect(none?.querySelector('app-energy-icon')).toBeNull();
+    expect(none?.textContent.trim()).toBe('none');
+  });
+
+  it('puts attack costs inside the label, beside the name', () => {
+    const fixture = create({
+      ...base,
+      attacks: [{ cost: ['Grass'], damage: '10' }],
+      text: textWith({ attacks: [{ name: 'Tackle', effect: null }] }),
+    });
+    const row = element(fixture).querySelector('ion-item ion-label .media-row');
+
+    expect(row?.querySelector('.cost app-energy-icon')).not.toBeNull();
+    expect(row?.querySelector('.media-row-text h3')?.textContent).toBe('Tackle');
+    expect(element(fixture).querySelector('[slot="start"]')).toBeNull();
   });
 
   it('shows a Trainer’s effect without Pokémon stats', () => {

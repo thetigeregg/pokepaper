@@ -47,6 +47,41 @@ ion-list > ion-item:last-of-type {
   --inner-border-width: 0;
 }
 
+/* A row's leading image or icons go inside its label, beside the text,
+   instead of slot="start", so a lines="inset" divider runs under them too
+   (docs/ui.md). A div inside the label, because Ionic's own label rule
+   (display: block) outranks a class on ion-label. */
+.media-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.media-row > :not(.media-row-text) {
+  flex-shrink: 0;
+}
+
+.media-row > .media-row-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Ionic grays only a label's direct <p> children; match its per-mode colors
+   (and its colored-row exception) for the text one level down. */
+.ios .media-row-text > p {
+  color: var(--ion-color-step-400, var(--ion-text-color-step-600, #999999));
+}
+
+.md .media-row-text > p {
+  color: var(--ion-color-step-600, var(--ion-text-color-step-400, #666666));
+}
+
+ion-label.in-item-color .media-row-text > p {
+  color: inherit;
+}
+
 /* Hint text under a row's label (docs/ui.md). */
 ion-label p.hint {
   padding-top: 4px;
