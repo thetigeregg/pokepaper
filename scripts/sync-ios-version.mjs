@@ -20,11 +20,6 @@ export function readPackageVersion(
   return packageJson.version.trim();
 }
 
-export function readPbxprojMarketingVersions(content) {
-  const matches = [...content.matchAll(/^\t\t\t\tMARKETING_VERSION = ([^;]+);$/gm)];
-  return [...new Set(matches.map((match) => match[1].trim()))];
-}
-
 export function updateAllMarketingVersionsInPbxproj(content, { marketingVersion } = {}) {
   if (typeof marketingVersion !== 'string' || marketingVersion.trim().length === 0) {
     throw new Error('marketingVersion is required');
@@ -43,27 +38,6 @@ export function updateAllMarketingVersionsInPbxproj(content, { marketingVersion 
   );
 }
 
-export function assertMarketingVersionsMatchPackage({
-  packageJsonPath = DEFAULT_PACKAGE_JSON_PATH,
-  pbxprojPath = DEFAULT_PBXPROJ_PATH,
-  readFileSyncFn = readFileSync,
-} = {}) {
-  const expectedVersion = readPackageVersion(packageJsonPath, readFileSyncFn);
-  const content = readFileSyncFn(pbxprojPath, 'utf8');
-  const actualVersions = readPbxprojMarketingVersions(content);
-
-  if (actualVersions.length === 0) {
-    throw new Error(`No MARKETING_VERSION entries found in ${pbxprojPath}`);
-  }
-
-  const mismatchedVersions = actualVersions.filter((value) => value !== expectedVersion);
-  if (mismatchedVersions.length > 0) {
-    throw new Error(
-      `MARKETING_VERSION mismatch in ${pbxprojPath}: expected ${expectedVersion}, found ${actualVersions.join(', ')}. Run: node scripts/sync-ios-version.mjs --marketing-only`
-    );
-  }
-}
-
 export function updateProdTargetVersionsInPbxproj(
   content,
   { marketingVersion, buildNumber, prodBundleId = PROD_BUNDLE_ID } = {}
@@ -71,6 +45,8 @@ export function updateProdTargetVersionsInPbxproj(
   if (typeof marketingVersion !== 'string' || marketingVersion.trim().length === 0) {
     throw new Error('marketingVersion is required');
   }
+
+  const normalizedMarketingVersion = marketingVersion.trim();
 
   if (typeof buildNumber !== 'string' && typeof buildNumber !== 'number') {
     throw new Error('buildNumber is required');
@@ -97,7 +73,7 @@ export function updateProdTargetVersionsInPbxproj(
 
     let updatedBody = body.replace(
       /^\t\t\t\tMARKETING_VERSION = .*;$/m,
-      `\t\t\t\tMARKETING_VERSION = ${marketingVersion};`
+      `\t\t\t\tMARKETING_VERSION = ${normalizedMarketingVersion};`
     );
     updatedBody = updatedBody.replace(
       /^\t\t\t\tCURRENT_PROJECT_VERSION = .*;$/m,
@@ -127,7 +103,10 @@ export function syncIosMarketingVersion({
     marketingVersion: resolvedMarketingVersion,
   });
 
-  writeFileSyncFn(pbxprojPath, updated, 'utf8');
+  const changed = updated !== content;
+  if (changed) {
+    writeFileSyncFn(pbxprojPath, updated, 'utf8');
+  }
 
   const updatedCount = (content.match(/^\t\t\t\tMARKETING_VERSION = .*;$/gm) ?? []).length;
 
@@ -135,6 +114,7 @@ export function syncIosMarketingVersion({
     marketingVersion: resolvedMarketingVersion,
     pbxprojPath,
     updatedCount,
+    changed,
   };
 }
 
@@ -153,13 +133,30 @@ export function syncIosProdVersion({
     buildNumber,
   });
 
-  writeFileSyncFn(pbxprojPath, updated, 'utf8');
+  const changed = updated !== content;
+  if (changed) {
+    writeFileSyncFn(pbxprojPath, updated, 'utf8');
+  }
 
   return {
     marketingVersion: resolvedMarketingVersion,
     buildNumber: String(buildNumber),
     pbxprojPath,
+    changed,
   };
+}
+
+function readOptionValue(argv, index, flag) {
+  const optionValue = argv[index + 1];
+  if (
+    typeof optionValue !== 'string' ||
+    optionValue.trim().length === 0 ||
+    optionValue.startsWith('--')
+  ) {
+    throw new Error(`${flag} requires a value`);
+  }
+
+  return optionValue.trim();
 }
 
 export function parseSyncIosVersionArgs(argv) {
@@ -167,7 +164,6 @@ export function parseSyncIosVersionArgs(argv) {
     marketingVersion: null,
     buildNumber: null,
     marketingOnly: false,
-    check: false,
     pbxprojPath: DEFAULT_PBXPROJ_PATH,
   };
 
@@ -175,24 +171,19 @@ export function parseSyncIosVersionArgs(argv) {
     const value = argv[index];
 
     if (value === '--marketing-version') {
-      args.marketingVersion = argv[index + 1];
+      args.marketingVersion = readOptionValue(argv, index, '--marketing-version');
       index += 1;
       continue;
     }
 
     if (value === '--build-number') {
-      args.buildNumber = argv[index + 1];
+      args.buildNumber = readOptionValue(argv, index, '--build-number');
       index += 1;
       continue;
     }
 
     if (value === '--marketing-only') {
       args.marketingOnly = true;
-      continue;
-    }
-
-    if (value === '--check') {
-      args.check = true;
       continue;
     }
 
@@ -204,7 +195,10 @@ export function parseSyncIosVersionArgs(argv) {
 
       args.pbxprojPath = resolve(REPO_ROOT, pbxprojArg);
       index += 1;
+      continue;
     }
+
+    throw new Error(`Unknown argument: ${value}`);
   }
 
   return args;
@@ -219,17 +213,6 @@ function main() {
     process.exit(1);
   }
 
-  if (args.check) {
-    try {
-      assertMarketingVersionsMatchPackage({ pbxprojPath: args.pbxprojPath });
-      console.log('[sync-ios-version] MARKETING_VERSION matches package.json');
-    } catch (error) {
-      console.error(`[sync-ios-version] ${error instanceof Error ? error.message : error}`);
-      process.exit(1);
-    }
-    return;
-  }
-
   if (args.marketingOnly) {
     try {
       const result = syncIosMarketingVersion({
@@ -238,7 +221,9 @@ function main() {
       });
 
       console.log(
-        `[sync-ios-version] Updated ${result.updatedCount} MARKETING_VERSION entries to ${result.marketingVersion}`
+        result.changed
+          ? `[sync-ios-version] Updated ${result.updatedCount} MARKETING_VERSION entries to ${result.marketingVersion}`
+          : `[sync-ios-version] MARKETING_VERSION already ${result.marketingVersion}`
       );
     } catch (error) {
       console.error(`[sync-ios-version] ${error instanceof Error ? error.message : error}`);

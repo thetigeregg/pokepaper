@@ -2,10 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  assertMarketingVersionsMatchPackage,
   parseSyncIosVersionArgs,
   readPackageVersion,
-  readPbxprojMarketingVersions,
   syncIosMarketingVersion,
   updateAllMarketingVersionsInPbxproj,
   updateProdTargetVersionsInPbxproj,
@@ -46,7 +44,7 @@ test('updateAllMarketingVersionsInPbxproj updates all targets', () => {
   });
 
   assert.equal((updated.match(/MARKETING_VERSION = 2\.3\.4;/g) ?? []).length, 3);
-  assert.deepEqual(readPbxprojMarketingVersions(updated), ['2.3.4']);
+  assert.doesNotMatch(updated, /MARKETING_VERSION = 1\.0\.0;/);
   assert.match(updated, /CURRENT_PROJECT_VERSION = 1;/g);
   assert.equal((updated.match(/CURRENT_PROJECT_VERSION = 1;/g) ?? []).length, 3);
 });
@@ -102,46 +100,6 @@ test('parseSyncIosVersionArgs accepts --marketing-only without build number', ()
   assert.equal(args.buildNumber, null);
 });
 
-test('parseSyncIosVersionArgs accepts --check', () => {
-  const args = parseSyncIosVersionArgs(['--check']);
-
-  assert.equal(args.check, true);
-});
-
-test('assertMarketingVersionsMatchPackage passes when versions match', () => {
-  assert.doesNotThrow(() =>
-    assertMarketingVersionsMatchPackage({
-      packageJsonPath: '/tmp/package.json',
-      pbxprojPath: '/tmp/project.pbxproj',
-      readFileSyncFn: (filePath) => {
-        if (filePath === '/tmp/package.json') {
-          return JSON.stringify({ version: '2.3.4' });
-        }
-
-        return SAMPLE_PBXPROJ.replaceAll('1.0.0', '2.3.4');
-      },
-    })
-  );
-});
-
-test('assertMarketingVersionsMatchPackage fails when versions mismatch', () => {
-  assert.throws(
-    () =>
-      assertMarketingVersionsMatchPackage({
-        packageJsonPath: '/tmp/package.json',
-        pbxprojPath: '/tmp/project.pbxproj',
-        readFileSyncFn: (filePath) => {
-          if (filePath === '/tmp/package.json') {
-            return JSON.stringify({ version: '2.3.4' });
-          }
-
-          return SAMPLE_PBXPROJ;
-        },
-      }),
-    /MARKETING_VERSION mismatch/
-  );
-});
-
 test('syncIosMarketingVersion writes all marketing versions from package.json', () => {
   let written = null;
   syncIosMarketingVersion({
@@ -188,4 +146,48 @@ test('parseSyncIosVersionArgs defaults pbxproj path to repo root', () => {
 
   assert.match(args.pbxprojPath, /ios\/App\/App\.xcodeproj\/project\.pbxproj$/);
   assert.doesNotMatch(args.pbxprojPath, /fastlane\/ios/);
+});
+
+test('parseSyncIosVersionArgs rejects a flag with a missing value', () => {
+  assert.throws(
+    () => parseSyncIosVersionArgs(['--build-number', '5', '--marketing-version']),
+    /--marketing-version requires a value/
+  );
+  assert.throws(
+    () => parseSyncIosVersionArgs(['--build-number', '--marketing-only']),
+    /--build-number requires a value/
+  );
+});
+
+test('parseSyncIosVersionArgs trims values and rejects unknown arguments', () => {
+  const args = parseSyncIosVersionArgs(['--marketing-version', ' 1.2.0 ', '--build-number', '7']);
+
+  assert.equal(args.marketingVersion, '1.2.0');
+  assert.equal(args.buildNumber, '7');
+  assert.throws(() => parseSyncIosVersionArgs(['--check']), /Unknown argument: --check/);
+});
+
+test('updateProdTargetVersionsInPbxproj trims the marketing version', () => {
+  const updated = updateProdTargetVersionsInPbxproj(SAMPLE_PBXPROJ, {
+    marketingVersion: ' 1.2.0 ',
+    buildNumber: 3,
+  });
+
+  assert.match(updated, /MARKETING_VERSION = 1\.2\.0;/);
+  assert.doesNotMatch(updated, /MARKETING_VERSION = {2}/);
+});
+
+test('syncIosMarketingVersion skips the write when nothing changes', () => {
+  let writes = 0;
+  const result = syncIosMarketingVersion({
+    marketingVersion: '1.0.0',
+    pbxprojPath: '/tmp/project.pbxproj',
+    readFileSyncFn: () => SAMPLE_PBXPROJ,
+    writeFileSyncFn: () => {
+      writes += 1;
+    },
+  });
+
+  assert.equal(result.changed, false);
+  assert.equal(writes, 0);
 });

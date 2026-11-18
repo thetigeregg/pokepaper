@@ -27,12 +27,41 @@ test('resolveLanHost falls back to any private IPv4 address', () => {
     {},
     {
       networkInterfaces: () => ({
-        utun4: [{ family: 'IPv4', internal: false, address: '10.20.30.40' }],
+        en7: [{ family: 'IPv4', internal: false, address: '10.20.30.40' }],
       }),
     }
   );
 
   assert.equal(host, '10.20.30.40');
+});
+
+test('resolveLanHost skips VM bridges, Docker, and VPN tunnels when falling back', () => {
+  const host = resolveLanHost(
+    {},
+    {
+      networkInterfaces: () => ({
+        bridge100: [{ family: 'IPv4', internal: false, address: '192.168.64.1' }],
+        utun4: [{ family: 'IPv4', internal: false, address: '10.20.30.40' }],
+        vmnet8: [{ family: 'IPv4', internal: false, address: '172.16.0.1' }],
+        en5: [{ family: 'IPv4', internal: false, address: '192.168.1.77' }],
+      }),
+    }
+  );
+
+  assert.equal(host, '192.168.1.77');
+});
+
+test('resolveLanHost returns null when only virtual interfaces have a private address', () => {
+  const host = resolveLanHost(
+    {},
+    {
+      networkInterfaces: () => ({
+        bridge100: [{ family: 'IPv4', internal: false, address: '192.168.64.1' }],
+      }),
+    }
+  );
+
+  assert.equal(host, null);
 });
 
 test('resolveLanHost returns null when no suitable address exists', () => {
@@ -70,4 +99,9 @@ test('composeLocalBackendOrigin builds http origin from host and port', () => {
   assert.equal(composeLocalBackendOrigin('', 3000), null);
   assert.equal(composeLocalBackendOrigin('192.168.1.50', 0), null);
   assert.equal(composeLocalBackendOrigin('192.168.1.50', 'not-a-port'), null);
+});
+
+test('composeLocalBackendOrigin brackets IPv6 hosts', () => {
+  assert.equal(composeLocalBackendOrigin('fe80::1', 3000), 'http://[fe80::1]:3000');
+  assert.equal(composeLocalBackendOrigin('[fe80::1]', 3000), 'http://[fe80::1]:3000');
 });

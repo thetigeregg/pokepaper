@@ -42,6 +42,30 @@ export const INFO_PLIST_KEY_ORDER = [
   'UIViewControllerBasedStatusBarAppearance',
 ];
 
+/**
+ * Default writer: leaves the file alone when its content is already current,
+ * so a routine prebuild doesn't touch the files Xcode watches.
+ */
+export function writeFileIfChanged(
+  filePath,
+  contents,
+  encoding = 'utf8',
+  { readFileSyncFn = readFileSync, writeFileSyncFn = writeFileSync } = {}
+) {
+  try {
+    if (readFileSyncFn(filePath, encoding) === contents) {
+      return false;
+    }
+  } catch (error) {
+    if (!(error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')) {
+      throw error;
+    }
+  }
+
+  writeFileSyncFn(filePath, contents, encoding);
+  return true;
+}
+
 function isPlainObject(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -116,7 +140,7 @@ export function generateIosInfoPlistVariant({
   variant,
   variants = INFO_PLIST_VARIANTS,
   readFileSyncFn = readFileSync,
-  writeFileSyncFn = writeFileSync,
+  writeFileSyncFn = writeFileIfChanged,
   write = true,
 }) {
   const paths = resolveInfoPlistPaths({ repoRoot, variant, variants });
@@ -127,14 +151,14 @@ export function generateIosInfoPlistVariant({
   });
   const xml = buildInfoPlistXml(merged);
 
-  if (write) {
-    writeFileSyncFn(paths.outputPath, xml, 'utf8');
-  }
+  // writeFileIfChanged returns false when the file was already current.
+  const written = write ? writeFileSyncFn(paths.outputPath, xml, 'utf8') !== false : false;
 
   return {
     ...paths,
     merged,
     xml,
+    written,
   };
 }
 
@@ -142,7 +166,7 @@ export function generateIosInfoPlists({
   repoRoot = process.cwd(),
   variants = INFO_PLIST_VARIANTS,
   readFileSyncFn = readFileSync,
-  writeFileSyncFn = writeFileSync,
+  writeFileSyncFn = writeFileIfChanged,
   write = true,
   check = false,
   log = console.log,
@@ -166,7 +190,12 @@ export function generateIosInfoPlists({
         stale.push(result);
       }
     } else if (write) {
-      log(`[generate-ios-info-plists] Wrote ${path.relative(repoRoot, result.outputPath)}`);
+      const relativePath = path.relative(repoRoot, result.outputPath);
+      log(
+        result.written
+          ? `[generate-ios-info-plists] Wrote ${relativePath}`
+          : `[generate-ios-info-plists] ${relativePath} is up to date`
+      );
     }
 
     results.push(result);

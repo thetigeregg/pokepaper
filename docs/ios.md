@@ -52,18 +52,20 @@ Set `IOS_BACKEND_ORIGIN_PROD` in `.env` to the public origin (the server's `PUBL
 npm run sync:ios:prod
 ```
 
-and run or archive the **App PROD** scheme. CI checks that the `ios-prod` Angular build still compiles (`ios_prod_build_validation` in `ci-pr.yml`). There are no Xcode builds in CI yet.
+and run or archive the **App PROD** scheme.
+
+Both targets bundle whatever was synced last (`ios/App/App/public`), and nothing in Xcode checks which build that was. Always run `sync:ios:prod` before running or archiving App PROD, and `sync:ios:local` before App DEV. Otherwise App PROD ships pointed at your LAN, or App DEV talks to production data. CI checks that the `ios-prod` Angular build still compiles (`ios_prod_build_validation` in `ci-pr.yml`). There are no Xcode builds in CI yet.
 
 ## How the build fits together
 
-| Script                             | What it does                                                                                                                                                |
-| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run build:ios:local` / `prod` | `ng build` with the `ios-local` / `ios-prod` configuration: no service worker, and `environment.ts` replaced by the generated `environment.ios.*.ts`        |
-| `npm run sync:ios:local` / `prod`  | The build above, then `npx cap sync ios` (copies `www/` into `ios/App/App/public` and updates `CapApp-SPM`)                                                 |
-| `prebuild:ios:local` / `prod`      | Runs automatically before each build: writes the environment file, then `prebuild:ios`                                                                      |
-| `prebuild:ios`                     | Sets `MARKETING_VERSION` from `package.json`, then regenerates the Info.plists                                                                              |
-| `npm run generate:ios-info-plists` | Merges `Info.shared.plist` with each target's overlay into the committed `Info.dev.plist` / `Info.prod.plist`. A script test fails if those are stale       |
-| `npm run sync:ios:version`         | `--marketing-only` sets every target's version; `--build-number N` sets App PROD's version and build number (for TestFlight); `--check` fails on a mismatch |
+| Script                             | What it does                                                                                                                                          |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run build:ios:local` / `prod` | `ng build` with the `ios-local` / `ios-prod` configuration: no service worker, and `environment.ts` replaced by the generated `environment.ios.*.ts`  |
+| `npm run sync:ios:local` / `prod`  | The build above, then `npx cap sync ios` (copies `www/` into `ios/App/App/public` and updates `CapApp-SPM`)                                           |
+| `prebuild:ios:local` / `prod`      | Runs automatically before each build: writes the environment file, then `prebuild:ios`                                                                |
+| `prebuild:ios`                     | Sets `MARKETING_VERSION` from `package.json`, then regenerates the Info.plists                                                                        |
+| `npm run generate:ios-info-plists` | Merges `Info.shared.plist` with each target's overlay into the committed `Info.dev.plist` / `Info.prod.plist`. A script test fails if those are stale |
+| `npm run sync:ios:version`         | `--marketing-only` sets every target's version; `--build-number N` sets App PROD's version and build number (for TestFlight)                          |
 
 - **Environment files:** `scripts/write-environment-ios.mjs` writes `src/environments/environment.ios.local.ts` / `environment.ios.prod.ts` (gitignored). `apiUrl` is the backend origin, and the app puts it in front of every `/api` and `/images` request. The web build keeps `apiUrl: ''`, since `edge` serves the app and API from one origin.
 - **Info.plist:** edit `Info.shared.plist` or a target's `Info.*.overlay.plist`, never the generated `Info.dev.plist` / `Info.prod.plist`. Then run `npm run generate:ios-info-plists`.

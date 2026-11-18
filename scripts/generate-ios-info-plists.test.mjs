@@ -11,6 +11,7 @@ import {
   mergeInfoPlistVariant,
   orderMergedPlistKeys,
   parseGenerateIosInfoPlistsArgs,
+  writeFileIfChanged,
 } from './generate-ios-info-plists.mjs';
 
 test('deepMergePlist overlays scalars and merges nested dictionaries', () => {
@@ -193,4 +194,26 @@ test('buildInfoPlistXml emits XML plist with trailing newline', () => {
   assert.match(xml, /^<\?xml version="1.0" encoding="UTF-8"\?>/);
   assert.match(xml, /<key>CFBundleDisplayName<\/key>/);
   assert.ok(xml.endsWith('\n'));
+});
+
+test('writeFileIfChanged skips identical content and writes changes or new files', () => {
+  const files = { '/tmp/same.plist': 'same', '/tmp/old.plist': 'old' };
+  const writes = [];
+  const options = {
+    readFileSyncFn: (filePath) => {
+      if (!(filePath in files)) {
+        throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+      }
+
+      return files[filePath];
+    },
+    writeFileSyncFn: (filePath) => {
+      writes.push(filePath);
+    },
+  };
+
+  assert.equal(writeFileIfChanged('/tmp/same.plist', 'same', 'utf8', options), false);
+  assert.equal(writeFileIfChanged('/tmp/old.plist', 'new', 'utf8', options), true);
+  assert.equal(writeFileIfChanged('/tmp/missing.plist', 'new', 'utf8', options), true);
+  assert.deepEqual(writes, ['/tmp/old.plist', '/tmp/missing.plist']);
 });

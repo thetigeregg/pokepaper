@@ -33,10 +33,38 @@ export function loadDotEnv(envPath = resolve(REPO_ROOT, '.env')) {
   }
 }
 
+/**
+ * Parses a backend origin from .env. The app prefixes every `/api` and
+ * `/images` request with it, so it must be a bare origin: a path (or even a
+ * trailing slash) would produce URLs like `https://host//api/...`. Returns
+ * the normalized origin (lowercase host, default port dropped).
+ */
+export function parseBackendOrigin(name, value, { protocols }) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${name} must be a URL like https://pokepaper.example.com (got "${value}")`);
+  }
+
+  if (!protocols.includes(url.protocol)) {
+    const allowed = protocols.map((protocol) => protocol.replace(/:$/, '')).join(' or ');
+    throw new Error(`${name} must use ${allowed} (got "${value}")`);
+  }
+
+  if (url.pathname !== '/' || url.search || url.hash || url.username || url.password) {
+    throw new Error(`${name} must be an origin only, without a path (got "${value}")`);
+  }
+
+  return url.origin;
+}
+
 export function resolveLocalBackendOrigin(envValues = {}, options = {}) {
   const explicitOrigin = envValues.IOS_BACKEND_ORIGIN_LOCAL?.trim();
   if (explicitOrigin) {
-    return explicitOrigin;
+    return parseBackendOrigin('IOS_BACKEND_ORIGIN_LOCAL', explicitOrigin, {
+      protocols: ['http:', 'https:'],
+    });
   }
 
   const lanHost = resolveLanHost(envValues, options);
@@ -48,7 +76,9 @@ export function resolveLocalBackendOrigin(envValues = {}, options = {}) {
     );
   }
 
-  return composed;
+  return parseBackendOrigin('The LAN origin (IOS_LAN_HOST or auto-detected)', composed, {
+    protocols: ['http:'],
+  });
 }
 
 /**
@@ -65,26 +95,7 @@ export function resolveProdBackendOrigin(envValues = {}) {
     );
   }
 
-  let url;
-  try {
-    url = new URL(explicitOrigin);
-  } catch {
-    throw new Error(
-      `IOS_BACKEND_ORIGIN_PROD must be a URL like https://pokepaper.example.com (got "${explicitOrigin}")`
-    );
-  }
-
-  if (url.protocol !== 'https:') {
-    throw new Error(`IOS_BACKEND_ORIGIN_PROD must use https (got "${explicitOrigin}")`);
-  }
-
-  if (url.origin !== explicitOrigin.replace(/\/$/, '')) {
-    throw new Error(
-      `IOS_BACKEND_ORIGIN_PROD must be an origin only, without a path (got "${explicitOrigin}")`
-    );
-  }
-
-  return url.origin;
+  return parseBackendOrigin('IOS_BACKEND_ORIGIN_PROD', explicitOrigin, { protocols: ['https:'] });
 }
 
 export function buildEnvironmentIosSource({ production, apiUrl }) {
@@ -93,7 +104,7 @@ export function buildEnvironmentIosSource({ production, apiUrl }) {
 
 export const environment = {
   production: ${String(production)},
-  apiUrl: '${apiUrl}',
+  apiUrl: '${apiUrl.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}',
 };
 `;
 }

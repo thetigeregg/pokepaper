@@ -2,6 +2,10 @@ import { networkInterfaces } from 'node:os';
 
 const PREFERRED_INTERFACE_PREFIXES = ['en0', 'en1', 'en2', 'en3', 'wlan0', 'eth0'];
 
+// Virtual interfaces a phone on the Wi-Fi can't reach: VM and Docker
+// bridges, VPN tunnels. Skipped when falling back past the preferred names.
+const VIRTUAL_INTERFACE_PATTERN = /^(bridge|vmnet|vboxnet|utun|docker|veth|br-)/;
+
 function isPrivateIpv4(address) {
   const parts = address.split('.').map((part) => Number.parseInt(part, 10));
   if (
@@ -68,7 +72,9 @@ export function resolveLanHost(envValues = {}, options = {}) {
     }
   }
 
-  const fallback = addresses.find((entry) => isPrivateIpv4(entry.address));
+  const fallback = addresses.find(
+    (entry) => !VIRTUAL_INTERFACE_PATTERN.test(entry.name) && isPrivateIpv4(entry.address)
+  );
   return fallback?.address ?? null;
 }
 
@@ -82,5 +88,10 @@ export function composeLocalBackendOrigin(host, port) {
     return null;
   }
 
-  return `http://${host.trim()}:${parsedPort}`;
+  const trimmedHost = host.trim();
+  // IPv6 literals need brackets in a URL (http://[fe80::1]:3000).
+  const urlHost =
+    trimmedHost.includes(':') && !trimmedHost.startsWith('[') ? `[${trimmedHost}]` : trimmedHost;
+
+  return `http://${urlHost}:${parsedPort}`;
 }
