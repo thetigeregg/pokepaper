@@ -81,3 +81,7 @@
 ## v0.13.0 - 2026-11-18
 
 - e796765 feat(collection): add a per-set checklist for quick entry (#28)
+
+## v0.14.0 - 2026-11-18
+
+- 80c09d8 feat(ui): collapse extra header actions into a More menu on phones (#29)
