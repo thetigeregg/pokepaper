@@ -7,7 +7,7 @@ Standards for PokePaper's screens, so new pages look and behave like existing on
 - **Stock Ionic first.** Build screens from Ionic components with their default styling. Add custom CSS only where Ionic has no equivalent, and keep it small. When proposing UI, describe it by component (`IonSplitPane`, `IonItem`, `IonModal`, …).
 - **Agreed exceptions:**
   - **Swiper**, for paging through cards in the card detail modal.
-  - **The energy symbol icons** (`EnergyIconComponent`): the TCG symbols as PNGs in `src/assets/energy/<type>.png` (Bulbapedia's 85 px attack-cost icons, e.g. `Fairy-attack.png`), prefetched by the service worker so they work offline. An unknown type or a missing image falls back to a colored circle with the type's letter.
+  - **The energy symbol icons** (`EnergyIconComponent`): meant to be the TCG symbols as PNGs in `src/assets/energy/<type>.png` (Bulbapedia's 85 px attack-cost icons, e.g. `Fairy-attack.png`), prefetched by the service worker so they work offline. **Deferred:** the files aren't committed yet, so `ENERGY_ICON_IMAGES` is `false` and every icon is the fallback, a colored circle with the type's letter. To finish: add the 11 PNGs (lowercase type names) and set the flag to `true`.
   - **The type tint** on cards without a scan.
 
 ## Platforms
