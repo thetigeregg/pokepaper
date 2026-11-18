@@ -109,3 +109,10 @@ ion-item.child-row {
     --height: min(780px, 90vh);
   }
 }
+
+/* Search filter popover (desktop; a sheet on phones): wide enough for set
+   names, and a fixed height so its list scrolls under the header. */
+ion-popover.filter-popover {
+  --width: 340px;
+  --height: min(520px, 75vh);
+}

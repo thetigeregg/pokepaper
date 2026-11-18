@@ -26,6 +26,7 @@ import {
 } from '@pokepaper/shared';
 import Swiper from 'swiper';
 import { Keyboard, Virtual } from 'swiper/modules';
+import { catalogKey } from '../../core/data/storage-engine';
 import { CatalogLanguageService } from '../../core/services/catalog-language.service';
 import { cardText } from './card-display';
 import { CardDetailsComponent } from './card-details.component';
@@ -39,8 +40,10 @@ interface VirtualWindow {
 
 /**
  * Card detail modal (docs/ui.md → Card detail). Swiper (the agreed non-stock
- * exception) pages through the set's cards, rendering only the slides near
- * the current one (virtual slides); arrow keys page on desktop. The language button switches every card, and is remembered.
+ * exception) pages through a set's cards, or search results from many sets,
+ * rendering only the slides near the current one (virtual slides); arrow
+ * keys page on desktop. The language button switches every card in the
+ * catalog, and is remembered.
  */
 @Component({
   selector: 'app-card-detail',
@@ -64,12 +67,18 @@ export class CardDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   // Set through ModalController componentProps, which assigns plain
   // properties (signal inputs would be overwritten).
-  setProp!: CatalogSet;
+  /** The set every card is in (a set page)… */
+  setProp: CatalogSet | null = null;
+  /** …or each card's set by `region:setId` (search results). */
+  setsProp: ReadonlyMap<string, CatalogSet> | null = null;
   cardsProp: CatalogCard[] = [];
   startIndex = 0;
 
   /** Null until ngOnInit copies the modal's props. */
-  readonly set = signal<CatalogSet | null>(null);
+  private readonly sets = signal<{
+    one: CatalogSet | null;
+    byKey: ReadonlyMap<string, CatalogSet> | null;
+  }>({ one: null, byKey: null });
   readonly cards = signal<CatalogCard[]>([]);
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
@@ -77,19 +86,22 @@ export class CardDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   readonly index = signal(0);
   readonly window = signal<VirtualWindow>({ offset: 0, from: 0, slides: [] });
-  readonly language = computed<CatalogLanguage>(() => {
-    const set = this.set();
-    return set
-      ? this.catalogLanguage.forSet(set.region, set.languages)
-      : DEFAULT_CATALOG_LANGUAGES.intl;
-  });
 
   ngOnInit(): void {
-    this.set.set(this.setProp);
+    this.sets.set({ one: this.setProp, byKey: this.setsProp });
     this.cards.set(this.cardsProp);
     this.index.set(this.startIndex);
   }
   readonly current = computed(() => this.cards().at(this.index()));
+  /** The current card's set, for the header's language button. */
+  readonly set = computed(() => {
+    const card = this.current();
+    return card ? this.setFor(card) : null;
+  });
+  readonly language = computed<CatalogLanguage>(() => {
+    const card = this.current();
+    return card ? this.languageFor(card) : DEFAULT_CATALOG_LANGUAGES.intl;
+  });
   readonly title = computed(() => {
     const card = this.current();
     return card ? (cardText(card, this.language())?.name ?? card.id) : '';
@@ -135,6 +147,17 @@ export class CardDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.swiper?.destroy(true, false);
+  }
+
+  setFor(card: CatalogCard): CatalogSet | null {
+    const { one, byKey } = this.sets();
+    return byKey?.get(catalogKey(card.region, card.setId)) ?? one;
+  }
+
+  /** The catalog's remembered language, if the card's set has it. */
+  languageFor(card: CatalogCard): CatalogLanguage {
+    const set = this.setFor(card);
+    return this.catalogLanguage.forSet(card.region, set?.languages ?? []);
   }
 
   pickLanguage(language: CatalogLanguage): void {

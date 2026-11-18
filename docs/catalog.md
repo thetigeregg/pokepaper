@@ -2,7 +2,7 @@
 
 PokePaper's card data comes from [TCGdex](https://tcgdex.dev), a community-maintained, open-source Pokémon TCG database. The server imports it into its own SQLite file on a schedule. Clients will download it from the server (never from TCGdex directly), so the app keeps working if TCGdex is slow, down, or changes its API.
 
-Status: the server import, download API and image cache (`server/src/catalog/`), the app's offline copy (`CatalogSyncService`) and the app's image cache (`ImageCacheService`, `ImageDownloadService`) are implemented. The browsing screens are implemented too (see [Browsing](#browsing)).
+Status: the server import, download API and image cache (`server/src/catalog/`), the app's offline copy (`CatalogSyncService`) and the app's image cache (`ImageCacheService`, `ImageDownloadService`) are implemented. The browsing and search screens are implemented too (see [Browsing](#browsing) and [Search](#search)).
 
 ## Data model
 
@@ -129,6 +129,18 @@ The Cards tab browses the catalog on the device, so it works offline (layout and
 - **Set page:** a card grid in the current language; images load as they scroll into view and are cached ([Images on the device](#images-on-the-device)). The header has the language switch and "Download images" (this set's language, or all its languages), plus Remove.
 - **Card detail:** a modal paging through the set (Swiper with virtual slides: swipe, or arrow keys on desktop), with the large scan and the full card text in the current language. Energy symbols in costs and rules text (`{P}`, `{R}`, …) are icons.
 - **Language:** the language picked in a set or card is remembered per catalog (`UserSettings.catalogLanguages`, synced across devices), and every set and card opens in it. The server only checks that entry's shape, so a newer client's catalogs or languages still sync; older clients ignore entries they don't know (`knownCatalogLanguages()`) and keep them when saving; a set that lacks it opens in its first language. Without a scan in that language, another language's is shown with a badge (`displayImage()`). Without any scan, a type-tinted card with the name, HP · stage and set number stands in.
+
+## Search
+
+The Cards tab searches the catalog on the device, so it works offline too (layout and components: `docs/ui.md` → Cards → Search).
+
+- **Search rows:** each card has a slim row in the `catalogCardSearch` store (`CatalogSearchRow`): its names in every language, normalized, plus category, subtype, rarity, types and set. `replaceCatalogSet` writes a set's rows with its cards in one transaction, and `deleteCatalogSet` removes them, so they always match. Rows are built by `catalogSearchRow()`, shared by both engines.
+- **Existing catalogs:** a device that downloaded the catalog before search existed has cards but no rows. On first use, `CatalogSearchService` rebuilds them set by set from the stored cards (`reindexCatalogSet`) and records `CATALOG_SEARCH_ROW_VERSION` in sync metadata. Changing what a row holds means bumping that version, which rebuilds every device's rows once; there's no re-download.
+- **In memory:** the current catalog's rows (about 24,000 international or 17,000 Asian cards) are loaded into memory and reloaded when the catalog changes, so each keystroke and filter change is answered without touching storage. Only the cards on screen are read in full (`getCatalogCardsByKey`), 60 at a time.
+- **Names** match in any language of the catalog: "Pomdepik" and "Pineco" find the same card. Names and queries are normalized the same way (`normalizeSearchText`): lowercase, without accents, full-width letters made plain, hiragana written as katakana, and punctuation treated as spaces. Every query word must start a word of the name ("rocket mew" finds "Team Rocket's Mewtwo ex"), or the whole query must start the name with its spaces and punctuation left out ("farfetchd"). Japanese and Chinese words match anywhere in the name, since those names have no spaces ("ゾロア" finds "ヒスイのゾロアーク").
+- **Filters:** category (or a Trainer or Energy subtype), type, rarity, and series or set. A card must match every filter in use, and any value within one. Filters work without a query, across the whole catalog or a single set. Picking a whole category or series covers all its subtypes or sets, including sets added later. Switching catalogs keeps the other filters but drops series and sets, which belong to one catalog.
+- **Order:** results follow the sets list (newest set first), then the card's number in its set.
+- **Recent searches:** the last 10 queries (not filters), newest first and without repeats, are kept on the device (`pokepaper.cards.recentSearches`), not synced.
 
 ## Storage
 

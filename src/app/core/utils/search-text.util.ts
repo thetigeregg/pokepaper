@@ -1,0 +1,73 @@
+/**
+ * Card name search text (docs/catalog.md → Search). Names and queries go
+ * through the same normalization, so case, accents, full-width letters and
+ * hiragana vs katakana never matter.
+ */
+
+/** Combining accents (é → e). Kana voicing marks are outside this range, so ガ stays ガ. */
+const COMBINING_ACCENTS = /[̀-ͯ]/g;
+const HIRAGANA = /[ぁ-ゖ]/g;
+/** Katakana is 0x60 above the matching hiragana. */
+const KANA_OFFSET = 0x60;
+const SEPARATORS = /[^\p{L}\p{N}]+/gu;
+/** Scripts written without spaces between words, matched anywhere in a name. */
+const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u;
+
+/**
+ * Lowercase, without accents, hiragana as katakana, and words separated by
+ * single spaces (punctuation and symbols count as separators).
+ */
+export function normalizeSearchText(text: string): string {
+  return text
+    .normalize('NFKD') // Splits accents off, and makes full-width and half-width forms plain.
+    .replace(COMBINING_ACCENTS, '')
+    .normalize('NFC') // Puts kana voicing marks back on their letters.
+    .toLowerCase()
+    .replace(HIRAGANA, (kana) => String.fromCharCode(kana.charCodeAt(0) + KANA_OFFSET))
+    .replace(SEPARATORS, ' ')
+    .trim();
+}
+
+/** A normalized name, split once for matching many queries against it. */
+export interface PreparedName {
+  name: string;
+  words: string[];
+  /** The words run together, so "farfetchd" finds "Farfetch'd". */
+  compact: string;
+}
+
+export function prepareName(normalized: string): PreparedName {
+  const words = normalized.split(' ').filter(Boolean);
+  return { name: normalized, words, compact: words.join('') };
+}
+
+/** A query, normalized and split; null when it has nothing to search for. */
+export interface PreparedQuery {
+  words: { text: string; anywhere: boolean }[];
+  compact: string;
+}
+
+export function prepareQuery(query: string): PreparedQuery | null {
+  const words = normalizeSearchText(query).split(' ').filter(Boolean);
+  if (words.length === 0) {
+    return null;
+  }
+  return {
+    // Japanese and Chinese names have no spaces, so their words match anywhere.
+    words: words.map((text) => ({ text, anywhere: CJK.test(text) })),
+    compact: words.join(''),
+  };
+}
+
+/**
+ * Whether `name` matches: every query word starts a word of the name (or,
+ * for Japanese and Chinese, appears anywhere in it), or the whole query
+ * starts the name with its spaces and punctuation left out.
+ */
+export function nameMatches(name: PreparedName, query: PreparedQuery): boolean {
+  return (
+    query.words.every(({ text, anywhere }) =>
+      anywhere ? name.name.includes(text) : name.words.some((word) => word.startsWith(text))
+    ) || name.compact.startsWith(query.compact)
+  );
+}

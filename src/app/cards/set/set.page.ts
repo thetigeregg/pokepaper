@@ -42,7 +42,7 @@ import { ImageDownloadService } from '../../core/services/image-download.service
 import { LayoutService } from '../../core/services/layout.service';
 import { CardDetailComponent } from '../../features/cards/card-detail.component';
 import { cardText, setLine } from '../../features/cards/card-display';
-import { CardImageComponent } from '../../features/cards/card-image.component';
+import { CardTileComponent } from '../../features/cards/card-tile.component';
 import { LanguageButtonComponent } from '../../features/cards/language-button.component';
 import { SetLogoComponent } from '../../features/cards/set-logo.component';
 
@@ -54,24 +54,6 @@ import { SetLogoComponent } from '../../features/cards/set-logo.component';
 @Component({
   selector: 'app-set',
   templateUrl: 'set.page.html',
-  styles: [
-    `
-      .card-button {
-        display: block;
-        width: 100%;
-        padding: 0;
-        border: 0;
-        background: none;
-        cursor: pointer;
-      }
-      .caption {
-        margin: 4px 0 8px;
-        font-size: 0.75rem;
-        text-align: center;
-        overflow-wrap: anywhere;
-      }
-    `,
-  ],
   imports: [
     IonHeader,
     IonToolbar,
@@ -86,7 +68,7 @@ import { SetLogoComponent } from '../../features/cards/set-logo.component';
     IonRow,
     IonCol,
     IonText,
-    CardImageComponent,
+    CardTileComponent,
     LanguageButtonComponent,
     SetLogoComponent,
   ],

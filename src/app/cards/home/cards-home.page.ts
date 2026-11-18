@@ -9,15 +9,21 @@ import {
   NavController,
 } from '@ionic/angular';
 import type { CatalogSet } from '@pokepaper/shared';
+import { CatalogSearchService } from '../../core/services/catalog-search.service';
 import { LayoutService } from '../../core/services/layout.service';
+import { CardSearchbarComponent } from '../../features/cards/card-searchbar.component';
 import { CatalogSegmentComponent } from '../../features/cards/catalog-segment.component';
+import { SearchFiltersComponent } from '../../features/cards/search-filters.component';
+import { SearchResultsComponent } from '../../features/cards/search-results.component';
 import { SetsListComponent } from '../../features/cards/sets-list.component';
 import { addIcons } from 'ionicons';
 import { albumsOutline } from 'ionicons/icons';
 
 /**
- * Cards home. On phones: the catalog segment and sets list, pushing the set
- * page. On desktop (the list is in the side menu): a prompt to pick a set.
+ * Cards home. On phones: the searchbar, the catalog segment and the sets
+ * list, pushing the set page, with search results in place of the list while
+ * searching. On desktop (the searchbar and list are in the side menu): the
+ * search results while searching, else a prompt to pick a set.
  */
 @Component({
   selector: 'app-cards-home',
@@ -44,6 +50,9 @@ import { albumsOutline } from 'ionicons/icons';
     IonIcon,
     IonText,
     CatalogSegmentComponent,
+    CardSearchbarComponent,
+    SearchFiltersComponent,
+    SearchResultsComponent,
     SetsListComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -55,6 +64,7 @@ export class CardsHomePage {
 
   private readonly nav = inject(NavController);
   readonly layout = inject(LayoutService);
+  readonly search = inject(CatalogSearchService);
 
   open(set: CatalogSet): void {
     void this.nav.navigateForward(['/tabs/cards/set', set.region, set.id]);

@@ -434,13 +434,133 @@ export function describeStorageEngineContract(
 
       it('rolls a set back with the transaction it joined', async () => {
         await expect(
-          engine.runInTransaction(['catalogSets', 'catalogCards'], async () => {
-            await engine.replaceCatalogSet(makeContractPack('intl', 'sv01', ['sv01-001']));
-            throw new Error('boom');
-          })
+          engine.runInTransaction(
+            ['catalogSets', 'catalogCards', 'catalogCardSearch'],
+            async () => {
+              await engine.replaceCatalogSet(makeContractPack('intl', 'sv01', ['sv01-001']));
+              throw new Error('boom');
+            }
+          )
         ).rejects.toThrow('boom');
 
         expect(await engine.catalogStats()).toEqual({ sets: 0, cards: 0 });
+        expect(await engine.listCatalogSearchRows('intl')).toEqual([]);
+      });
+
+      it('gets cards by key in the order asked, skipping unknown keys', async () => {
+        await engine.replaceCatalogSet(makeContractPack('intl', 'sv01', ['sv01-001', 'sv01-002']));
+        await engine.replaceCatalogSet(makeContractPack('asia', 'sv01', ['sv01-001']));
+
+        const cards = await engine.getCatalogCardsByKey([
+          'intl:sv01-002',
+          'intl:nope',
+          'asia:sv01-001',
+          'intl:sv01-001',
+        ]);
+
+        expect(cards.map((card) => `${card.region}:${card.id}`)).toEqual([
+          'intl:sv01-002',
+          'asia:sv01-001',
+          'intl:sv01-001',
+        ]);
+        expect(await engine.getCatalogCardsByKey([])).toEqual([]);
+      });
+    });
+
+    describe('card search rows', () => {
+      function multilingualPack(): CatalogSetPack {
+        const pack = makeContractPack('intl', 'sv01', ['sv01-001', 'sv01-002']);
+        const [second, first] = pack.cards as [CatalogCard, CatalogCard];
+        const english = first.text.en;
+        if (!english) {
+          throw new Error('The contract card has English text');
+        }
+        first.text = {
+          en: { ...english, name: 'Pineco' },
+          fr: { ...english, name: 'Pomdepik' },
+          de: { ...english, name: 'Tannza' },
+          it: { ...english, name: 'PINECO' }, // Same once normalized.
+        };
+        second.category = 'Trainer';
+        second.trainerType = 'Supporter';
+        second.rarity = null;
+        second.types = [];
+        second.text = { en: { ...english, name: "Professor's Research" } };
+        return pack;
+      }
+
+      it('stores a search row for every card of a set', async () => {
+        await engine.replaceCatalogSet(multilingualPack());
+
+        const rows = (await engine.listCatalogSearchRows('intl')).sort((a, b) =>
+          a.key.localeCompare(b.key)
+        );
+        expect(rows).toEqual([
+          {
+            key: 'intl:sv01-001',
+            region: 'intl',
+            setKey: 'intl:sv01',
+            sortIndex: 0,
+            names: ['pineco', 'pomdepik', 'tannza'],
+            category: 'Pokemon',
+            subtype: null,
+            rarity: 'Common',
+            types: ['Grass'],
+          },
+          {
+            key: 'intl:sv01-002',
+            region: 'intl',
+            setKey: 'intl:sv01',
+            sortIndex: 1,
+            names: ['professor s research'],
+            category: 'Trainer',
+            subtype: 'Supporter',
+            rarity: null,
+            types: [],
+          },
+        ]);
+        expect(await engine.listCatalogSearchRows('asia')).toEqual([]);
+      });
+
+      it('replaces and removes search rows with their set', async () => {
+        await engine.replaceCatalogSet(makeContractPack('intl', 'sv01', ['sv01-001', 'sv01-002']));
+        await engine.replaceCatalogSet(makeContractPack('intl', 'sv02', ['sv02-001']));
+        await engine.replaceCatalogSet(makeContractPack('asia', 'sv01', ['sv01-001']));
+
+        await engine.replaceCatalogSet(makeContractPack('intl', 'sv01', ['sv01-002'], 'hash-2'));
+        const keys = async (region: CatalogRegion) =>
+          (await engine.listCatalogSearchRows(region)).map((row) => row.key).sort();
+        expect(await keys('intl')).toEqual(['intl:sv01-002', 'intl:sv02-001']);
+
+        await engine.deleteCatalogSet('intl', 'sv02');
+        expect(await keys('intl')).toEqual(['intl:sv01-002']);
+        expect(await keys('asia')).toEqual(['asia:sv01-001']);
+      });
+
+      it('moves a search row with a card that changed sets', async () => {
+        await engine.replaceCatalogSet(makeContractPack('intl', 'sv01', ['sv01-001']));
+        const moved = makeContractPack('intl', 'svp', []);
+        moved.cards = [makeContractCard('intl', 'svp', 'sv01-001', 0)];
+
+        await engine.replaceCatalogSet(moved);
+        await engine.deleteCatalogSet('intl', 'sv01');
+
+        expect(await engine.listCatalogSearchRows('intl')).toEqual([
+          expect.objectContaining({ key: 'intl:sv01-001', setKey: 'intl:svp' }),
+        ]);
+      });
+
+      it("rebuilds a set's search rows from its stored cards", async () => {
+        await engine.replaceCatalogSet(multilingualPack());
+        const before = await engine.listCatalogSearchRows('intl');
+
+        await engine.reindexCatalogSet('intl', 'sv01');
+        await engine.reindexCatalogSet('intl', 'unknown');
+
+        const byKey = (a: { key: string }, b: { key: string }) => a.key.localeCompare(b.key);
+        expect((await engine.listCatalogSearchRows('intl')).sort(byKey)).toEqual(
+          before.sort(byKey)
+        );
       });
     });
 

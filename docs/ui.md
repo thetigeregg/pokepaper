@@ -65,6 +65,15 @@ Standards for PokePaper's screens, so new pages look and behave like existing on
   - Full card text in `IonList` sections.
 - **Card images:** a fallback-language scan gets an `IonBadge` with the language code. A card without any scan is a type-tinted `IonCard` (name, HP · stage, energy icon, set number) at card proportions (63:88).
 - **Language:** switched in context with the header button, and remembered per catalog in synced settings. Every set and card opens in it.
+- **Search:**
+  - An `IonSearchbar` ("Search cards") sits between the Cards title and the catalog segment: in the page header on phones, in the side `IonMenu` on desktop. The segment chooses which catalog is searched.
+  - Focusing it, typing, or picking a filter shows search instead of the sets list (phones) or the open set (desktop, where results take the main pane, titled "Search"). On phones, the searchbar's Cancel clears the query and filters and brings the sets list back. On desktop, opening a set from the menu replaces the results, keeping the query in the searchbar; focusing it shows them again.
+  - Before there's a query or filter, the results area lists recent searches (`IonItem button` rows with a clock icon, then a "Clear recent searches" action row), kept on the device. Enter, picking a recent search or opening a result remembers the query.
+  - Results use the set page's card grid, grouped by set under sticky `IonItemDivider`s ("Paldea Evolved · 12"), newest set first, with a "128 cards in 41 sets" summary above. They load 60 at a time with `IonInfiniteScroll`. A card opens in the card detail modal, which pages through the loaded results.
+- **Filter chips:** a horizontally scrolling row of `IonChip`s in a header toolbar under the searchbar (phones) or under the results title (desktop): Category, Type, Rarity, Set, then a clear "Clear" button while any is in use. An unused chip is `outline` with a caret; a used one is `color="primary"`, shows "Type: Fire +1" and has a ✕ that clears it.
+- **Filter pickers:** a chip opens its values in an `IonModal` sheet on phones (`[breakpoints]="[0, 0.5, 1]"`, full height for the long Set and Rarity lists) or an `IonPopover` under the chip on desktop (`.filter-popover`, 340 px wide, fixed height so the list scrolls under its header). The header has the title and Done; changes apply as they're made.
+  - Each value is an `IonItem` with an `ion-checkbox` (`justify="start" labelPlacement="end"`, so the box leads) and its card count as an `IonNote` at the end. Type values show their energy icon; set values their logo.
+  - Groups can be picked as a whole: categories with their subtypes as child rows (Trainer → Supporter, Item, …), and sets under sticky series dividers that hold the series' own checkbox. A picked group covers all its values (shown checked and disabled), and a partly picked one is indeterminate. The Set picker has its own `IonSearchbar` ("Search sets").
 
 ## Tests
 

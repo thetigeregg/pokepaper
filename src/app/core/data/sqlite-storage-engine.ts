@@ -5,10 +5,12 @@ import type {
   CatalogSetPack,
   UserSettings,
 } from '@pokepaper/shared';
+import { catalogSearchRow } from './catalog-search-row';
 import { SqliteConnection, SqliteStatement } from './sqlite-connection';
 import {
   catalogKey,
   nestedScopeViolation,
+  CatalogSearchRow,
   CatalogStats,
   DownloadedSet,
   ImageCacheRecord,
@@ -293,8 +295,12 @@ export class SqliteStorageEngine implements StorageEngine {
       hash: pack.hash,
       set: pack.set,
     };
-    return this.runInTransaction(['catalogSets', 'catalogCards'], async () => {
+    return this.runInTransaction(['catalogSets', 'catalogCards', 'catalogCardSearch'], async () => {
       await this.sql.run('DELETE FROM catalog_cards WHERE set_key = ?', [key]);
+      await this.replaceSearchRows(
+        key,
+        pack.cards.map((card) => catalogSearchRow(card, key))
+      );
       await this.executeBatched(
         pack.cards.map((card) => ({
           statement: `INSERT INTO catalog_cards (key, set_key, sort_index, payload) VALUES (?, ?, ?, ?)
@@ -315,8 +321,9 @@ export class SqliteStorageEngine implements StorageEngine {
 
   deleteCatalogSet(region: CatalogRegion, setId: string): Promise<void> {
     const key = catalogKey(region, setId);
-    return this.runInTransaction(['catalogSets', 'catalogCards'], async () => {
+    return this.runInTransaction(['catalogSets', 'catalogCards', 'catalogCardSearch'], async () => {
       await this.sql.run('DELETE FROM catalog_cards WHERE set_key = ?', [key]);
+      await this.sql.run('DELETE FROM catalog_card_search WHERE set_key = ?', [key]);
       await this.sql.run('DELETE FROM catalog_sets WHERE key = ?', [key]);
     });
   }
@@ -354,12 +361,52 @@ export class SqliteStorageEngine implements StorageEngine {
     return this.firstEntity(rows) as CatalogCard | undefined;
   }
 
+  async getCatalogCardsByKey(keys: readonly string[]): Promise<CatalogCard[]> {
+    const byKey = new Map<string, CatalogCard>();
+    for (let index = 0; index < keys.length; index += BULK_BATCH_SIZE) {
+      const batch = keys.slice(index, index + BULK_BATCH_SIZE);
+      const rows = await this.sql.query<PayloadRow & { key: string }>(
+        `SELECT key, payload FROM catalog_cards WHERE key IN (${batch.map(() => '?').join(', ')})`,
+        batch
+      );
+      for (const row of rows) {
+        byKey.set(row.key, this.parseEntity(row) as CatalogCard);
+      }
+    }
+    return keys.flatMap((key) => {
+      const card = byKey.get(key);
+      return card ? [card] : [];
+    });
+  }
+
   async catalogStats(): Promise<CatalogStats> {
     const rows = await this.sql.query<{ sets: number; cards: number }>(
       'SELECT (SELECT COUNT(*) FROM catalog_sets) AS sets, (SELECT COUNT(*) FROM catalog_cards) AS cards',
       []
     );
     return { sets: rows[0]?.sets ?? 0, cards: rows[0]?.cards ?? 0 };
+  }
+
+  async listCatalogSearchRows(region: CatalogRegion): Promise<CatalogSearchRow[]> {
+    const rows = await this.sql.query<PayloadRow>(
+      'SELECT payload FROM catalog_card_search WHERE region = ?',
+      [region]
+    );
+    return rows.map((row) => this.parseEntity(row) as CatalogSearchRow);
+  }
+
+  reindexCatalogSet(region: CatalogRegion, setId: string): Promise<void> {
+    const key = catalogKey(region, setId);
+    return this.runInTransaction(['catalogCards', 'catalogCardSearch'], async () => {
+      const rows = await this.sql.query<PayloadRow>(
+        'SELECT payload FROM catalog_cards WHERE set_key = ?',
+        [key]
+      );
+      await this.replaceSearchRows(
+        key,
+        rows.map((row) => catalogSearchRow(this.parseEntity(row) as CatalogCard, key))
+      );
+    });
   }
 
   async getOutboxEntry(opId: string): Promise<OutboxEntry | undefined> {
@@ -438,6 +485,21 @@ export class SqliteStorageEngine implements StorageEngine {
 
   private firstEntity(rows: PayloadRow[]): unknown {
     return rows.length > 0 ? this.parseEntity(rows[0]) : undefined;
+  }
+
+  /** Makes `rows` the search rows stored under `setKey` (call inside a transaction). */
+  private async replaceSearchRows(setKey: string, rows: CatalogSearchRow[]): Promise<void> {
+    await this.sql.run('DELETE FROM catalog_card_search WHERE set_key = ?', [setKey]);
+    await this.executeBatched(
+      rows.map((row) => ({
+        statement: `INSERT INTO catalog_card_search (key, region, set_key, payload) VALUES (?, ?, ?, ?)
+          ON CONFLICT(key) DO UPDATE SET
+            region = excluded.region,
+            set_key = excluded.set_key,
+            payload = excluded.payload`,
+        values: [row.key, row.region, row.setKey, JSON.stringify(row)],
+      }))
+    );
   }
 
   private async executeBatched(statements: SqliteStatement[]): Promise<void> {

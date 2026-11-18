@@ -5,6 +5,7 @@ import { NavController } from '@ionic/angular';
 import { Subject } from 'rxjs';
 import { vi } from 'vitest';
 import { makeContractPack } from '../core/data/storage-engine.contract';
+import { CatalogSearchService } from '../core/services/catalog-search.service';
 import { LayoutService } from '../core/services/layout.service';
 import { CardsHomePage } from '../cards/home/cards-home.page';
 import { CardsMenuComponent, setKeyFromUrl } from '../features/cards/cards-menu.component';
@@ -15,6 +16,7 @@ describe('tabs and the Cards side pane', () => {
   const router = { url: '/tabs/cards/set/intl/sv01', events: events.asObservable() };
   const nav = { navigateRoot: vi.fn(), navigateForward: vi.fn() };
   const wide = signal(true);
+  const search = { deactivate: vi.fn(), active: signal(false) };
   const set = makeContractPack('asia', 'SV2a', []).set;
 
   function navigate(url: string): void {
@@ -32,6 +34,7 @@ describe('tabs and the Cards side pane', () => {
         { provide: Router, useValue: router },
         { provide: NavController, useValue: nav },
         { provide: LayoutService, useValue: { wide } },
+        { provide: CatalogSearchService, useValue: search },
       ],
     });
   });
@@ -76,6 +79,7 @@ describe('tabs and the Cards side pane', () => {
     expect(nav.navigateRoot).toHaveBeenCalledWith(['/tabs/cards/set', 'asia', 'SV2a'], {
       animated: false,
     });
+    expect(search.deactivate).toHaveBeenCalled(); // The set replaces the search results.
   });
 
   it('pushes the set page from the phone list', async () => {

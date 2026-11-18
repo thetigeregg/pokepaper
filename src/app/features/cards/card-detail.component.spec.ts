@@ -144,9 +144,28 @@ describe('CardDetailComponent', () => {
     expect(pick).not.toHaveBeenCalled();
 
     detail.setProp = pack.set;
+    detail.cardsProp = cards;
     fixture.detectChanges();
     expect(detail.language()).toBe('fr');
     expect(root().querySelector('app-language-button')).not.toBeNull();
+  });
+
+  it('pages through cards from several sets, each with its own set', () => {
+    const other = makeContractPack('intl', 'sv02', ['sv02-001']);
+    other.set.languages = ['de'];
+    fixture = TestBed.createComponent(CardDetailComponent);
+    const detail = fixture.componentInstance;
+    detail.setsProp = new Map([
+      ['intl:sv01', pack.set],
+      ['intl:sv02', other.set],
+    ]);
+    detail.cardsProp = [cards[0], other.cards[0]];
+    fixture.detectChanges();
+
+    expect(detail.set()).toBe(pack.set);
+    options().on.slideChange({ activeIndex: 1 });
+    expect(detail.set()).toBe(other.set);
+    expect(detail.setFor(cards[0])).toBe(pack.set);
   });
 
   it('destroys Swiper with the modal', () => {
