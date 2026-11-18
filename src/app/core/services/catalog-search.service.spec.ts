@@ -302,8 +302,9 @@ describe('CatalogSearchService', () => {
       expect(error).toHaveBeenCalledWith('catalog.search_load_failed', expect.any(Error));
     });
     expect(service.ready()).toBe(false);
+    expect(service.failed()).toBe(true);
 
-    changed.next();
+    service.activate(); // Showing search again retries.
 
     await vi.waitFor(() => {
       expect(service.ready()).toBe(true);
@@ -316,6 +317,8 @@ describe('CatalogSearchService', () => {
 
   it("names the catalog's series by key", async () => {
     const service = await create();
+    expect(service.setNames().sets.size).toBe(3);
+    expect(service.setNames().language).toBe('en');
 
     expect([...service.seriesNames()]).toEqual([
       ['intl:sv', 'Scarlet & Violet'],
@@ -428,6 +431,30 @@ describe('CatalogSearchService', () => {
       expect(service.recent()).toEqual(['pika']);
       expect(error).toHaveBeenCalledWith('catalog.recent_searches_save_failed', expect.any(Error));
       error.mockRestore();
+    });
+
+    it("waits for the saved searches before saving, so they aren't overwritten", async () => {
+      preferences.set(RECENT_SEARCHES_KEY, JSON.stringify(['pineco']));
+      let release!: () => void;
+      const prefs = TestBed.inject(PreferenceStorageService);
+      const getItem = prefs.getItem.bind(prefs);
+      vi.spyOn(prefs, 'getItem').mockImplementationOnce(
+        (key) =>
+          new Promise((resolve) => {
+            release = () => {
+              resolve(getItem(key));
+            };
+          })
+      );
+      const service = TestBed.inject(CatalogSearchService);
+
+      service.setQuery('pika');
+      const remembered = service.rememberQuery(); // Before the saved list has loaded.
+      release();
+      await remembered;
+
+      expect(service.recent()).toEqual(['pika', 'pineco']);
+      expect(JSON.parse(preferences.get(RECENT_SEARCHES_KEY) ?? '[]')).toEqual(['pika', 'pineco']);
     });
 
     it('clears them', async () => {

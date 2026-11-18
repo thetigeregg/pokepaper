@@ -26,6 +26,11 @@ describe('card searchbar and filter chips', () => {
     language: signal('en'),
     sets: signal(new Map([['intl:sv01', { set: sv01, seriesKey: 'intl:sv', order: 0 }]])),
     seriesNames: signal(new Map([['intl:swsh', 'Sword & Shield']])),
+    setNames: () => ({
+      sets: search.sets(),
+      seriesNames: search.seriesNames(),
+      language: search.language(),
+    }),
     setQuery: vi.fn(),
     setFilters: vi.fn((next: SearchFilters) => {
       filters.set(next);

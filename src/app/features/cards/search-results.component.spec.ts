@@ -41,6 +41,8 @@ describe('SearchResultsComponent', () => {
   const search = {
     searching: signal(true),
     ready: signal(true),
+    failed: signal(false),
+    retry: vi.fn(),
     results: signal<SearchResults>({ cards: [], perSet: new Map() }),
     sets: signal(
       new Map([
@@ -269,6 +271,81 @@ describe('SearchResultsComponent', () => {
     await results.loadMore(); // Scrolling tries again.
     expect(results.loaded()).toHaveLength(1);
     error.mockRestore();
+  });
+
+  it("keeps paging by position when a card isn't stored, and stops at the end", async () => {
+    const cards = Array.from({ length: RESULTS_PAGE_SIZE + 2 }, (_, n) => card('sv01', n + 1));
+    store(cards.filter((_, n) => n !== 3)); // One card gone since the results were worked out.
+    search.results.set(result(cards));
+    const results = await create();
+    expect(results.loaded()).toHaveLength(RESULTS_PAGE_SIZE - 1);
+
+    await results.loadMore();
+
+    const keys = results.loaded().map((entry) => entry.key);
+    expect(keys).toHaveLength(RESULTS_PAGE_SIZE + 1);
+    expect(new Set(keys).size).toBe(keys.length); // No card twice.
+    expect(results.allLoaded()).toBe(true);
+  });
+
+  it('keeps what is loaded when the same results are worked out again', async () => {
+    const cards = Array.from({ length: RESULTS_PAGE_SIZE + 5 }, (_, n) => card('sv01', n + 1));
+    store(cards);
+    search.results.set(result(cards));
+    const results = await create();
+    await results.loadMore();
+    expect(results.loaded()).toHaveLength(RESULTS_PAGE_SIZE + 5);
+
+    search.results.set(result(cards)); // A new object with the same cards (index reloaded).
+    fixture.detectChanges();
+    await settle();
+
+    expect(results.loaded()).toHaveLength(RESULTS_PAGE_SIZE + 5);
+    expect(engine.getCatalogCardsByKey).toHaveBeenCalledTimes(2);
+  });
+
+  it("doesn't load a page twice when an older page finishes during a newer one", async () => {
+    const first = [card('sv01', 1)];
+    const second = Array.from({ length: RESULTS_PAGE_SIZE + 5 }, (_, n) => card('sv02', n + 1));
+    store([...first, ...second]);
+    const releases: (() => void)[] = [];
+    engine.getCatalogCardsByKey.mockImplementation(
+      (keys: readonly string[]) =>
+        new Promise((resolve) => {
+          releases.push(() => {
+            resolve(keys.flatMap((key) => stored.get(key) ?? []));
+          });
+        })
+    );
+    search.results.set(result(first));
+    fixture = TestBed.createComponent(SearchResultsComponent);
+    fixture.detectChanges(); // Page 1 of the first results starts.
+    search.results.set(result(second));
+    fixture.detectChanges(); // Page 1 of the second results starts.
+    const results = fixture.componentInstance;
+
+    releases[0]?.(); // The older page finishes first…
+    await settle();
+    void results.loadMore(); // …and scrolling must not start a second page 1.
+    expect(engine.getCatalogCardsByKey).toHaveBeenCalledTimes(2);
+
+    releases[1]?.();
+    await settle();
+    expect(results.loaded()).toHaveLength(RESULTS_PAGE_SIZE);
+    engine.getCatalogCardsByKey.mockImplementation((keys: readonly string[]) =>
+      Promise.resolve(keys.flatMap((key) => stored.get(key) ?? []))
+    );
+  });
+
+  it('offers to try again when search failed to load', async () => {
+    search.failed.set(true);
+    search.ready.set(false);
+    await create();
+
+    expect(query('[data-testid="search-failed"]')).not.toBeNull();
+    (query('[data-testid="search-retry"]') as HTMLElement).click();
+    expect(search.retry).toHaveBeenCalled();
+    search.failed.set(false);
   });
 
   it('shows a loading row until the catalog is ready', async () => {

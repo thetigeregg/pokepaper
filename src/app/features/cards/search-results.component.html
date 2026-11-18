@@ -40,6 +40,18 @@
       </ion-item>
     }
   </ion-list>
+} @else if (search.failed()) {
+  <ion-list>
+    <ion-item data-testid="search-failed">
+      <ion-label>
+        Search isn't available right now
+        <p class="hint">The cards on this device couldn't be read</p>
+      </ion-label>
+    </ion-item>
+    <ion-item button="true" [detail]="false" (click)="search.retry()" data-testid="search-retry">
+      <ion-label color="primary">Try again</ion-label>
+    </ion-item>
+  </ion-list>
 } @else if (!search.ready()) {
   <ion-list>
     <ion-item><ion-label>Loading cards…</ion-label></ion-item>

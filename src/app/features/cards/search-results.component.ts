@@ -98,8 +98,14 @@ export class SearchResultsComponent {
   private readonly layout = inject(LayoutService);
 
   readonly loaded = signal<LoadedCard[]>([]);
+  /**
+   * How far into the results pages have been read. It moves by whole pages,
+   * not by the cards that loaded, so a card missing from storage (a set
+   * replaced since the results were worked out) doesn't shift later pages.
+   */
+  private readonly next = signal(0);
   readonly total = computed(() => this.search.results().cards.length);
-  readonly allLoaded = computed(() => this.loaded().length >= this.total());
+  readonly allLoaded = computed(() => this.next() >= this.total());
   readonly summary = computed(() => {
     const cards = this.total();
     const sets = this.search.results().perSet.size;
@@ -133,15 +139,24 @@ export class SearchResultsComponent {
   /** Bumped when the results change, so a page loading for older results is dropped. */
   private generation = 0;
   private loading: Promise<void> | null = null;
+  /** The keys of the results last shown, to tell a real change from a recompute. */
+  private shownKeys: readonly string[] = [];
 
   constructor() {
     addIcons({ timeOutline });
     effect(() => {
-      this.search.results();
+      const keys = this.search.results().cards.map((card) => card.key);
       untracked(() => {
+        // The same results recomputed (e.g. the index reloaded after a
+        // catalog sync): keep what's loaded and where the user scrolled.
+        if (sameKeys(keys, this.shownKeys)) {
+          return;
+        }
+        this.shownKeys = keys;
         this.generation++;
         this.loading = null;
         this.loaded.set([]);
+        this.next.set(0);
         void this.loadMore();
       });
     });
@@ -154,15 +169,21 @@ export class SearchResultsComponent {
 
   /** Loads the next page of matching cards (one page at a time). */
   loadMore(): Promise<void> {
-    this.loading ??= this.loadPage().finally(() => {
-      this.loading = null;
-    });
+    if (!this.loading) {
+      const loading = this.loadPage().finally(() => {
+        // Only its own: a page for newer results may have started since.
+        if (this.loading === loading) {
+          this.loading = null;
+        }
+      });
+      this.loading = loading;
+    }
     return this.loading;
   }
 
   private async loadPage(): Promise<void> {
     const generation = this.generation;
-    const start = this.loaded().length;
+    const start = this.next();
     const page = this.search.results().cards.slice(start, start + RESULTS_PAGE_SIZE);
     if (page.length === 0) {
       return;
@@ -175,6 +196,7 @@ export class SearchResultsComponent {
         return;
       }
       const byKey = new Map(cards.map((card) => [`${card.region}:${card.id}`, card]));
+      this.next.set(start + page.length);
       this.loaded.update((loaded) => [
         ...loaded,
         ...page.flatMap(({ key, setKey }) => {
@@ -217,6 +239,10 @@ export class SearchResultsComponent {
     });
     await modal.present();
   }
+}
+
+function sameKeys(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((key, index) => key === b[index]);
 }
 
 function plural(count: number, noun: string): string {

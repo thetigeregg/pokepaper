@@ -6,6 +6,8 @@
 
 /** Combining accents (é → e). Kana voicing marks are outside this range, so ガ stays ガ. */
 const COMBINING_ACCENTS = /[̀-ͯ]/g;
+/** Combining marks still on their own after NFC. */
+const STRAY_MARKS = /\p{M}/gu;
 const HIRAGANA = /[ぁ-ゖ]/g;
 /** Katakana is 0x60 above the matching hiragana. */
 const KANA_OFFSET = 0x60;
@@ -22,6 +24,7 @@ export function normalizeSearchText(text: string): string {
     .normalize('NFKD') // Splits accents off, and makes full-width and half-width forms plain.
     .replace(COMBINING_ACCENTS, '')
     .normalize('NFC') // Puts kana voicing marks back on their letters.
+    .replace(STRAY_MARKS, '') // Any that couldn't go back would split a word.
     .toLowerCase()
     .replace(HIRAGANA, (kana) => String.fromCharCode(kana.charCodeAt(0) + KANA_OFFSET))
     .replace(SEPARATORS, ' ')

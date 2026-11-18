@@ -102,6 +102,9 @@ export class CatalogSearchService {
   private readonly index = signal<{ region: CatalogRegion; cards: IndexedCard[] } | null>(null);
   /** Whether the current catalog's search rows have loaded. */
   readonly ready = computed(() => this.index()?.region === this.region());
+  /** The current catalog's search rows failed to load (see `retry`). */
+  private readonly _failed = signal(false);
+  readonly failed = computed(() => this._failed() && !this.ready());
 
   /** There's a query or a filter, so results show rather than recent searches. */
   readonly searching = computed(
@@ -120,6 +123,13 @@ export class CatalogSearchService {
   });
 
   /** The current catalog's series names by key. */
+  /** What the current catalog calls its sets and series, for labeling filter picks. */
+  readonly setNames = computed(() => ({
+    sets: this.sets(),
+    seriesNames: this.seriesNames(),
+    language: this.language(),
+  }));
+
   readonly seriesNames = computed(
     () => new Map(this.browse.groups().map((group) => [group.key, group.name]))
   );
@@ -207,9 +217,10 @@ export class CatalogSearchService {
   /** Bumped by each load, so an older one finishing late is dropped. */
   private loads = 0;
   private rebuilt: Promise<void> | null = null;
+  private recentLoaded: Promise<void> = Promise.resolve();
 
   constructor() {
-    void this.loadRecent();
+    this.recentLoaded = this.loadRecent();
     effect(() => {
       const region = this.region();
       untracked(() => {
@@ -233,7 +244,15 @@ export class CatalogSearchService {
     this._active.set(true);
   }
 
+  /** Loads the current catalog's search rows again after a failure. */
+  retry(): void {
+    void this.load(this.region());
+  }
+
   activate(): void {
+    if (this.failed()) {
+      this.retry();
+    }
     this._active.set(true);
   }
 
@@ -255,6 +274,7 @@ export class CatalogSearchService {
     if (!prepareQuery(query)) {
       return;
     }
+    await this.recentLoaded; // Else the stored list would be overwritten.
     const normalized = normalizeSearchText(query);
     const recent = [
       query,
@@ -265,12 +285,14 @@ export class CatalogSearchService {
   }
 
   async clearRecent(): Promise<void> {
+    await this.recentLoaded; // Else it would load back afterwards.
     this._recent.set([]);
     await this.saveRecent([]);
   }
 
   private async load(region: CatalogRegion): Promise<void> {
     const load = ++this.loads;
+    this._failed.set(false);
     try {
       this.rebuilt ??= this.rebuildIfStale();
       await this.rebuilt;
@@ -284,6 +306,9 @@ export class CatalogSearchService {
       });
     } catch (error: unknown) {
       console.error('catalog.search_load_failed', error);
+      if (load === this.loads) {
+        this._failed.set(true);
+      }
     }
   }
 
