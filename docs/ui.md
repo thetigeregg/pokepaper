@@ -32,7 +32,7 @@ Standards for PokePaper's screens, so new pages look and behave like existing on
 
 - **Flat, full-width lists:** use `<ion-list>` without `inset`. The only horizontal spacing is the rows' own 16 px padding, so section headers, row text and the page title all line up on one edge. Don't add extra padding or margins around lists.
 - **One list per section,** titled with an `ion-list-header`.
-- **Dividers between rows only:** no divider under the last row of a list. A global rule in `src/global.scss` enforces this.
+- **Dividers between rows only:** no divider under the last row of a list. A global rule in `src/global.scss` enforces this. Set `lines` on each `ion-item`, not on the `ion-list`: the list's `lines` styles outrank that rule.
 - **Two-column lists on desktop:** for long lists of short rows (e.g. the set checklist), `class="list-grid"` on the `IonList` makes it two columns from the `lg` breakpoint (one on phones). Rows with `class="list-grid-full"` (e.g. a summary row) span both columns. The divider rule covers columns too: the last two rows (the bottom of each column) have none (global, in `src/global.scss`).
 - **Label and value rows:** the label in `ion-label`, the value as `<ion-note slot="end">`.
 - **Choice rows:** an `ion-select` inside the `ion-item`, with its `label` as the row label and `interface="popover"`, e.g. "Keep recently viewed up to".

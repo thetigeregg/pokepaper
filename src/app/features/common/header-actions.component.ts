@@ -49,10 +49,11 @@ export interface HeaderAction {
         (didDismiss)="menuClosed()"
       >
         <ng-template>
-          <ion-list lines="full">
+          <ion-list>
             @for (action of menu(); track action.id) {
               <ion-item
                 button
+                lines="full"
                 [detail]="false"
                 (click)="pick(action)"
                 [disabled]="action.disabled ?? false"
