@@ -2,13 +2,14 @@
 
 PokePaper tracks how many copies of each card you own, per **variant** and **language**. Collection tracking lives in the Cards tab, alongside the catalog: there's no separate Collection screen.
 
-Status: storage, sync and the Cards tab screens (quantity stepper, owned badges, set progress) are implemented. An Owned search filter is next.
+Status: storage, sync and the Cards tab screens (quantity stepper, owned badges, set progress, Collection search filter) are implemented. Faster entry (a per-set checklist or bulk actions) is next.
 
 ## Screens
 
 - **Card detail:** a "Collection · English" section, after the attacks and before Details, lists the card's variants (plus any other variant owned), each with a − count + stepper for the copies in the current language. Switch the language button to German to see and edit German copies. A note lists copies in the card's other languages.
 - **Card grids** (set page, search results): owned cards get a red badge (bottom right) with the copies owned in the grid's language. Unowned cards look unchanged.
 - **Sets list:** a second line, "87 / 198 owned", appears under "date · 198 cards" once any card of the set is owned, counted in the language the set opens in.
+- **Search:** a Collection filter, first among the filters, with Owned and Missing checkboxes (none checked: any card). A card counts as owned with any copy in the language its set opens in, like the badges. Missing plus a Set filter gives that set's want list. Card counts in the other filters follow the pick, as filters do with each other (`SearchFilters.owned`, `CatalogSearchService`).
 - The old Collection tab is gone; `/tabs/collection` redirects to Cards. UI details are in [`ui.md`](ui.md) → Cards.
 
 ## Data model

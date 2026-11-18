@@ -135,19 +135,21 @@ describe('card searchbar and filter chips', () => {
         categories: ['Trainer/Supporter'],
         sets: ['intl:sv01'],
         series: ['intl:swsh', 'intl:gone'],
+        owned: ['missing'],
       });
       const chips = create();
 
       expect(chips.chips().map((chip) => [chip.kind, chip.active, chip.label])).toEqual([
+        ['collection', true, 'Collection: Missing'],
         ['category', true, 'Category: Supporter'],
         ['type', false, 'Type'],
         ['rarity', false, 'Rarity'],
         ['set', true, 'Set: Sword & Shield +2'],
       ]);
       filters.set({ ...NO_FILTERS, series: ['intl:gone'], sets: ['intl:sv01'] });
-      expect(chips.chips()[3]?.label).toBe('Set: intl:gone +1');
+      expect(chips.chips()[4]?.label).toBe('Set: intl:gone +1');
       filters.set({ ...NO_FILTERS, sets: ['intl:sv01'] });
-      expect(chips.chips()[3]?.label).toBe('Set: Scarlet & Violet');
+      expect(chips.chips()[4]?.label).toBe('Set: Scarlet & Violet');
     });
 
     it('clears one filter or all of them', () => {
@@ -244,6 +246,7 @@ describe('card searchbar and filter chips', () => {
       const sheet = create();
 
       expect(sheet.rows().map((row) => [row.title, row.summary])).toEqual([
+        ['Collection', null],
         ['Category', 'Item'],
         ['Type', null],
         ['Rarity', null],

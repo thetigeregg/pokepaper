@@ -22,6 +22,7 @@ import {
   hasFilters,
 } from './catalog-search.service';
 import { CatalogSyncService } from './catalog-sync.service';
+import { CollectionService } from './collection.service';
 
 vi.mock(
   '../data/storage-transaction-context',
@@ -82,6 +83,10 @@ describe('CatalogSearchService', () => {
   let engine: DexieStorageEngine;
   const preferences = new Map<string, string>();
   const changed = new Subject<void>();
+  /** Copies owned, by `cardId:language`. */
+  const owned = signal<Record<string, number>>({});
+  /** Which language each catalog's sets open in (when they have it). */
+  const remembered = signal<Record<string, string>>({ intl: 'en', asia: 'ja' });
 
   async function create(): Promise<CatalogSearchService> {
     const service = TestBed.inject(CatalogSearchService);
@@ -98,6 +103,8 @@ describe('CatalogSearchService', () => {
 
   beforeEach(async () => {
     preferences.clear();
+    owned.set({});
+    remembered.set({ intl: 'en', asia: 'ja' });
     TestBed.configureTestingModule({
       providers: [
         AppDb,
@@ -119,7 +126,20 @@ describe('CatalogSearchService', () => {
         },
         {
           provide: CatalogLanguageService,
-          useValue: { languages: signal({ intl: 'en', asia: 'ja' }) },
+          useValue: {
+            languages: remembered,
+            forSet: (region: string, languages: string[]) => {
+              const language = remembered()[region] ?? 'en';
+              return languages.includes(language) ? language : (languages[0] ?? language);
+            },
+          },
+        },
+        {
+          provide: CollectionService,
+          useValue: {
+            cardTotal: (_region: string, cardId: string, language: string) =>
+              owned()[`${cardId}:${language}`] ?? 0,
+          },
         },
         { provide: CatalogSyncService, useValue: { changed$: changed.asObservable() } },
       ],
@@ -251,6 +271,65 @@ describe('CatalogSearchService', () => {
     service.setFilters({ ...NO_FILTERS, types: ['Lightning'], sets: ['intl:sv02'] });
     expect(service.counts().rarities).toEqual([{ value: 'Double rare', count: 1 }]);
     expect([...service.counts().sets]).toHaveLength(3); // Set picks don't narrow set counts.
+  });
+
+  describe('collection filter', () => {
+    it('finds owned and missing cards, either or both', async () => {
+      owned.set({ 'sv01-2:en': 1, 'swsh1-1:en': 3 });
+      const service = await create();
+
+      service.setFilters({ ...NO_FILTERS, owned: ['owned'] });
+      expect(keys(service)).toEqual(['intl:sv01-2', 'intl:swsh1-1']);
+
+      service.setFilters({ ...NO_FILTERS, owned: ['missing'] });
+      expect(keys(service)).toEqual(['intl:sv02-1', 'intl:sv01-1', 'intl:sv01-3']);
+
+      service.setFilters({ ...NO_FILTERS, owned: ['owned', 'missing'] });
+      expect(keys(service)).toHaveLength(5);
+
+      service.setFilters({ ...NO_FILTERS, owned: ['missing'], sets: ['intl:sv01'] });
+      expect(keys(service)).toEqual(['intl:sv01-1', 'intl:sv01-3']); // The set's want list.
+    });
+
+    it('counts copies in the language each set opens in', async () => {
+      owned.set({ 'sv01-2:de': 1 });
+      const service = await create();
+      service.setFilters({ ...NO_FILTERS, owned: ['owned'] });
+      expect(keys(service)).toEqual([]); // Owned in German; sets open in English.
+
+      remembered.set({ intl: 'de', asia: 'ja' }); // The contract sets are English-only…
+      expect(keys(service)).toEqual([]);
+      owned.set({ 'sv01-2:en': 1 }); // …so they still open, and count, in English.
+      expect(keys(service)).toEqual(['intl:sv01-2']);
+    });
+
+    it('updates as the collection changes', async () => {
+      const service = await create();
+      service.setFilters({ ...NO_FILTERS, owned: ['owned'] });
+      expect(keys(service)).toEqual([]);
+
+      owned.set({ 'sv02-1:en': 1 });
+
+      expect(keys(service)).toEqual(['intl:sv02-1']);
+    });
+
+    it('counts owned and missing cards, both always listed, narrowed by the other filters', async () => {
+      owned.set({ 'sv01-2:en': 1 });
+      const service = await create();
+
+      expect(service.counts().owned).toEqual([
+        { value: 'owned', count: 1 },
+        { value: 'missing', count: 4 },
+      ]);
+
+      service.setFilters({ ...NO_FILTERS, owned: ['owned'], types: ['Grass'] });
+      expect(service.counts().owned).toEqual([
+        { value: 'owned', count: 0 },
+        { value: 'missing', count: 1 },
+      ]);
+      // The collection pick narrows the other filters' counts.
+      expect(service.counts().types).toEqual([{ value: 'Lightning', count: 1 }]);
+    });
   });
 
   it('searches the other catalog after switching, dropping its set filters', async () => {

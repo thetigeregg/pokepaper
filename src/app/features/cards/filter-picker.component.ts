@@ -35,6 +35,7 @@ import {
   FILTER_FIELDS,
   FILTER_TITLES,
   categoryGroups,
+  collectionOptions,
   rarityOptions,
   setGroups,
   typeOptions,
@@ -140,6 +141,8 @@ export class FilterPickerComponent implements OnInit {
     const counts = this.search.counts();
     const filters = this.search.filters();
     switch (this.kind()) {
+      case 'collection':
+        return collectionOptions(counts.owned);
       case 'type':
         return typeOptions(withPicked(counts.types, filters.types));
       case 'rarity':
