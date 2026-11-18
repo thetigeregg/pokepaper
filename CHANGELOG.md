@@ -105,3 +105,7 @@
 ## v0.16.3 - 2026-11-18
 
 - cfde1b3 ci(review): skip Claude review on bot-authored PRs (#35)
+
+## v0.16.4 - 2026-11-18
+
+- 3bd637e chore(deps): Bump addressable from 2.9.0 to 2.9.1 in /ios (#33)
