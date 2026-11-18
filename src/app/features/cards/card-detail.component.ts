@@ -32,6 +32,9 @@ import { cardText } from './card-display';
 import { CardDetailsComponent } from './card-details.component';
 import { LanguageButtonComponent } from './language-button.component';
 
+/** Load more when the current card is this close to the last one loaded. */
+export const LOAD_MORE_WITHIN = 5;
+
 interface VirtualWindow {
   offset: number;
   from: number;
@@ -73,6 +76,12 @@ export class CardDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   setsProp: ReadonlyMap<string, CatalogSet> | null = null;
   cardsProp: CatalogCard[] = [];
   startIndex = 0;
+  /**
+   * Loads more cards to page through (search results load in pages),
+   * resolving to every card loaded so far; absent for a set, which is whole.
+   */
+  loadMoreProp: (() => Promise<CatalogCard[]>) | null = null;
+  private loadingMore = false;
 
   /** Null until ngOnInit copies the modal's props. */
   private readonly sets = signal<{
@@ -140,9 +149,43 @@ export class CardDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       on: {
         slideChange: (swiper) => {
           this.index.set(swiper.activeIndex);
+          void this.loadMoreIfNearEnd();
         },
       },
     });
+    void this.loadMoreIfNearEnd(); // It may open near the end.
+  }
+
+  /**
+   * Near the last card loaded, loads the next page and appends it to the
+   * virtual slides, so paging carries on through all the results.
+   */
+  private async loadMoreIfNearEnd(): Promise<void> {
+    const loadMore = this.loadMoreProp;
+    if (!loadMore || this.loadingMore || this.index() < this.cards().length - LOAD_MORE_WITHIN) {
+      return;
+    }
+    this.loadingMore = true;
+    try {
+      const cards = await loadMore();
+      const added = cards.slice(this.cards().length);
+      const swiper = this.swiper;
+      if (added.length > 0 && swiper) {
+        const at = swiper.activeIndex;
+        this.cards.set(cards);
+        swiper.virtual.appendSlide(added);
+        // Appending re-reads the active slide from the slide position, which
+        // just after opening isn't set yet (so it reads 0): stay put.
+        if (swiper.activeIndex !== at) {
+          swiper.slideTo(at, 0, false);
+          this.index.set(at);
+        }
+      }
+    } catch (error: unknown) {
+      console.error('catalog.card_detail_load_more_failed', error);
+    } finally {
+      this.loadingMore = false;
+    }
   }
 
   ngOnDestroy(): void {

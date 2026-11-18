@@ -233,6 +233,11 @@ export class SearchResultsComponent {
         setsProp: sets,
         cardsProp: this.loaded().map(({ card }) => card),
         startIndex: index,
+        // Paging past the loaded cards loads the next page of results.
+        loadMoreProp: async () => {
+          await this.loadMore();
+          return this.loaded().map(({ card }) => card);
+        },
       },
       cssClass: 'card-detail-modal',
       ...(sheet ? { breakpoints: [0, 1], initialBreakpoint: 1, handle: true } : {}),

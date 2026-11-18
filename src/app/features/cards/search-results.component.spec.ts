@@ -218,21 +218,38 @@ describe('SearchResultsComponent', () => {
     await settle();
 
     expect(search.rememberQuery).toHaveBeenCalled();
+    const modalProps = (createModal.mock.lastCall as unknown as [Record<string, unknown>])[0];
+    expect(modalProps['componentProps']).toMatchObject({
+      setsProp: new Map([
+        ['intl:sv02', sv02],
+        ['intl:sv01', sv01],
+      ]),
+      cardsProp: cards,
+      startIndex: 1,
+    });
     expect(createModal).toHaveBeenCalledWith(
       expect.objectContaining({
         component: CardDetailComponent,
-        componentProps: {
-          setsProp: new Map([
-            ['intl:sv02', sv02],
-            ['intl:sv01', sv01],
-          ]),
-          cardsProp: cards,
-          startIndex: 1,
-        },
         breakpoints: [0, 1],
       })
     );
     expect(present).toHaveBeenCalled();
+  });
+
+  it('lets the card modal load the next page of results', async () => {
+    const cards = Array.from({ length: RESULTS_PAGE_SIZE + 3 }, (_, n) => card('sv01', n + 1));
+    store(cards);
+    search.results.set(result(cards));
+    const results = await create();
+
+    await results.openCard(0);
+    const props = (
+      createModal.mock.lastCall as unknown as [{ componentProps: Record<string, unknown> }]
+    )[0].componentProps;
+    const loadMore = props['loadMoreProp'] as () => Promise<CatalogCard[]>;
+
+    expect(await loadMore()).toHaveLength(RESULTS_PAGE_SIZE + 3);
+    expect(results.allLoaded()).toBe(true);
   });
 
   it('opens cards in a centered dialog on desktop', async () => {
