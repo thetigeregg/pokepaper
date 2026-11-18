@@ -93,3 +93,7 @@
 ## v0.16.0 - 2026-11-18
 
 - b0ff5b5 feat(ios): sign in with native passkeys and a Keychain token (#31)
+
+## v0.16.1 - 2026-11-18
+
+- 4aac699 ci(ios): upload App PROD to TestFlight after app-changing releases (#32)
