@@ -1,4 +1,4 @@
-import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
+import { provideHttpClient, withInterceptors, withInterceptorsFromDi } from '@angular/common/http';
 import { inject, provideAppInitializer, provideZoneChangeDetection } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
 import {
@@ -13,6 +13,7 @@ import { IonicRouteStrategy, provideIonicAngular } from '@ionic/angular';
 
 import { AppComponent } from './app/app.component';
 import { routes } from './app/app.routes';
+import { authTokenInterceptor } from './app/core/auth/auth-token.interceptor';
 import { AuthService } from './app/core/auth/auth.service';
 import { SettingsSyncApplier } from './app/core/data/settings-sync-applier';
 import { CollectionSyncApplier } from './app/core/data/collection-sync-applier';
@@ -31,7 +32,8 @@ bootstrapApplication(AppComponent, {
     { provide: RouteReuseStrategy, useClass: IonicRouteStrategy },
     provideIonicAngular({ mode: 'ios' }),
     provideRouter(routes, withPreloading(PreloadAllModules), withComponentInputBinding()),
-    provideHttpClient(withInterceptorsFromDi()),
+    // authTokenInterceptor: the iOS app's Keychain bearer token (no-op on web).
+    provideHttpClient(withInterceptors([authTokenInterceptor]), withInterceptorsFromDi()),
     // Web only: caches the app shell so the browser app opens with no signal.
     // The iOS app ships its bundle locally (and the ios-* build configs don't
     // emit ngsw-worker.js), so it never registers.
@@ -50,9 +52,10 @@ bootstrapApplication(AppComponent, {
       const syncService = inject(SyncService);
       const catalogSync = inject(CatalogSyncService);
 
-      // The local signed-in marker must be loaded before the router's first
-      // navigation (so the guards pick the right screen, offline too) and
-      // before sync starts (sync stays paused while signed out).
+      // The local signed-in marker (and the iOS session token) must be
+      // loaded before the router's first navigation (so the guards pick the
+      // right screen, offline too) and before sync starts (sync stays paused
+      // while signed out, and its requests need the token).
       return Promise.all([storageEngineFactory.initialize(), authService.initialize()]).then(() => {
         syncService.initialize();
         // The card catalog downloads in the background and never blocks

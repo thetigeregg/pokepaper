@@ -14,7 +14,9 @@ let package = Package(
         .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", exact: "8.6.2"),
         .package(name: "CapacitorCommunitySqlite", path: "../../../node_modules/@capacitor-community/sqlite"),
         .package(name: "CapacitorFilesystem", path: "../../../node_modules/@capacitor/filesystem"),
-        .package(name: "CapacitorPreferences", path: "../../../node_modules/@capacitor/preferences")
+        .package(name: "CapacitorPreferences", path: "../../../node_modules/@capacitor/preferences"),
+        .package(name: "CapgoCapacitorPasskey", path: "../../../node_modules/@capgo/capacitor-passkey"),
+        .package(name: "CapacitorSecureStoragePlugin", path: "../../../node_modules/capacitor-secure-storage-plugin")
     ],
     targets: [
         .target(
@@ -24,7 +26,9 @@ let package = Package(
                 .product(name: "Cordova", package: "capacitor-swift-pm"),
                 .product(name: "CapacitorCommunitySqlite", package: "CapacitorCommunitySqlite"),
                 .product(name: "CapacitorFilesystem", package: "CapacitorFilesystem"),
-                .product(name: "CapacitorPreferences", package: "CapacitorPreferences")
+                .product(name: "CapacitorPreferences", package: "CapacitorPreferences"),
+                .product(name: "CapgoCapacitorPasskey", package: "CapgoCapacitorPasskey"),
+                .product(name: "CapacitorSecureStoragePlugin", package: "CapacitorSecureStoragePlugin")
             ]
         )
     ]

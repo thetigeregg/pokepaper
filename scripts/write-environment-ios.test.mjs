@@ -2,9 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  PASSKEY_XCCONFIG_PATH,
   VARIANTS,
   buildEnvironmentIosSource,
+  buildPasskeyXcconfigSource,
   generateEnvironmentIos,
+  generatePasskeyXcconfig,
+  resolvePasskeyDomain,
   resolveLocalBackendOrigin,
   resolveProdBackendOrigin,
 } from './write-environment-ios.mjs';
@@ -183,4 +187,63 @@ test('generateEnvironmentIos rejects an unknown variant', () => {
     () => generateEnvironmentIos({ variant: 'staging' }),
     /Unknown iOS environment variant/
   );
+});
+
+test('resolvePasskeyDomain uses the prod origin host by default', () => {
+  assert.equal(
+    resolvePasskeyDomain({ IOS_BACKEND_ORIGIN_PROD: 'https://PokePaper.Example.com' }),
+    'pokepaper.example.com'
+  );
+});
+
+test('resolvePasskeyDomain prefers IOS_PASSKEY_DOMAIN', () => {
+  assert.equal(
+    resolvePasskeyDomain({
+      IOS_BACKEND_ORIGIN_PROD: 'https://pokepaper.example.com',
+      IOS_PASSKEY_DOMAIN: ' Example.com ',
+    }),
+    'example.com'
+  );
+});
+
+test('resolvePasskeyDomain returns null when no domain is configured', () => {
+  assert.equal(resolvePasskeyDomain({}), null);
+  assert.equal(resolvePasskeyDomain({ IOS_BACKEND_ORIGIN_PROD: '  ' }), null);
+});
+
+test('resolvePasskeyDomain rejects invalid values', () => {
+  for (const value of ['not a domain', 'localhost', 'https://example.com', 'example.com/x']) {
+    assert.throws(
+      () => resolvePasskeyDomain({ IOS_PASSKEY_DOMAIN: value }),
+      /IOS_PASSKEY_DOMAIN must be a hostname/,
+      value
+    );
+  }
+  assert.throws(
+    () => resolvePasskeyDomain({ IOS_BACKEND_ORIGIN_PROD: 'http://pokepaper.example.com' }),
+    /must use https/
+  );
+});
+
+test('buildPasskeyXcconfigSource sets PASSKEY_DOMAIN, empty without a domain', () => {
+  assert.match(
+    buildPasskeyXcconfigSource('pokepaper.example.com'),
+    /^PASSKEY_DOMAIN = pokepaper\.example\.com$/m
+  );
+  assert.match(buildPasskeyXcconfigSource(null), /^PASSKEY_DOMAIN = $/m);
+});
+
+test('generatePasskeyXcconfig writes the gitignored xcconfig', () => {
+  let written = null;
+  const result = generatePasskeyXcconfig({
+    envValues: { IOS_BACKEND_ORIGIN_PROD: 'https://pokepaper.example.com' },
+    writeFileSyncFn: (path, contents) => {
+      written = { path, contents };
+    },
+  });
+
+  assert.equal(result.domain, 'pokepaper.example.com');
+  assert.equal(written.path, PASSKEY_XCCONFIG_PATH);
+  assert.match(PASSKEY_XCCONFIG_PATH, /ios\/passkey\.xcconfig$/);
+  assert.match(written.contents, /PASSKEY_DOMAIN = pokepaper\.example\.com/);
 });

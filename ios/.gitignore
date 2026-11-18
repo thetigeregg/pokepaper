@@ -11,3 +11,6 @@ capacitor-cordova-ios-plugins
 # Generated Config files
 App/App/capacitor.config.json
 App/App/config.xml
+
+# Passkey domain for the entitlements (scripts/write-environment-ios.mjs)
+passkey.xcconfig

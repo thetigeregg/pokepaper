@@ -16,6 +16,13 @@ const config: CapacitorConfig = {
       iosDatabaseLocation: 'Library/CapacitorDatabase',
       iosIsEncryption: false,
     },
+    // Off: on `cap sync` the plugin would otherwise write the passkey domain
+    // into the committed entitlements files. The entitlements read it from a
+    // generated, gitignored xcconfig instead (docs/ios.md → Passkeys), and
+    // the app passes the origin on each call (PasskeyClient).
+    CapacitorPasskey: {
+      autoShim: false,
+    },
   },
 };
 

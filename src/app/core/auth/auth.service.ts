@@ -6,18 +6,20 @@ import type {
   ClientKind,
   CredentialSummary,
   RegisterVerifyResponse,
+  SessionCreatedResponse,
   SessionSummary,
 } from '@pokepaper/shared';
-import {
-  startAuthentication,
-  startRegistration,
-  type PublicKeyCredentialCreationOptionsJSON,
-  type PublicKeyCredentialRequestOptionsJSON,
+import type {
+  PublicKeyCredentialCreationOptionsJSON,
+  PublicKeyCredentialRequestOptionsJSON,
 } from '@simplewebauthn/browser';
 import { firstValueFrom, type Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { SyncService } from '../services/sync.service';
 import { PreferenceStorageService } from '../storage/preference-storage.service';
+import { isNativePlatform } from '../utils/native-platform.util';
+import { AuthTokenStore } from './auth-token.store';
+import { PasskeyClient } from './passkey-client';
 
 /** Local marker: this device has signed in and hasn't since been told the session ended. */
 export const SIGNED_IN_KEY = 'pokepaper.auth.signedIn';
@@ -25,10 +27,13 @@ export const SIGNED_IN_KEY = 'pokepaper.auth.signedIn';
 export const PENDING_SIGN_OUT_KEY = 'pokepaper.auth.pendingSignOut';
 
 /**
- * The web app authenticates with an httpOnly session cookie. The iOS client
- * (`'ios'`, bearer token in the Keychain) is wired up with the native shell.
+ * The web app authenticates with an httpOnly session cookie. The iOS app
+ * asks for its session as a bearer token instead, kept in the Keychain
+ * (`AuthTokenStore`) and sent by `authTokenInterceptor`.
  */
-const CLIENT: ClientKind = 'web';
+function clientKind(): ClientKind {
+  return isNativePlatform() ? 'ios' : 'web';
+}
 
 /** A user-facing auth failure. */
 export class AuthFlowError extends Error {
@@ -46,7 +51,9 @@ export class AuthFlowError extends Error {
  *
  * Sync only runs while signed in. A sign-out made offline is remembered and
  * completed on the server before the sign-in screen next checks the session,
- * so a surviving cookie can't silently sign the user back in.
+ * so a surviving cookie (or, in the iOS app, Keychain token) can't silently
+ * sign the user back in. The iOS token is kept until that server sign-out
+ * succeeds, because completing it needs the token.
  */
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -54,6 +61,8 @@ export class AuthService {
   private readonly router = inject(Router);
   private readonly preferences = inject(PreferenceStorageService);
   private readonly syncService = inject(SyncService);
+  private readonly tokens = inject(AuthTokenStore);
+  private readonly passkeys = inject(PasskeyClient);
 
   private readonly _signedIn = signal(false);
   readonly signedIn = this._signedIn.asReadonly();
@@ -61,13 +70,17 @@ export class AuthService {
   constructor() {
     effect(() => {
       if (this.syncService.status() === 'unauthorized' && this._signedIn()) {
-        void this.endLocalSession();
+        void this.discardSession();
       }
     });
   }
 
-  /** Loads the local marker. Runs in an app initializer, before the first navigation. */
+  /**
+   * Loads the local marker (and, in the iOS app, the session token). Runs in
+   * an app initializer, before the first navigation and the first API request.
+   */
   async initialize(): Promise<void> {
+    await this.tokens.load();
     const signedIn = (await this.preferences.getItem(SIGNED_IN_KEY)) === 'true';
     this._signedIn.set(signedIn);
     if (!signedIn) {
@@ -92,6 +105,7 @@ export class AuthService {
         return false;
       }
     }
+    await this.tokens.clear();
     await this.preferences.removeItem(PENDING_SIGN_OUT_KEY);
     return true;
   }
@@ -107,30 +121,37 @@ export class AuthService {
         setupToken,
       })
     );
-    const response = await this.runCeremony(() => startRegistration({ optionsJSON }));
-    await this.request(() =>
+    const response = await this.runCeremony(() => this.passkeys.register(optionsJSON));
+    const result = await this.request(() =>
       this.http.post<RegisterVerifyResponse>(this.url('/register/verify'), {
         response,
         setupToken,
         label,
-        client: CLIENT,
+        client: clientKind(),
       })
     );
-    await this.markSignedIn();
+    await this.markSignedIn(result);
   }
 
   async signIn(): Promise<void> {
     const optionsJSON = await this.request(() =>
       this.http.post<PublicKeyCredentialRequestOptionsJSON>(this.url('/login/options'), {})
     );
-    const response = await this.runCeremony(() => startAuthentication({ optionsJSON }));
-    await this.request(() =>
-      this.http.post(this.url('/login/verify'), { response, client: CLIENT })
+    const response = await this.runCeremony(() => this.passkeys.authenticate(optionsJSON));
+    const result = await this.request(() =>
+      this.http.post<SessionCreatedResponse>(this.url('/login/verify'), {
+        response,
+        client: clientKind(),
+      })
     );
-    await this.markSignedIn();
+    await this.markSignedIn(result);
   }
 
-  /** Marks this device signed in when the server already recognizes its session (e.g. a surviving cookie). */
+  /**
+   * Marks this device signed in when the server already recognizes its
+   * session (e.g. a surviving cookie, a Keychain token that outlived a
+   * reinstall, or a dev server running with AUTH_DEV_BYPASS).
+   */
   async adoptExistingSession(): Promise<void> {
     await this.markSignedIn();
   }
@@ -142,13 +163,13 @@ export class AuthService {
         this.http.post<PublicKeyCredentialCreationOptionsJSON>(this.url('/register/options'), {}),
       { requiresSession: true }
     );
-    const response = await this.runCeremony(() => startRegistration({ optionsJSON }));
+    const response = await this.runCeremony(() => this.passkeys.register(optionsJSON));
     const result = await this.request(
       () =>
         this.http.post<RegisterVerifyResponse>(this.url('/register/verify'), {
           response,
           label,
-          client: CLIENT,
+          client: clientKind(),
         }),
       { requiresSession: true }
     );
@@ -184,23 +205,45 @@ export class AuthService {
    * the sign-in screen. Local data and queued changes are kept.
    */
   async signOut(): Promise<void> {
+    let serverSessionEnded = true;
     try {
       await firstValueFrom(this.http.post(this.url('/logout'), {}));
     } catch (error: unknown) {
       // Already expired (401) needs nothing more. Otherwise (offline, server
       // down) finish the server sign-out before the next sign-in check.
       if (!(error instanceof HttpErrorResponse && error.status === 401)) {
+        serverSessionEnded = false;
         await this.preferences.setItem(PENDING_SIGN_OUT_KEY, 'true');
       }
+    }
+    if (serverSessionEnded) {
+      await this.tokens.clear();
     }
     await this.endLocalSession();
   }
 
-  private async markSignedIn(): Promise<void> {
+  /**
+   * Marks this device signed in. After a passkey ceremony, `session` is the
+   * server's response: the iOS app must get its token there (the web gets a
+   * cookie instead) and keeps it in the Keychain.
+   */
+  private async markSignedIn(session?: SessionCreatedResponse): Promise<void> {
+    if (session && clientKind() === 'ios') {
+      if (!session.token) {
+        throw new AuthFlowError('The server did not return a session. Please try again.');
+      }
+      await this.tokens.set(session.token);
+    }
     await this.preferences.removeItem(PENDING_SIGN_OUT_KEY);
     await this.preferences.setItem(SIGNED_IN_KEY, 'true');
     this._signedIn.set(true);
     void this.syncService.resumeAfterReauth();
+  }
+
+  /** The server rejected the session: its token is useless, so drop it too. */
+  private async discardSession(): Promise<void> {
+    await this.tokens.clear();
+    await this.endLocalSession();
   }
 
   private async endLocalSession(): Promise<void> {
@@ -227,14 +270,14 @@ export class AuthService {
       return await firstValueFrom(call());
     } catch (error: unknown) {
       if (requiresSession && error instanceof HttpErrorResponse && error.status === 401) {
-        await this.endLocalSession();
+        await this.discardSession();
         throw new AuthFlowError('Your session has ended. Please sign in again.');
       }
       throw new AuthFlowError(describeHttpError(error));
     }
   }
 
-  /** Runs a WebAuthn browser ceremony, converting failures into user-facing messages. */
+  /** Runs a passkey ceremony, converting failures into user-facing messages. */
   private async runCeremony<T>(ceremony: () => Promise<T>): Promise<T> {
     try {
       return await ceremony();
@@ -246,7 +289,11 @@ export class AuthService {
       if (name === 'InvalidStateError') {
         throw new AuthFlowError('This device already has a PokePaper passkey.');
       }
-      throw new AuthFlowError('Passkeys are not available in this browser.');
+      throw new AuthFlowError(
+        isNativePlatform()
+          ? 'Passkeys are not available on this device.'
+          : 'Passkeys are not available in this browser.'
+      );
     }
   }
 }

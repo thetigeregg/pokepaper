@@ -4,9 +4,10 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
-import { vi } from 'vitest';
+import { vi, type Mock } from 'vitest';
 import { SyncService, type SyncStatus } from '../services/sync.service';
 import { PreferenceStorageService } from '../storage/preference-storage.service';
+import { AuthTokenStore } from './auth-token.store';
 import {
   AuthFlowError,
   AuthService,
@@ -14,6 +15,13 @@ import {
   PENDING_SIGN_OUT_KEY,
   SIGNED_IN_KEY,
 } from './auth.service';
+import { PasskeyClient } from './passkey-client';
+
+const isNativePlatformMock = vi.fn<() => boolean>(() => false);
+
+vi.mock('../utils/native-platform.util', () => ({
+  isNativePlatform: () => isNativePlatformMock(),
+}));
 
 vi.mock('@simplewebauthn/browser', () => ({
   startRegistration: vi.fn(),
@@ -39,6 +47,7 @@ describe('AuthService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    isNativePlatformMock.mockReturnValue(false);
     store = new Map();
     syncStatus = signal<SyncStatus>('idle');
     resumeAfterReauth = vi.fn(() => Promise.resolve());
@@ -333,5 +342,191 @@ describe('AuthService', () => {
       'The server returned an error (500).'
     );
     expect(describeHttpError(new Error('x'))).toMatch(/Something went wrong/);
+  });
+});
+
+describe('AuthService in the iOS app', () => {
+  let service: AuthService;
+  let http: HttpTestingController;
+  let store: Map<string, string>;
+  let syncStatus: ReturnType<typeof signal<SyncStatus>>;
+  let keychain: { token: string | null };
+  let tokens: { load: Mock; token: () => string | null; set: Mock; clear: Mock };
+  let passkeys: { register: Mock; authenticate: Mock };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isNativePlatformMock.mockReturnValue(true);
+    store = new Map();
+    syncStatus = signal<SyncStatus>('idle');
+    keychain = { token: null };
+    tokens = {
+      load: vi.fn(() => Promise.resolve()),
+      token: () => keychain.token,
+      set: vi.fn((token: string) => Promise.resolve(void (keychain.token = token))),
+      clear: vi.fn(() => Promise.resolve(void (keychain.token = null))),
+    };
+    passkeys = {
+      register: vi.fn(() => Promise.resolve({ id: 'ios-reg' })),
+      authenticate: vi.fn(() => Promise.resolve({ id: 'ios-auth' })),
+    };
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        {
+          provide: PreferenceStorageService,
+          useValue: {
+            getItem: (key: string) => Promise.resolve(store.get(key) ?? null),
+            setItem: (key: string, value: string) => Promise.resolve(void store.set(key, value)),
+            removeItem: (key: string) => Promise.resolve(void store.delete(key)),
+          },
+        },
+        {
+          provide: SyncService,
+          useValue: {
+            status: syncStatus.asReadonly(),
+            resumeAfterReauth: vi.fn(() => Promise.resolve()),
+            pause: vi.fn(),
+          },
+        },
+        { provide: Router, useValue: { navigateByUrl: vi.fn(() => Promise.resolve(true)) } },
+        { provide: AuthTokenStore, useValue: tokens },
+        { provide: PasskeyClient, useValue: passkeys },
+      ],
+    });
+    service = TestBed.inject(AuthService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    http.verify();
+  });
+
+  async function signedIn(token = 'tok-old'): Promise<void> {
+    keychain.token = token;
+    store.set(SIGNED_IN_KEY, 'true');
+    await service.initialize();
+  }
+
+  it('loads the Keychain token on startup', async () => {
+    await service.initialize();
+
+    expect(tokens.load).toHaveBeenCalled();
+  });
+
+  it('signs in natively as an iOS client and keeps the token', async () => {
+    const done = service.signIn();
+    http.expectOne('/api/auth/login/options').flush({ challenge: 'c2' });
+    await flush();
+    const verify = http.expectOne('/api/auth/login/verify');
+    expect(verify.request.body).toEqual({ response: { id: 'ios-auth' }, client: 'ios' });
+    verify.flush({ token: 'tok-new' });
+    await done;
+
+    expect(passkeys.authenticate).toHaveBeenCalledWith({ challenge: 'c2' });
+    expect(tokens.set).toHaveBeenCalledWith('tok-new');
+    expect(service.signedIn()).toBe(true);
+  });
+
+  it('sets up the first passkey natively and keeps the token', async () => {
+    const done = service.setUp('the-setup-token', 'iPhone');
+    http.expectOne('/api/auth/register/options').flush({ challenge: 'c1' });
+    await flush();
+    const verify = http.expectOne('/api/auth/register/verify');
+    expect(verify.request.body).toMatchObject({ response: { id: 'ios-reg' }, client: 'ios' });
+    verify.flush({ credential: { id: 'cred' }, token: 'tok-setup' });
+    await done;
+
+    expect(keychain.token).toBe('tok-setup');
+    expect(service.signedIn()).toBe(true);
+  });
+
+  it('refuses a sign-in response without a token', async () => {
+    const done = service.signIn();
+    http.expectOne('/api/auth/login/options').flush({ challenge: 'c2' });
+    await flush();
+    http.expectOne('/api/auth/login/verify').flush({});
+
+    await expect(done).rejects.toThrow(/did not return a session/);
+    expect(service.signedIn()).toBe(false);
+  });
+
+  it('adopts a session the server recognizes without a token (AUTH_DEV_BYPASS)', async () => {
+    await service.adoptExistingSession();
+
+    expect(service.signedIn()).toBe(true);
+    expect(tokens.set).not.toHaveBeenCalled();
+  });
+
+  it('adopts a session backed by a surviving Keychain token', async () => {
+    keychain.token = 'tok-survivor';
+
+    await service.adoptExistingSession();
+
+    expect(service.signedIn()).toBe(true);
+    expect(tokens.set).not.toHaveBeenCalled();
+  });
+
+  it('drops the token after signing out on the server', async () => {
+    await signedIn();
+
+    const done = service.signOut();
+    http.expectOne('/api/auth/logout').flush(null);
+    await done;
+
+    expect(keychain.token).toBeNull();
+    expect(service.signedIn()).toBe(false);
+  });
+
+  it('keeps the token for a pending sign-out, then drops it once that completes', async () => {
+    await signedIn();
+
+    const offline = service.signOut();
+    http.expectOne('/api/auth/logout').error(new ProgressEvent('offline'));
+    await offline;
+    expect(keychain.token).toBe('tok-old');
+    expect(store.get(PENDING_SIGN_OUT_KEY)).toBe('true');
+
+    const online = service.completePendingSignOut();
+    await flush();
+    http.expectOne('/api/auth/logout').flush(null);
+    await expect(online).resolves.toBe(true);
+    expect(keychain.token).toBeNull();
+  });
+
+  it('drops the token when a signed-in call gets a 401', async () => {
+    await signedIn();
+
+    const done = service.listSessions();
+    http
+      .expectOne('/api/auth/sessions')
+      .flush({ error: 'Sign in required' }, { status: 401, statusText: 'Unauthorized' });
+
+    await expect(done).rejects.toThrow(/session has ended/);
+    expect(keychain.token).toBeNull();
+  });
+
+  it('drops the token when sync reports the server rejected the session', async () => {
+    await signedIn();
+    TestBed.tick();
+
+    syncStatus.set('unauthorized');
+    TestBed.tick();
+    await flush();
+
+    expect(keychain.token).toBeNull();
+    expect(service.signedIn()).toBe(false);
+  });
+
+  it('describes a device without passkeys', async () => {
+    passkeys.authenticate.mockRejectedValue(new Error('no passkeys here'));
+
+    const done = service.signIn();
+    http.expectOne('/api/auth/login/options').flush({ challenge: 'c2' });
+
+    await expect(done).rejects.toThrow('Passkeys are not available on this device.');
   });
 });
