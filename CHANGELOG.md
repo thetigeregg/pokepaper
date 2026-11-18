@@ -73,3 +73,7 @@
 ## v0.11.0 - 2026-11-18
 
 - 89f2aba feat(collection): track copies from the Cards tab (#26)
+
+## v0.12.0 - 2026-11-18
+
+- 858840d feat(collection): filter card search by owned or missing (#27)
