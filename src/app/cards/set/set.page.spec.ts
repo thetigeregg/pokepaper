@@ -145,7 +145,7 @@ describe('SetPage', () => {
 
       expect(page.view()).toBe('checklist');
       expect(preferences.get(SET_VIEW_KEY)).toBe('checklist');
-      expect(query('.page-column app-set-checklist')).not.toBeNull();
+      expect(query('app-set-checklist')).not.toBeNull();
       expect(root().querySelectorAll('[data-testid^="checklist-sv01-"]')).toHaveLength(2);
       expect(query('app-card-tile')).toBeNull();
 

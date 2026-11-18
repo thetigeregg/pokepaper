@@ -58,14 +58,12 @@
   }
   @if (view() === 'checklist') {
     @if (set(); as set) {
-      <div class="page-column">
-        <app-set-checklist
-          [cards]="cards()"
-          [set]="set"
-          [language]="language()"
-          (opened)="openCard($event)"
-        />
-      </div>
+      <app-set-checklist
+        [cards]="cards()"
+        [set]="set"
+        [language]="language()"
+        (opened)="openCard($event)"
+      />
     }
   } @else {
     <ion-grid>
