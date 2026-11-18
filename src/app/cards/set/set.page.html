@@ -19,27 +19,7 @@
           [value]="language()"
           (changed)="pickLanguage($event)"
         />
-        <ion-button
-          (click)="toggleView()"
-          [attr.aria-label]="view() === 'grid' ? 'Show as checklist' : 'Show as grid'"
-          data-testid="view-button"
-        >
-          <ion-icon
-            slot="icon-only"
-            [name]="view() === 'grid' ? 'list-outline' : 'grid-outline'"
-          ></ion-icon>
-        </ion-button>
-        <ion-button
-          (click)="openDownloadActions()"
-          [disabled]="downloading()"
-          [attr.aria-label]="downloaded() ? 'Downloaded for offline use' : 'Download images'"
-          data-testid="download-button"
-        >
-          <ion-icon
-            slot="icon-only"
-            [name]="downloaded() ? 'cloud-done-outline' : 'cloud-download-outline'"
-          ></ion-icon>
-        </ion-button>
+        <app-header-actions [actions]="actions()" [pinned]="0" />
       </ion-buttons>
     }
   </ion-toolbar>

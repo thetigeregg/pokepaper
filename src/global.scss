@@ -137,6 +137,23 @@ ion-popover.filter-popover {
   --height: min(520px, 75vh);
 }
 
+/* The header More menu (docs/ui.md → Page layout): as wide as its longest
+   row, so each fits on one line (Ionic's iOS default is a fixed 200px), up to
+   the screen's width less a margin. An intrinsic width works here because an
+   inline popover's content is mounted before the enter animation measures it.
+   Translucent: the list and rows are see-through so the popover's frosted
+   background shows. */
+ion-popover.header-actions-menu {
+  --width: max-content;
+  --max-width: calc(100vw - 32px);
+
+  ion-list,
+  ion-item {
+    background: transparent;
+    --background: transparent;
+  }
+}
+
 /* A sheet as tall as its content (Ionic's auto-height sheet), up to the
    screen's height, where its own list scrolls (e.g. the filter pickers). */
 ion-modal.auto-height-sheet {
