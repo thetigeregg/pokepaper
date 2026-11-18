@@ -3,8 +3,10 @@ import type {
   CatalogRegion,
   CatalogSeries,
   CatalogSetPack,
+  CollectionEntry,
   UserSettings,
 } from '@pokepaper/shared';
+import { collectionEntryId } from '@pokepaper/shared';
 import { catalogSearchRow } from './catalog-search-row';
 import { SqliteConnection, SqliteStatement } from './sqlite-connection';
 import {
@@ -407,6 +409,23 @@ export class SqliteStorageEngine implements StorageEngine {
         rows.map((row) => catalogSearchRow(this.parseEntity(row) as CatalogCard, key))
       );
     });
+  }
+
+  async putCollectionEntry(entry: CollectionEntry): Promise<void> {
+    await this.sql.run(
+      `INSERT INTO collection_entries (key, payload) VALUES (?, ?)
+       ON CONFLICT(key) DO UPDATE SET payload = excluded.payload`,
+      [collectionEntryId(entry), JSON.stringify(entry)]
+    );
+  }
+
+  async deleteCollectionEntry(key: string): Promise<void> {
+    await this.sql.run('DELETE FROM collection_entries WHERE key = ?', [key]);
+  }
+
+  async listCollectionEntries(): Promise<CollectionEntry[]> {
+    const rows = await this.sql.query<PayloadRow>('SELECT payload FROM collection_entries', []);
+    return rows.map((row) => this.parseEntity(row) as CollectionEntry);
   }
 
   async getOutboxEntry(opId: string): Promise<OutboxEntry | undefined> {

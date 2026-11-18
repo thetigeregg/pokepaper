@@ -1,6 +1,6 @@
 # Sync
 
-PokePaper is local-first: the app reads and writes on-device storage and works fully offline. A background sync loop exchanges changes with the server whenever it's reachable. This document covers the rules both sides must follow. Wire types live in `shared/src/sync.ts`.
+PokePaper is local-first: the app reads and writes on-device storage and works fully offline. A background sync loop exchanges changes with the server whenever it's reachable. This document covers the rules both sides must follow. Wire types live in `shared/src/sync.ts`. Synced entity types: `settings` and `collectionEntry` ([`collection.md`](collection.md)).
 
 ## Client (implemented: `src/app/core/services/sync.service.ts`)
 

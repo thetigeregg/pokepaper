@@ -77,6 +77,71 @@ describe('LocalUserDataRepository', () => {
     expect((await repository.getSettings()).cardLanguage).toBe('fr');
   });
 
+  describe('collection', () => {
+    const target = {
+      region: 'intl',
+      cardId: 'sv01-001',
+      setId: 'sv01',
+      variant: 'holo',
+      language: 'de',
+    };
+    const entityId = 'intl:sv01-001:holo:de';
+
+    it('setCollectionQuantity stores the entry and queues an upsert', async () => {
+      const syncNow = vi.fn(() => Promise.resolve());
+      const repository = await setUp({ syncNow });
+
+      await repository.setCollectionQuantity(target, 3);
+
+      expect(await repository.listCollection()).toEqual([{ ...target, quantity: 3 }]);
+      expect(await engine.listOutboxOrderedByCreatedAt()).toEqual([
+        expect.objectContaining({
+          entityType: 'collectionEntry',
+          entityId,
+          operation: 'upsert',
+          payload: { ...target, quantity: 3 },
+        }),
+      ]);
+      expect(syncNow).toHaveBeenCalledTimes(1);
+    });
+
+    it('stores only the entry fields, whatever else the target carries', async () => {
+      const repository = await setUp(null);
+
+      await repository.setCollectionQuantity({ ...target, extra: true } as typeof target, 1);
+
+      expect(await repository.listCollection()).toEqual([{ ...target, quantity: 1 }]);
+    });
+
+    it('a quantity of 0 deletes the entry and queues a delete', async () => {
+      const repository = await setUp({ syncNow: () => Promise.resolve() });
+      await repository.setCollectionQuantity(target, 2);
+
+      await repository.setCollectionQuantity(target, 0);
+
+      expect(await repository.listCollection()).toEqual([]);
+      expect((await engine.listOutboxOrderedByCreatedAt()).at(-1)).toMatchObject({
+        entityType: 'collectionEntry',
+        entityId,
+        operation: 'delete',
+        payload: null,
+      });
+    });
+
+    it.each([[-1], [1.5], [1000], [Number.NaN]])(
+      'rejects the quantity %s without writing anything',
+      async (quantity) => {
+        const repository = await setUp({ syncNow: () => Promise.resolve() });
+
+        await expect(repository.setCollectionQuantity(target, quantity)).rejects.toThrow(
+          RangeError
+        );
+        expect(await repository.listCollection()).toEqual([]);
+        expect(await engine.listOutboxOrderedByCreatedAt()).toEqual([]);
+      }
+    );
+  });
+
   it('without an outbox writer, writes locally and queues nothing', async () => {
     const repository = await setUp(null);
 

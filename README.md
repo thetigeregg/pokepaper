@@ -20,7 +20,7 @@ It runs as a web app and as a native iOS app (Capacitor). It works offline: data
 - `server/`: Fastify API with SQLite storage: passkey auth, sync, and health; card catalog and image cache _(planned)_ (npm workspace)
 - `edge/`: Caddy container serving the web app, proxying `/api` to `server`, serving the iOS app-association file, and setting security headers (CSP, HSTS, …)
 - `ios/`: Capacitor iOS project with App DEV / App PROD targets _(planned)_
-- `docs/`: [`auth.md`](docs/auth.md) (passkeys, sessions, setup, recovery), [`sync.md`](docs/sync.md) (sync rules), [`nas-deployment.md`](docs/nas-deployment.md) (Docker, Nginx Proxy Manager, Cloudflare); iOS docs _(planned)_
+- `docs/`: [`auth.md`](docs/auth.md) (passkeys, sessions, setup, recovery), [`sync.md`](docs/sync.md) (sync rules), [`collection.md`](docs/collection.md) (collection tracking), [`nas-deployment.md`](docs/nas-deployment.md) (Docker, Nginx Proxy Manager, Cloudflare); iOS docs _(planned)_
 - `.github/`: CI, release/publish, CodeQL, secret-scanning, and Claude workflows; PR/issue templates; Dependabot
 
 ## Prerequisites

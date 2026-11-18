@@ -4,6 +4,7 @@ import type {
   CatalogRegion,
   CatalogSeries,
   CatalogSetPack,
+  CollectionEntry,
   UserSettings,
 } from '@pokepaper/shared';
 import { DEFAULT_SETTINGS, SETTINGS_ENTITY_ID } from '@pokepaper/shared';
@@ -52,6 +53,20 @@ export function makeContractOutboxEntry(overrides: Partial<OutboxEntry> = {}): O
     createdAt: '2026-01-01T00:00:00.000Z',
     attemptCount: 0,
     lastError: null,
+    ...overrides,
+  };
+}
+
+export function makeContractCollectionEntry(
+  overrides: Partial<CollectionEntry> = {}
+): CollectionEntry {
+  return {
+    region: 'intl',
+    cardId: 'sv01-001',
+    setId: 'sv01',
+    variant: 'normal',
+    language: 'en',
+    quantity: 1,
     ...overrides,
   };
 }
@@ -321,6 +336,54 @@ export function describeStorageEngineContract(
         expect((await engine.listDownloadedSets()).map((record) => record.setKey)).toEqual([
           'asia:SV2a',
         ]);
+      });
+    });
+
+    describe('collection', () => {
+      it('is empty before anything is collected', async () => {
+        expect(await engine.listCollectionEntries()).toEqual([]);
+      });
+
+      it('keys entries by card, variant and language, replacing quantities', async () => {
+        const english = makeContractCollectionEntry();
+        const german = makeContractCollectionEntry({ language: 'de', quantity: 2 });
+        const reverse = makeContractCollectionEntry({ variant: 'reverse' });
+
+        await engine.putCollectionEntry(english);
+        await engine.putCollectionEntry(german);
+        await engine.putCollectionEntry(reverse);
+        await engine.putCollectionEntry({ ...german, quantity: 4 });
+
+        const listed = await engine.listCollectionEntries();
+        expect(listed).toHaveLength(3);
+        expect(listed).toEqual(
+          expect.arrayContaining([english, reverse, { ...german, quantity: 4 }])
+        );
+      });
+
+      it('deletes an entry by key, leaving the others', async () => {
+        await engine.putCollectionEntry(makeContractCollectionEntry());
+        await engine.putCollectionEntry(makeContractCollectionEntry({ language: 'de' }));
+
+        await engine.deleteCollectionEntry('intl:sv01-001:normal:en');
+        await engine.deleteCollectionEntry('intl:unknown:normal:en');
+
+        expect(await engine.listCollectionEntries()).toEqual([
+          makeContractCollectionEntry({ language: 'de' }),
+        ]);
+      });
+
+      it('rolls an entry back with the outbox write it shared a transaction with', async () => {
+        await expect(
+          engine.runInTransaction(['collection', 'outbox'], async () => {
+            await engine.putCollectionEntry(makeContractCollectionEntry());
+            await engine.putOutboxEntry(makeContractOutboxEntry());
+            throw new Error('boom');
+          })
+        ).rejects.toThrow('boom');
+
+        expect(await engine.listCollectionEntries()).toEqual([]);
+        expect(await engine.listOutboxOrderedByCreatedAt()).toEqual([]);
       });
     });
 
