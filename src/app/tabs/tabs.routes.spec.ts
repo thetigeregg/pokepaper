@@ -15,6 +15,7 @@ describe('tab routes', () => {
 
     expect(children.map((child) => child.path)).toEqual([
       'cards',
+      'cards/set/:region/:setId',
       'collection',
       'decks',
       'settings',

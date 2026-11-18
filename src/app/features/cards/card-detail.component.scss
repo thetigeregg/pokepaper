@@ -1,0 +1,4 @@
+/* One background behind the scan and the details list. */
+ion-content {
+  --background: var(--ion-item-background, var(--ion-background-color));
+}

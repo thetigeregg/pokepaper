@@ -288,6 +288,10 @@ export class DexieStorageEngine implements StorageEngine {
       : this.catalogSetsTable.toArray();
   }
 
+  getCatalogSet(region: CatalogRegion, setId: string): Promise<StoredCatalogSet | undefined> {
+    return this.catalogSetsTable.get(catalogKey(region, setId));
+  }
+
   async listCatalogCards(region: CatalogRegion, setId: string): Promise<CatalogCard[]> {
     const key = catalogKey(region, setId);
     // The compound index returns the set's rows already in display order.

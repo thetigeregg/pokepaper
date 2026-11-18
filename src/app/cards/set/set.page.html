@@ -1,0 +1,68 @@
+<ion-header [translucent]="true">
+  <ion-toolbar>
+    @if (!layout.wide()) {
+      <ion-buttons slot="start">
+        <ion-back-button defaultHref="/tabs/cards" text="Cards"></ion-back-button>
+      </ion-buttons>
+    }
+    <ion-title>
+      @if (set(); as set) {
+        <app-set-logo [set]="set" [language]="language()" [logoOnly]="true" [alt]="title()">
+          {{ title() }}
+        </app-set-logo>
+      }
+    </ion-title>
+    @if (set(); as set) {
+      <ion-buttons slot="end">
+        <app-language-button
+          [languages]="set.languages"
+          [value]="language()"
+          (changed)="pickLanguage($event)"
+        />
+        <ion-button
+          (click)="openDownloadActions()"
+          [disabled]="downloading()"
+          [attr.aria-label]="downloaded() ? 'Downloaded for offline use' : 'Download images'"
+          data-testid="download-button"
+        >
+          <ion-icon
+            slot="icon-only"
+            [name]="downloaded() ? 'cloud-done-outline' : 'cloud-download-outline'"
+          ></ion-icon>
+        </ion-button>
+      </ion-buttons>
+    }
+  </ion-toolbar>
+  @if (progress(); as progress) {
+    @if (progress.running) {
+      <ion-progress-bar
+        [value]="progress.total ? progress.done / progress.total : 0"
+      ></ion-progress-bar>
+    }
+  }
+</ion-header>
+
+<ion-content [fullscreen]="true">
+  @if (loaded() && !set()) {
+    <ion-text color="medium"><p class="ion-padding">This set isn't on this device.</p></ion-text>
+  }
+  <ion-grid>
+    <ion-row>
+      @for (card of cards(); track card.id; let i = $index) {
+        <ion-col size="4" sizeMd="3" sizeLg="2">
+          <button
+            class="card-button"
+            type="button"
+            (click)="openCard(i)"
+            [attr.aria-label]="name(card)"
+          >
+            <app-card-image [card]="card" [language]="language()" [setLine]="line(card)" />
+          </button>
+          <ion-text color="medium">
+            <p class="caption">{{ card.localId }} · {{ name(card) }}</p>
+          </ion-text>
+        </ion-col>
+      }
+    </ion-row>
+  </ion-grid>
+</ion-content>

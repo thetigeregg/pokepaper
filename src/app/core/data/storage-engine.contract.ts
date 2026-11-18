@@ -338,6 +338,7 @@ export function describeStorageEngineContract(
       it('is empty before anything is downloaded', async () => {
         expect(await engine.listCatalogSeries()).toEqual([]);
         expect(await engine.listCatalogSets()).toEqual([]);
+        expect(await engine.getCatalogSet('intl', 'sv01')).toBeUndefined();
         expect(await engine.listCatalogCards('intl', 'sv01')).toEqual([]);
         expect(await engine.getCatalogCard('intl', 'sv01-001')).toBeUndefined();
         expect(await engine.catalogStats()).toEqual({ sets: 0, cards: 0 });
@@ -402,6 +403,9 @@ export function describeStorageEngineContract(
 
         expect((await engine.listCatalogSets('intl')).map((set) => set.key)).toEqual(['intl:neo1']);
         expect((await engine.listCatalogSets('asia')).map((set) => set.key)).toEqual(['asia:neo1']);
+        expect((await engine.getCatalogSet('asia', 'neo1'))?.key).toBe('asia:neo1');
+        expect((await engine.getCatalogSet('intl', 'neo1'))?.set.region).toBe('intl');
+        expect(await engine.getCatalogSet('intl', 'NEO1')).toBeUndefined(); // Case-sensitive.
         expect(await engine.listCatalogCards('intl', 'neo1')).toHaveLength(1);
         expect(await engine.listCatalogCards('asia', 'neo1')).toHaveLength(2);
       });

@@ -89,6 +89,19 @@ describe('ImageCacheService', () => {
     expect((await engine.getImage(URL_A))?.size).toBe(3);
   });
 
+  it('keeps an object URL until everything showing it has released it', async () => {
+    await engine.putImage(makeContractImageCacheRecord({ key: 'a', blob: new Blob(['x']) }));
+
+    expect(await service.resolve('a')).toBe('blob:test-0');
+    expect(await service.resolve('a')).toBe('blob:test-0'); // A second display shares it.
+    service.release('a');
+    expect(revoke).not.toHaveBeenCalled();
+    service.release('a');
+    expect(revoke).toHaveBeenCalledWith('blob:test-0');
+    service.release('a'); // Extra releases are ignored.
+    expect(await service.resolve('a')).toBe('blob:test-1');
+  });
+
   it('shares one download between concurrent requests', async () => {
     const both = Promise.all([service.resolve(URL_A), service.resolve(URL_A)]);
     (await waitForRequest(httpMock, URL_A)).flush(new Blob(['abc']));

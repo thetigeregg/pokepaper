@@ -1,20 +1,34 @@
-<ion-tabs>
-  <ion-tab-bar slot="bottom" id="main-tab-bar">
-    <ion-tab-button tab="cards" href="/tabs/cards">
-      <ion-icon aria-hidden="true" name="albums"></ion-icon>
-      <ion-label>Cards</ion-label>
-    </ion-tab-button>
-    <ion-tab-button tab="collection" href="/tabs/collection">
-      <ion-icon aria-hidden="true" name="library"></ion-icon>
-      <ion-label>Collection</ion-label>
-    </ion-tab-button>
-    <ion-tab-button tab="decks" href="/tabs/decks">
-      <ion-icon aria-hidden="true" name="layers"></ion-icon>
-      <ion-label>Decks</ion-label>
-    </ion-tab-button>
-    <ion-tab-button tab="settings" href="/tabs/settings">
-      <ion-icon aria-hidden="true" name="settings"></ion-icon>
-      <ion-label>Settings</ion-label>
-    </ion-tab-button>
-  </ion-tab-bar>
-</ion-tabs>
+<ion-split-pane contentId="tabs-main" when="lg">
+  <ion-menu
+    contentId="tabs-main"
+    menuId="cards-sets"
+    [swipeGesture]="false"
+    [disabled]="!cardsMenu()"
+  >
+    <app-cards-menu />
+  </ion-menu>
+
+  <!-- IonTabs positions itself absolutely; the split pane lays out this page instead. -->
+  <div class="ion-page" id="tabs-main">
+    <ion-tabs>
+      <ion-tab-bar slot="bottom" id="main-tab-bar">
+        <ion-tab-button tab="cards" href="/tabs/cards">
+          <ion-icon aria-hidden="true" name="albums"></ion-icon>
+          <ion-label>Cards</ion-label>
+        </ion-tab-button>
+        <ion-tab-button tab="collection" href="/tabs/collection">
+          <ion-icon aria-hidden="true" name="library"></ion-icon>
+          <ion-label>Collection</ion-label>
+        </ion-tab-button>
+        <ion-tab-button tab="decks" href="/tabs/decks">
+          <ion-icon aria-hidden="true" name="layers"></ion-icon>
+          <ion-label>Decks</ion-label>
+        </ion-tab-button>
+        <ion-tab-button tab="settings" href="/tabs/settings">
+          <ion-icon aria-hidden="true" name="settings"></ion-icon>
+          <ion-label>Settings</ion-label>
+        </ion-tab-button>
+      </ion-tab-bar>
+    </ion-tabs>
+  </div>
+</ion-split-pane>

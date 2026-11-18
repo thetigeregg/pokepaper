@@ -1,0 +1,55 @@
+:host {
+  display: block;
+}
+
+.image {
+  max-width: 360px;
+  margin: 16px auto 8px;
+  padding: 0 16px;
+}
+
+/* Desktop dialog: image beside the text. */
+@media (min-width: 992px) {
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(280px, 2fr) 3fr;
+    gap: 8px;
+    align-items: start;
+  }
+
+  .image {
+    position: sticky;
+    top: 16px;
+    margin: 16px 0;
+  }
+}
+
+.types,
+.cost {
+  display: flex;
+  gap: 2px;
+}
+
+/* Every attack's cost column is as wide as the card's longest cost, so
+   attack names line up. */
+.cost {
+  width: calc(var(--cost-slots, 1) * 1.3em + (var(--cost-slots, 1) - 1) * 2px);
+}
+
+.damage {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 16px;
+}
+
+.stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}

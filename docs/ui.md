@@ -2,6 +2,14 @@
 
 Standards for PokePaper's screens, so new pages look and behave like existing ones. When a screen needs something these don't cover, add the decision here.
 
+## Components
+
+- **Stock Ionic first.** Build screens from Ionic components with their default styling. Add custom CSS only where Ionic has no equivalent, and keep it small. When proposing UI, describe it by component (`IonSplitPane`, `IonItem`, `IonModal`, …).
+- **Agreed exceptions:**
+  - **Swiper**, for paging through cards in the card detail modal.
+  - **The energy symbol icons** (`EnergyIconComponent`): meant to be the TCG symbols as PNGs in `src/assets/energy/<type>.png` (Bulbapedia's 85 px attack-cost icons, e.g. `Fairy-attack.png`), prefetched by the service worker so they work offline. **Deferred:** the files aren't committed yet, so `ENERGY_ICON_IMAGES` is `false` and every icon is the fallback, a colored circle with the type's letter. To finish: add the 11 PNGs (lowercase type names) and set the flag to `true`.
+  - **The type tint** on cards without a scan.
+
 ## Platforms
 
 - **iOS phone and desktop web are equal targets.** Design every page, modal and component for both, and check both before calling UI work done: a phone viewport (about 390×844) and a desktop one (about 1440×900).
@@ -39,7 +47,26 @@ Standards for PokePaper's screens, so new pages look and behave like existing on
 - **Confirm bulk or hard-to-undo removals** (a whole series, everything, a passkey) with an alert: "Cancel" plus a red "Remove". Removing a single item that's easy to redo (one downloaded set) doesn't ask.
 - **A screen's single main call to action outside any list** (e.g. the sign-in button) is an `ion-button expand="block"`.
 
+## Cards
+
+- **Catalogs:** an `IonSegment` ("International | Japan & Asia") in a second header `IonToolbar`, remembered on the device.
+- **Desktop layout:** `IonSplitPane when="lg"` wraps `IonTabs` (`TabsPage`). Its `IonMenu` holds the segment and the sets list and is enabled only while the Cards tab is open, so other tabs stay full width. The selected set opens beside it; picking another set replaces it rather than stacking. Phones push pages: sets, then set.
+- **Tab stacks are stock Ionic:** each tab keeps its pages when you switch away, and tapping the current tab pops to its root. Sub-pages are routes at the tab level (`cards/set/:region/:setId`, `settings/downloads`); don't nest an `IonRouterOutlet` inside a tab page, because Ionic then forgets the tab's position.
+- **Sets list:** an `IonItemGroup` per series under a sticky `IonItemDivider`, newest first. Each row is an `IonItem lines="inset"` with the set logo in an `IonThumbnail`, name, "date · N cards", and a small `IonIcon` (cloud-done) when downloaded.
+- **Set page:**
+  - The header's `IonTitle` shows the set's logo (in the current language, else another) instead of its name when the set has one; the name is the image's alt text.
+  - The header's end slot has two icon-only `IonButton`s: language (opening an `IonPopover` with an `IonRadioGroup`) and download (an `IonActionSheet`). An `IonProgressBar` shows while downloading.
+  - Cards in an `IonGrid` with `IonCol size="4" sizeMd="3" sizeLg="2"`: the image plus a centered "001 · Pineco" caption that wraps (the row grows with it) rather than truncating.
+- **Card detail:**
+  - An `IonModal`: a sheet on phones (`[breakpoints]="[0, 1]"`, handle), a centered dialog on desktop (`.card-detail-modal`, image beside the text).
+  - Swiper with virtual slides; swipe on phones, ←/→ keys on desktop. No footer.
+  - Attacks are `IonItem lines="inset"`. The cost column is as wide as the card's longest cost, so every attack name lines up. Weakness · resistance · retreat is one centered row.
+  - Full card text in `IonList` sections.
+- **Card images:** a fallback-language scan gets an `IonBadge` with the language code. A card without any scan is a type-tinted `IonCard` (name, HP · stage, energy icon, set number) at card proportions (63:88).
+- **Language:** switched in context with the header button, and remembered per catalog in synced settings. Every set and card opens in it.
+
 ## Tests
 
 - Elements that tests or checks look up carry a `data-testid`.
 - Component specs test the component's state (signals) with the template replaced. Real rendering is checked in the browser at both viewport sizes.
+- **Known limit:** Vitest here runs without Angular's compiler plugin, so a component's signal `input()`s and signal queries can't be set or resolved in tests. Keep logic in tested services and pure functions. For `ModalController` components, take `componentProps` as plain properties: Ionic assigns them directly and would overwrite signal inputs (and `modal` is a reserved name).

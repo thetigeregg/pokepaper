@@ -5,6 +5,7 @@ import {
   PreloadAllModules,
   RouteReuseStrategy,
   provideRouter,
+  withComponentInputBinding,
   withPreloading,
 } from '@angular/router';
 import { provideServiceWorker } from '@angular/service-worker';
@@ -28,7 +29,7 @@ bootstrapApplication(AppComponent, {
     provideZoneChangeDetection(),
     { provide: RouteReuseStrategy, useClass: IonicRouteStrategy },
     provideIonicAngular({ mode: 'ios' }),
-    provideRouter(routes, withPreloading(PreloadAllModules)),
+    provideRouter(routes, withPreloading(PreloadAllModules), withComponentInputBinding()),
     provideHttpClient(withInterceptorsFromDi()),
     // Web only: caches the app shell so the browser app opens with no signal.
     // The iOS app ships its bundle locally (and the ios-* build configs don't

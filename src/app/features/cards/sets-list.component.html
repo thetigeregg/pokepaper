@@ -1,0 +1,62 @@
+@if (progress(); as progress) {
+  <ion-progress-bar
+    [value]="progress.total ? progress.done / progress.total : 0"
+  ></ion-progress-bar>
+}
+
+<ion-list>
+  @if (browse.groups().length === 0) {
+    <ion-item>
+      <ion-label>
+        @if (progress(); as progress) {
+          Downloading catalog… {{ progress.done }}/{{ progress.total }} sets
+        } @else if (syncStatus() === 'checking' || !browse.loaded()) {
+          Loading sets…
+        } @else {
+          No sets yet
+          <p class="hint">The card catalog downloads when you're online and signed in</p>
+        }
+      </ion-label>
+    </ion-item>
+  }
+
+  @for (group of browse.groups(); track group.key) {
+    <ion-item-group>
+      <ion-item-divider [sticky]="true">
+        <ion-label>{{ group.name }}</ion-label>
+      </ion-item-divider>
+      @for (set of group.sets; track set.id) {
+        <ion-item
+          button="true"
+          lines="inset"
+          [detail]="true"
+          [color]="key(set) === selectedKey() ? 'light' : undefined"
+          (click)="selected.emit(set)"
+          [attr.data-testid]="'set-' + set.id"
+        >
+          <ion-thumbnail slot="start">
+            <app-set-logo [set]="set" [language]="browse.language()" />
+          </ion-thumbnail>
+          <ion-label>
+            {{ name(set) }}
+            <p>
+              @if (set.releaseDate) {
+                {{ set.releaseDate | date: 'mediumDate' : 'UTC' }} ·
+              }
+              {{ set.cardCount.total }} cards
+            </p>
+          </ion-label>
+          @if (downloaded().has(key(set))) {
+            <ion-icon
+              slot="end"
+              name="cloud-done-outline"
+              size="small"
+              color="medium"
+              aria-label="Downloaded for offline use"
+            ></ion-icon>
+          }
+        </ion-item>
+      }
+    </ion-item-group>
+  }
+</ion-list>

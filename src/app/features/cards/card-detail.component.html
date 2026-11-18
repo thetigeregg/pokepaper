@@ -1,0 +1,35 @@
+<ion-header>
+  <ion-toolbar>
+    <ion-buttons slot="start">
+      <ion-button (click)="close()" data-testid="card-close">Close</ion-button>
+    </ion-buttons>
+    <ion-title>{{ title() }}</ion-title>
+    @if (set(); as set) {
+      <ion-buttons slot="end">
+        <app-language-button
+          [languages]="set.languages"
+          [value]="language()"
+          (changed)="pickLanguage($event)"
+        />
+      </ion-buttons>
+    }
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <div class="swiper">
+    <div class="swiper-wrapper">
+      @for (card of window().slides; track card.id; let i = $index) {
+        <div
+          class="swiper-slide"
+          [style.left.px]="window().offset"
+          [attr.data-swiper-slide-index]="window().from + i"
+        >
+          @if (set(); as set) {
+            <app-card-details [card]="card" [set]="set" [language]="language()" />
+          }
+        </div>
+      }
+    </div>
+  </div>
+</ion-content>

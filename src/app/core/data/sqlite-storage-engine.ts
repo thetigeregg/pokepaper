@@ -330,6 +330,14 @@ export class SqliteStorageEngine implements StorageEngine {
     return rows.map((row) => this.parseEntity(row) as StoredCatalogSet);
   }
 
+  async getCatalogSet(region: CatalogRegion, setId: string): Promise<StoredCatalogSet | undefined> {
+    const rows = await this.sql.query<PayloadRow>(
+      'SELECT payload FROM catalog_sets WHERE key = ?',
+      [catalogKey(region, setId)]
+    );
+    return this.firstEntity(rows) as StoredCatalogSet | undefined;
+  }
+
   async listCatalogCards(region: CatalogRegion, setId: string): Promise<CatalogCard[]> {
     const rows = await this.sql.query<PayloadRow>(
       'SELECT payload FROM catalog_cards WHERE set_key = ? ORDER BY sort_index',

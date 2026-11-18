@@ -41,7 +41,8 @@ export class ImageCacheService {
   private readonly fileStore = inject(ImageFileStore);
   private readonly preferences = inject(PreferenceStorageService);
 
-  private readonly objectUrls = new Map<string, string>();
+  /** Object URLs for cached blobs (web), with how many displays hold each. */
+  private readonly objectUrls = new Map<string, { url: string; holders: number }>();
   private readonly inFlight = new Map<string, Promise<ImageStoreResult>>();
   /** Images the server answered 404 for this session; not asked again. */
   private readonly missing = new Set<string>();
@@ -61,6 +62,9 @@ export class ImageCacheService {
   /**
    * A displayable URL for the image at `url`, downloading and caching it on
    * first use. Null when the server has no such image.
+   *
+   * Each non-null result holds the image's object URL (web): call
+   * `release(url)` once it's no longer shown (`ImageSlot` does this).
    */
   async resolve(url: string): Promise<string | null> {
     const cached = await this.displayCached(url);
@@ -200,6 +204,15 @@ export class ImageCacheService {
     return 'downloaded';
   }
 
+  /** Lets go of a display URL from `resolve`; the last holder releases its memory. */
+  release(url: string): void {
+    const entry = this.objectUrls.get(url);
+    if (entry && --entry.holders <= 0) {
+      URL.revokeObjectURL(entry.url);
+      this.objectUrls.delete(url);
+    }
+  }
+
   /** The cached image's display URL, refreshing its last-viewed time; null if not cached. */
   private async displayCached(url: string): Promise<string | null> {
     const record = await this.engine.getImage(url);
@@ -227,13 +240,16 @@ export class ImageCacheService {
     return record.filePath ? this.fileStore.exists(record.filePath) : false;
   }
 
+  /**
+   * An object URL for a cached blob, shared by everything showing it and
+   * revoked when the last holder releases it, so browsing thousands of scans
+   * doesn't keep their blobs in memory.
+   */
   private objectUrl(key: string, blob: Blob): string {
-    let url = this.objectUrls.get(key);
-    if (!url) {
-      url = URL.createObjectURL(blob);
-      this.objectUrls.set(key, url);
-    }
-    return url;
+    const entry = this.objectUrls.get(key) ?? { url: URL.createObjectURL(blob), holders: 0 };
+    entry.holders++;
+    this.objectUrls.set(key, entry);
+    return entry.url;
   }
 
   /** Releases object URLs and deletes files for removed images. */
@@ -241,7 +257,7 @@ export class ImageCacheService {
     for (const ref of refs) {
       const objectUrl = this.objectUrls.get(ref.key);
       if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
+        URL.revokeObjectURL(objectUrl.url);
         this.objectUrls.delete(ref.key);
       }
       if (ref.filePath) {

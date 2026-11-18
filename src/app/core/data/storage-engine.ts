@@ -189,6 +189,8 @@ export interface StorageEngine {
   deleteCatalogSet(region: CatalogRegion, setId: string): Promise<void>;
   /** All stored sets, or one region's. */
   listCatalogSets(region?: CatalogRegion): Promise<StoredCatalogSet[]>;
+  /** One stored set. */
+  getCatalogSet(region: CatalogRegion, setId: string): Promise<StoredCatalogSet | undefined>;
   /** A set's cards in display order. */
   listCatalogCards(region: CatalogRegion, setId: string): Promise<CatalogCard[]>;
   getCatalogCard(region: CatalogRegion, cardId: string): Promise<CatalogCard | undefined>;

@@ -1,0 +1,27 @@
+<div class="frame">
+  @switch (state()) {
+    @case ('image') {
+      <img [src]="src()" [alt]="name()" decoding="async" />
+      @if (fallbackLabel(); as label) {
+        <ion-badge class="fallback" color="dark">{{ label }}</ion-badge>
+      }
+    }
+    @case ('none') {
+      <ion-card class="text-card" [style.--tint]="tint()">
+        <ion-card-header>
+          <ion-card-title>{{ name() }}</ion-card-title>
+          <ion-card-subtitle>{{ subtitle() }}</ion-card-subtitle>
+        </ion-card-header>
+        <ion-card-content>
+          @if (tintType(); as type) {
+            <app-energy-icon class="type" [type]="type" />
+          }
+          <p class="set-line">{{ setLine() }}</p>
+        </ion-card-content>
+      </ion-card>
+    }
+    @default {
+      <ion-skeleton-text [animated]="true" class="skeleton"></ion-skeleton-text>
+    }
+  }
+</div>
