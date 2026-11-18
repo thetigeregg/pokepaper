@@ -80,15 +80,36 @@ describe('HeaderActionsComponent', () => {
     expect(buttonIds()).toEqual(['a-button', 'b-button', 'c-button']);
   });
 
-  it('opens the menu and runs a picked action once it has closed', () => {
+  it('pins none when asked for fewer than none', () => {
+    const component = create(actions, -1);
+
+    expect(buttonIds()).toEqual(['more-button']);
+    expect(component.menu().map((a) => a.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('opens the menu from the More button, disabled when nothing in it can run', () => {
     const component = create(actions);
-    const event = new Event('click');
+    const more = query('[data-testid="more-button"]');
 
-    component.openMenu(event);
-    expect(component.menuEvent()).toBe(event);
+    expect(more?.id).toBe(component.triggerId);
+    expect(more?.getAttribute('aria-haspopup')).toBe('menu');
+    expect(more?.disabled).toBe(false);
 
+    fixture.componentRef.setInput('actions', [
+      actions[0],
+      { ...actions[1], disabled: true },
+      actions[2],
+    ]);
+    fixture.detectChanges();
+    expect(component.menuDisabled()).toBe(true);
+    expect(query('[data-testid="more-button"]')?.disabled).toBe(true);
+  });
+
+  it('runs a picked action once the menu has closed', () => {
+    const component = create(actions);
+
+    component.menuOpening();
     component.pick(actions[1]);
-    expect(component.menuEvent()).toBeNull();
     expect(run.b).not.toHaveBeenCalled();
 
     component.menuClosed();
@@ -98,13 +119,51 @@ describe('HeaderActionsComponent', () => {
     expect(run.b).toHaveBeenCalledOnce();
   });
 
+  it('runs the action as it is when the menu closes', () => {
+    const component = create(actions);
+    const later = vi.fn();
+
+    component.pick(actions[1]);
+    fixture.componentRef.setInput('actions', [
+      actions[0],
+      { ...actions[1], run: later },
+      actions[2],
+    ]);
+    component.menuClosed();
+    expect(later).toHaveBeenCalledOnce();
+    expect(run.b).not.toHaveBeenCalled();
+  });
+
+  it('skips a picked action that was disabled or removed before the menu closed', () => {
+    const component = create(actions);
+
+    component.pick(actions[1]);
+    fixture.componentRef.setInput('actions', [actions[0], { ...actions[1], disabled: true }]);
+    component.menuClosed();
+
+    component.pick(actions[1]);
+    fixture.componentRef.setInput('actions', [actions[0], actions[2]]);
+    component.menuClosed();
+
+    expect(run.b).not.toHaveBeenCalled();
+  });
+
+  it('forgets a pick left over from a menu that never closed', () => {
+    const component = create(actions);
+
+    component.pick(actions[1]); // The menu went away mid-dismiss (e.g. the screen widened).
+    component.menuOpening();
+    component.menuClosed();
+
+    expect(run.b).not.toHaveBeenCalled();
+  });
+
   it('runs nothing when the menu is dismissed without a pick', () => {
     const component = create(actions);
 
-    component.openMenu(new Event('click'));
+    component.menuOpening();
     component.menuClosed();
 
-    expect(component.menuEvent()).toBeNull();
     expect(Object.values(run).some((fn) => fn.mock.calls.length)).toBe(false);
   });
 });

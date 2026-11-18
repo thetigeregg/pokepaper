@@ -41,13 +41,13 @@ import { LayoutService } from '../../core/services/layout.service';
 import { CardDetailComponent } from '../../features/cards/card-detail.component';
 import { cardText, setLine } from '../../features/cards/card-display';
 import { CardTileComponent } from '../../features/cards/card-tile.component';
+import { LanguageButtonComponent } from '../../features/cards/language-button.component';
+import { SetChecklistComponent } from '../../features/cards/set-checklist.component';
+import { SetLogoComponent } from '../../features/cards/set-logo.component';
 import {
   HeaderActionsComponent,
   type HeaderAction,
 } from '../../features/common/header-actions.component';
-import { LanguageButtonComponent } from '../../features/cards/language-button.component';
-import { SetChecklistComponent } from '../../features/cards/set-checklist.component';
-import { SetLogoComponent } from '../../features/cards/set-logo.component';
 
 /**
  * A set's cards (docs/ui.md → Cards): an IonGrid of card images with
@@ -115,19 +115,12 @@ export class SetPage implements OnInit {
   );
   /** The header's view switch and download action, after the language button. */
   readonly actions = computed<HeaderAction[]>(() => [
-    this.view() === 'grid'
-      ? {
-          id: 'view',
-          label: 'Show as checklist',
-          icon: 'list-outline',
-          run: () => void this.toggleView(),
-        }
-      : {
-          id: 'view',
-          label: 'Show as grid',
-          icon: 'grid-outline',
-          run: () => void this.toggleView(),
-        },
+    {
+      id: 'view',
+      label: this.view() === 'grid' ? 'Show as checklist' : 'Show as grid',
+      icon: this.view() === 'grid' ? 'list-outline' : 'grid-outline',
+      run: () => void this.toggleView(),
+    },
     {
       id: 'download',
       label: this.downloaded() ? 'Downloaded for offline use' : 'Download images',

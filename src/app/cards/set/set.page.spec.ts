@@ -295,7 +295,10 @@ describe('SetPage', () => {
   it('offers downloads in the language or all languages', async () => {
     const page = await create();
 
-    page.actions()[1]?.run();
+    page
+      .actions()
+      .find((a) => a.id === 'download')
+      ?.run();
     await settle();
 
     expect(createSheet.mock.lastCall?.[0].header).toBe('Download images for offline use');
@@ -319,7 +322,7 @@ describe('SetPage', () => {
     await page.openDownloadActions();
 
     expect(createSheet.mock.lastCall?.[0].header).toBe('Downloaded for offline use');
-    expect(page.actions()[1]).toMatchObject({
+    expect(page.actions().find((a) => a.id === 'download')).toMatchObject({
       label: 'Downloaded for offline use',
       icon: 'cloud-done-outline',
     });
