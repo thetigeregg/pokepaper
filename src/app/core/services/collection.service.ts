@@ -10,6 +10,7 @@ import {
   isCollectionVariant,
   type CatalogLanguage,
   type CatalogRegion,
+  type CollectionChange,
   type CollectionEntry,
   type CollectionTarget,
 } from '@pokepaper/shared';
@@ -144,26 +145,51 @@ export class CollectionService {
    * synced). If saving fails, the saved collection is shown again. Rejects
    * an invalid target or quantity without showing it.
    */
-  async setQuantity(target: CollectionTarget, quantity: number): Promise<void> {
-    if (!isCollectionQuantity(quantity) || !isCollectionTarget(target)) {
+  setQuantity(target: CollectionTarget, quantity: number): Promise<void> {
+    return this.setQuantities([{ target, quantity }]);
+  }
+
+  /**
+   * `setQuantity` for several targets, saved together (all or none), e.g.
+   * marking a whole set owned. Rejects the lot if any change is invalid.
+   */
+  async setQuantities(changes: readonly CollectionChange[]): Promise<void> {
+    if (
+      changes.some(
+        ({ target, quantity }) => !isCollectionQuantity(quantity) || !isCollectionTarget(target)
+      )
+    ) {
       throw new RangeError('Invalid collection target or quantity');
     }
-    const key = collectionEntryId(target);
-    if (this._loaded() && (this.entries().get(key)?.quantity ?? 0) === quantity) {
+    // One change per entry (the last listed wins). Until loaded, every one is
+    // saved (the counts shown may still be 0).
+    const latest = [
+      ...new Map(changes.map((change) => [collectionEntryId(change.target), change])).values(),
+    ];
+    const effective = this._loaded()
+      ? latest.filter(
+          ({ target, quantity }) =>
+            (this.entries().get(collectionEntryId(target))?.quantity ?? 0) !== quantity
+        )
+      : latest;
+    if (effective.length === 0) {
       return;
     }
     this.generation++;
     this.pending++;
     this.entries.update((current) => {
       const next = new Map(current);
-      if (quantity > 0) {
-        next.set(key, collectionEntry(target, quantity));
-      } else {
-        next.delete(key);
+      for (const { target, quantity } of effective) {
+        const key = collectionEntryId(target);
+        if (quantity > 0) {
+          next.set(key, collectionEntry(target, quantity));
+        } else {
+          next.delete(key);
+        }
       }
       return next;
     });
-    const save = this.saves.then(() => this.repository.setCollectionQuantity(target, quantity));
+    const save = this.saves.then(() => this.repository.setCollectionQuantities(effective));
     this.saves = save.catch(() => undefined);
     try {
       await save;

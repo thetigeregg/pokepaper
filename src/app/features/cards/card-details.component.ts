@@ -9,7 +9,6 @@ import {
   IonNote,
 } from '@ionic/angular';
 import {
-  COLLECTION_VARIANTS,
   MAX_COLLECTION_QUANTITY,
   type CatalogCard,
   type CatalogLanguage,
@@ -22,13 +21,13 @@ import { addCircleOutline, removeCircleOutline } from 'ionicons/icons';
 import { LANGUAGE_LABELS } from '../../core/services/catalog-language.service';
 import { CollectionService } from '../../core/services/collection.service';
 import {
-  VARIANT_LABELS,
   cardSubtitle,
   cardText,
-  cardVariants,
+  collectionTarget,
   retreatCost,
   retreatLabel,
   setLine,
+  variantRows,
 } from './card-display';
 import { CardImageComponent } from './card-image.component';
 import { CardTextComponent } from './card-text.component';
@@ -69,19 +68,10 @@ export class CardDetailsComponent {
   /** Steppers stay disabled until the collection has loaded (they'd count from 0). */
   readonly ready = this.collection.loaded;
   readonly languageName = computed(() => LANGUAGE_LABELS[this.language()].name);
-  /**
-   * Copies owned in the current language per variant: those the card comes
-   * in, plus any other variant owned (TCGdex's flags have gaps), so every
-   * counted copy can be seen and changed.
-   */
-  readonly variants = computed(() => {
-    const listed = cardVariants(this.card());
-    return COLLECTION_VARIANTS.map((variant) => ({
-      variant,
-      label: VARIANT_LABELS[variant],
-      quantity: this.collection.quantity(this.target(variant)),
-    })).filter((row) => listed.includes(row.variant) || row.quantity > 0);
-  });
+  /** Copies owned in the current language per variant (`variantRows`). */
+  readonly variants = computed(() =>
+    variantRows(this.card(), (variant) => this.collection.quantity(this.target(variant)))
+  );
   /** "2 in German · 1 in French": copies owned in the card's other languages. */
   readonly otherLanguages = computed(() => {
     const card = this.card();
@@ -129,13 +119,6 @@ export class CardDetailsComponent {
   }
 
   private target(variant: CollectionVariant): CollectionTarget {
-    const card = this.card();
-    return {
-      region: card.region,
-      cardId: card.id,
-      setId: card.setId,
-      variant,
-      language: this.language(),
-    };
+    return collectionTarget(this.card(), variant, this.language());
   }
 }

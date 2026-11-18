@@ -41,6 +41,12 @@ export interface CollectionEntry {
 /** What a collection entry counts: everything but the quantity. */
 export type CollectionTarget = Omit<CollectionEntry, 'quantity'>;
 
+/** A new quantity for one target (0 removes it), for writing several at once. */
+export interface CollectionChange {
+  target: CollectionTarget;
+  quantity: number;
+}
+
 export const MAX_COLLECTION_QUANTITY = 999;
 
 /** Bounds for the short fields (`region`, `variant`, `language`). */

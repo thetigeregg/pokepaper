@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import {
   collectionEntry,
   collectionEntryId,
+  type CollectionChange,
   type CollectionEntry,
   type CollectionTarget,
   type SyncEntityType,
@@ -28,11 +29,13 @@ describe('CollectionService', () => {
   const dataChanged = new Subject<ReadonlySet<SyncEntityType>>();
   const repository = {
     listCollection: vi.fn(() => Promise.resolve([...stored.values()])),
-    setCollectionQuantity: vi.fn((what: CollectionTarget, quantity: number) => {
-      if (quantity > 0) {
-        stored.set(collectionEntryId(what), collectionEntry(what, quantity));
-      } else {
-        stored.delete(collectionEntryId(what));
+    setCollectionQuantities: vi.fn((changes: readonly CollectionChange[]) => {
+      for (const { target: what, quantity } of changes) {
+        if (quantity > 0) {
+          stored.set(collectionEntryId(what), collectionEntry(what, quantity));
+        } else {
+          stored.delete(collectionEntryId(what));
+        }
       }
       return Promise.resolve();
     }),
@@ -165,7 +168,9 @@ describe('CollectionService', () => {
     expect(service.quantity(target())).toBe(2);
     await saving;
 
-    expect(repository.setCollectionQuantity).toHaveBeenCalledWith(target(), 2);
+    expect(repository.setCollectionQuantities).toHaveBeenCalledWith([
+      { target: target(), quantity: 2 },
+    ]);
     expect(service.quantity(target())).toBe(2);
     expect(service.ownedInSet('intl', 'sv01', 'en')).toBe(1);
   });
@@ -178,7 +183,7 @@ describe('CollectionService', () => {
     });
 
     await service.setQuantity(target(), 1);
-    expect(repository.setCollectionQuantity).not.toHaveBeenCalled();
+    expect(repository.setCollectionQuantities).not.toHaveBeenCalled();
 
     await service.setQuantity(target(), 0);
     expect(service.quantity(target())).toBe(0);
@@ -196,7 +201,7 @@ describe('CollectionService', () => {
     await expect(service.setQuantity(what, quantity)).rejects.toThrow(RangeError);
 
     expect(service.quantity(what)).toBe(0);
-    expect(repository.setCollectionQuantity).not.toHaveBeenCalled();
+    expect(repository.setCollectionQuantities).not.toHaveBeenCalled();
   });
 
   it('saves a 0 made before the collection has loaded', async () => {
@@ -220,9 +225,62 @@ describe('CollectionService', () => {
     await service.setQuantity(target(), 0);
     finishLoad([{ ...target(), quantity: 2 }]);
 
-    expect(repository.setCollectionQuantity).toHaveBeenCalledWith(target(), 0);
+    expect(repository.setCollectionQuantities).toHaveBeenCalledWith([
+      { target: target(), quantity: 0 },
+    ]);
     expect(stored.size).toBe(0);
     expect(service.quantity(target())).toBe(0);
+  });
+
+  it('saves several changes together, skipping those that change nothing', async () => {
+    seed({ ...target(), quantity: 1 });
+    const service = await create();
+    await vi.waitFor(() => {
+      expect(service.quantity(target())).toBe(1);
+    });
+
+    const saving = service.setQuantities([
+      { target: target(), quantity: 1 }, // Already 1.
+      { target: target({ cardId: 'sv01-002' }), quantity: 1 },
+      { target: target({ cardId: 'sv01-003' }), quantity: 1 },
+    ]);
+    expect(service.ownedInSet('intl', 'sv01', 'en')).toBe(3); // Shown at once.
+    await saving;
+
+    expect(repository.setCollectionQuantities).toHaveBeenCalledTimes(1);
+    expect(repository.setCollectionQuantities.mock.calls[0]?.[0]).toEqual([
+      { target: target({ cardId: 'sv01-002' }), quantity: 1 },
+      { target: target({ cardId: 'sv01-003' }), quantity: 1 },
+    ]);
+    expect(stored.size).toBe(3);
+  });
+
+  it('keeps the last of several changes to one target', async () => {
+    const service = await create();
+
+    await service.setQuantities([
+      { target: target(), quantity: 2 },
+      { target: target(), quantity: 5 },
+    ]);
+
+    expect(repository.setCollectionQuantities.mock.calls[0]?.[0]).toEqual([
+      { target: target(), quantity: 5 },
+    ]);
+    expect(service.quantity(target())).toBe(5);
+  });
+
+  it('rejects all of several changes when one is invalid, showing none', async () => {
+    const service = await create();
+
+    await expect(
+      service.setQuantities([
+        { target: target(), quantity: 1 },
+        { target: target({ cardId: 'sv01-002' }), quantity: -1 },
+      ])
+    ).rejects.toThrow(RangeError);
+
+    expect(service.quantity(target())).toBe(0);
+    expect(repository.setCollectionQuantities).not.toHaveBeenCalled();
   });
 
   it('saves rapid changes in order', async () => {
@@ -234,16 +292,16 @@ describe('CollectionService', () => {
       service.setQuantity(target(), 3),
     ]);
 
-    expect(repository.setCollectionQuantity.mock.calls.map(([, quantity]) => quantity)).toEqual([
-      1, 2, 3,
-    ]);
+    expect(
+      repository.setCollectionQuantities.mock.calls.map(([changes]) => changes[0]?.quantity)
+    ).toEqual([1, 2, 3]);
     expect(service.quantity(target())).toBe(3);
   });
 
   it('shows the saved collection again when saving fails', async () => {
     const service = await create();
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    repository.setCollectionQuantity.mockImplementationOnce(() =>
+    repository.setCollectionQuantities.mockImplementationOnce(() =>
       Promise.reject(new Error('disk full'))
     );
 

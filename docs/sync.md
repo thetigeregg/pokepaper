@@ -4,7 +4,7 @@ PokePaper is local-first: the app reads and writes on-device storage and works f
 
 ## Client (implemented: `src/app/core/services/sync.service.ts`)
 
-**Writes.** A repository writes the entity to its local store and appends an outbox entry in the same storage transaction (`LocalUserDataRepository`). Operations carry the **full entity state** (`upsert` with the whole entity, or `delete`), never partial patches.
+**Writes.** A repository writes the entity to its local store and appends an outbox entry in the same storage transaction (`LocalUserDataRepository`). Operations carry the **full entity state** (`upsert` with the whole entity, or `delete`), never partial patches. Each entry's `createdAt` is strictly later than the previous one's (1 ms later when written within the same millisecond, e.g. a batch), so the outbox order, and which operation per entity is newest, never depends on how storage breaks ties.
 
 **Cycle.** Push the outbox, then pull the change log. A cycle runs on app start, every 30 seconds, when the browser comes back online, and after every local write. A trigger that arrives mid-cycle schedules exactly one follow-up cycle.
 

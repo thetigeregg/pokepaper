@@ -8,7 +8,12 @@ import { DexieStorageEngine } from '../data/dexie-storage-engine';
 import { makeContractPack } from '../data/storage-engine.contract';
 import { StorageEngineFactory } from '../data/storage-engine.factory';
 import { PreferenceStorageService } from '../storage/preference-storage.service';
-import { CATALOG_REGION_KEY, CatalogBrowseService, localized } from './catalog-browse.service';
+import {
+  CATALOG_REGION_KEY,
+  CatalogBrowseService,
+  SET_VIEW_KEY,
+  localized,
+} from './catalog-browse.service';
 import { CatalogLanguageService } from './catalog-language.service';
 import { CatalogSyncService } from './catalog-sync.service';
 
@@ -177,5 +182,57 @@ describe('CatalogBrowseService', () => {
     });
 
     expect(service.region()).toBe('asia');
+  });
+
+  describe('set view', () => {
+    it('starts in the stored view, and remembers a pick', async () => {
+      preferences.set(SET_VIEW_KEY, 'checklist');
+      const service = await create();
+      await vi.waitFor(() => {
+        expect(service.setView()).toBe('checklist');
+      });
+
+      await service.pickSetView('grid');
+
+      expect(service.setView()).toBe('grid');
+      expect(preferences.get(SET_VIEW_KEY)).toBe('grid');
+    });
+
+    it('defaults to the grid, ignoring unknown stored values', async () => {
+      preferences.set(SET_VIEW_KEY, 'carousel');
+      const service = await create();
+      await Promise.resolve();
+
+      expect(service.setView()).toBe('grid');
+    });
+
+    it('keeps a view picked before the stored one has loaded', async () => {
+      preferences.set(SET_VIEW_KEY, 'grid');
+      const service = TestBed.inject(CatalogBrowseService);
+
+      await service.pickSetView('checklist');
+      await create();
+
+      expect(service.setView()).toBe('checklist');
+    });
+
+    it('keeps working when the preference can’t be read or saved', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const storage = TestBed.inject(PreferenceStorageService);
+      vi.spyOn(storage, 'getItem').mockImplementation((key) =>
+        key === SET_VIEW_KEY ? Promise.reject(new Error('locked')) : Promise.resolve(null)
+      );
+      vi.spyOn(storage, 'setItem').mockRejectedValue(new Error('locked'));
+      const service = TestBed.inject(CatalogBrowseService);
+      await vi.waitFor(() => {
+        expect(error).toHaveBeenCalledWith('catalog.set_view_load_failed', expect.any(Error));
+      });
+
+      await service.pickSetView('checklist');
+
+      expect(service.setView()).toBe('checklist');
+      expect(error).toHaveBeenCalledWith('catalog.set_view_save_failed', expect.any(Error));
+      error.mockRestore();
+    });
   });
 });
