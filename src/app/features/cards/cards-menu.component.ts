@@ -1,21 +1,30 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
-import { IonContent, IonHeader, IonTitle, IonToolbar, NavController } from '@ionic/angular';
+import {
+  IonButtons,
+  IonContent,
+  IonHeader,
+  IonTitle,
+  IonToolbar,
+  NavController,
+} from '@ionic/angular';
 import type { CatalogSet } from '@pokepaper/shared';
 import { filter, map } from 'rxjs';
 import { catalogKey } from '../../core/data/storage-engine';
+import { CatalogBrowseService } from '../../core/services/catalog-browse.service';
 import { CatalogSearchService } from '../../core/services/catalog-search.service';
 import { LayoutService } from '../../core/services/layout.service';
 import { CardSearchbarComponent } from './card-searchbar.component';
 import { CatalogSegmentComponent } from './catalog-segment.component';
+import { LanguageButtonComponent } from './language-button.component';
 import { SetsListComponent } from './sets-list.component';
 
 const SET_URL = /^\/tabs\/cards\/set\/([^/]+)\/([^/?#]+)/;
 
 /**
- * The Cards tab's desktop side pane (docs/ui.md → Cards): the searchbar, the
- * catalog segment and the sets list, inside the IonMenu that TabsPage's IonSplitPane shows
+ * The Cards tab's desktop side pane (docs/ui.md → Cards): the language
+ * button, the searchbar, the catalog segment and the sets list, inside the IonMenu that TabsPage's IonSplitPane shows
  * beside the tabs while the Cards tab is open on a wide screen.
  */
 @Component({
@@ -25,6 +34,13 @@ const SET_URL = /^\/tabs\/cards\/set\/([^/]+)\/([^/?#]+)/;
     <ion-header>
       <ion-toolbar>
         <ion-title>Cards</ion-title>
+        <ion-buttons slot="end">
+          <app-language-button
+            [languages]="browse.languages()"
+            [value]="browse.language()"
+            (changed)="browse.pickLanguage($event)"
+          />
+        </ion-buttons>
       </ion-toolbar>
       <ion-toolbar>
         <app-card-searchbar />
@@ -43,9 +59,11 @@ const SET_URL = /^\/tabs\/cards\/set\/([^/]+)\/([^/?#]+)/;
     IonHeader,
     IonToolbar,
     IonTitle,
+    IonButtons,
     IonContent,
     CardSearchbarComponent,
     CatalogSegmentComponent,
+    LanguageButtonComponent,
     SetsListComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -54,6 +72,7 @@ export class CardsMenuComponent {
   private readonly nav = inject(NavController);
   private readonly router = inject(Router);
   private readonly search = inject(CatalogSearchService);
+  readonly browse = inject(CatalogBrowseService);
   readonly layout = inject(LayoutService);
 
   /** The set open beside the list, highlighted in it. */
