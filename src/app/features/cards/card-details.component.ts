@@ -47,6 +47,15 @@ export class CardDetailsComponent {
   readonly costSlots = computed(() =>
     Math.max(1, ...this.attacks().map((attack) => attack.cost.length))
   );
+  /** Retreat cost as Colorless energy, one icon per point. */
+  readonly retreatCost = computed(() =>
+    Array.from({ length: this.card().retreat ?? 0 }, () => 'Colorless')
+  );
+  /** One label for the retreat icons, instead of "Colorless" read once per icon. */
+  readonly retreatLabel = computed(() => {
+    const count = this.retreatCost().length;
+    return count ? `${String(count)} Colorless` : null;
+  });
   readonly legal = computed(() => {
     const { standard, expanded } = this.card().legal;
     return [standard ? 'Standard' : null, expanded ? 'Expanded' : null].filter(Boolean).join(' · ');
