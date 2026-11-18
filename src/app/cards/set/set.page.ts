@@ -11,13 +11,11 @@ import {
 import {
   ActionSheetController,
   IonBackButton,
-  IonButton,
   IonButtons,
   IonCol,
   IonContent,
   IonGrid,
   IonHeader,
-  IonIcon,
   IonProgressBar,
   IonRow,
   IonText,
@@ -43,6 +41,10 @@ import { LayoutService } from '../../core/services/layout.service';
 import { CardDetailComponent } from '../../features/cards/card-detail.component';
 import { cardText, setLine } from '../../features/cards/card-display';
 import { CardTileComponent } from '../../features/cards/card-tile.component';
+import {
+  HeaderActionsComponent,
+  type HeaderAction,
+} from '../../features/common/header-actions.component';
 import { LanguageButtonComponent } from '../../features/cards/language-button.component';
 import { SetChecklistComponent } from '../../features/cards/set-checklist.component';
 import { SetLogoComponent } from '../../features/cards/set-logo.component';
@@ -50,8 +52,9 @@ import { SetLogoComponent } from '../../features/cards/set-logo.component';
 /**
  * A set's cards (docs/ui.md → Cards): an IonGrid of card images with
  * "001 · Pineco" captions, or a checklist for collecting (the view is
- * remembered on the device). The header has the language switch, the view
- * switch and the download action; a card opens in the detail modal.
+ * remembered on the device). The header has the language switch, then the
+ * view switch and the download action (in a More menu on phones); a card
+ * opens in the detail modal.
  */
 @Component({
   selector: 'app-set',
@@ -62,8 +65,6 @@ import { SetLogoComponent } from '../../features/cards/set-logo.component';
     IonButtons,
     IonBackButton,
     IonTitle,
-    IonButton,
-    IonIcon,
     IonProgressBar,
     IonContent,
     IonGrid,
@@ -71,6 +72,7 @@ import { SetLogoComponent } from '../../features/cards/set-logo.component';
     IonCol,
     IonText,
     CardTileComponent,
+    HeaderActionsComponent,
     LanguageButtonComponent,
     SetChecklistComponent,
     SetLogoComponent,
@@ -111,6 +113,29 @@ export class SetPage implements OnInit {
   readonly downloaded = computed(() =>
     this.downloads.offlineSets().some((set) => set.setKey === this.key())
   );
+  /** The header's view switch and download action, after the language button. */
+  readonly actions = computed<HeaderAction[]>(() => [
+    this.view() === 'grid'
+      ? {
+          id: 'view',
+          label: 'Show as checklist',
+          icon: 'list-outline',
+          run: () => void this.toggleView(),
+        }
+      : {
+          id: 'view',
+          label: 'Show as grid',
+          icon: 'grid-outline',
+          run: () => void this.toggleView(),
+        },
+    {
+      id: 'download',
+      label: this.downloaded() ? 'Downloaded for offline use' : 'Download images',
+      icon: this.downloaded() ? 'cloud-done-outline' : 'cloud-download-outline',
+      disabled: this.downloading(),
+      run: () => void this.openDownloadActions(),
+    },
+  ]);
 
   private get engine(): StorageEngine {
     return this.storageEngineFactory.getEngine();

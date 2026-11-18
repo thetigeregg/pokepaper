@@ -134,8 +134,10 @@ describe('SetPage', () => {
 
   describe('checklist view', () => {
     const viewButton = () => query('[data-testid="view-button"]') as HTMLElement | null;
+    const viewAction = (page: SetPage) => page.actions().find((a) => a.id === 'view');
 
     it('switches between the grid and the checklist, remembering the choice', async () => {
+      wide.set(true); // The view button is in the header on desktop.
       const page = await create();
       expect(page.view()).toBe('grid');
       expect(query('app-set-checklist')).toBeNull();
@@ -152,6 +154,17 @@ describe('SetPage', () => {
       await settle();
       expect(browse.pickSetView).toHaveBeenLastCalledWith('grid');
       expect(query('app-card-tile')).not.toBeNull();
+    });
+
+    it('offers the view switch for the current view', async () => {
+      const page = await create();
+      expect(viewAction(page)).toMatchObject({ label: 'Show as checklist', icon: 'list-outline' });
+
+      viewAction(page)?.run();
+      await settle();
+
+      expect(browse.pickSetView).toHaveBeenLastCalledWith('checklist');
+      expect(viewAction(page)).toMatchObject({ label: 'Show as grid', icon: 'grid-outline' });
     });
 
     it('opens straight into the remembered view, without showing the grid first', async () => {
@@ -199,8 +212,27 @@ describe('SetPage', () => {
     expect(page.line(cards[0])).toBe('SVI · 001/2');
     expect(query('ion-back-button')).not.toBeNull();
     expect(page.downloaded()).toBe(false);
-    expect(query('[data-testid="download-button"]')).not.toBeNull();
     expect(query('ion-progress-bar')).toBeNull();
+  });
+
+  it('keeps the language button and moves view and download to a More menu on phones', async () => {
+    const page = await create();
+
+    expect(query('[data-testid="language-button"]')).not.toBeNull();
+    expect(query('[data-testid="more-button"]')).not.toBeNull();
+    expect(query('[data-testid="view-button"]')).toBeNull();
+    expect(query('[data-testid="download-button"]')).toBeNull();
+    expect(page.actions().map((a) => a.label)).toEqual(['Show as checklist', 'Download images']);
+  });
+
+  it('shows the language, view and download buttons on desktop', async () => {
+    wide.set(true);
+    await create();
+
+    expect(query('[data-testid="language-button"]')).not.toBeNull();
+    expect(query('[data-testid="view-button"]')).not.toBeNull();
+    expect(query('[data-testid="download-button"]')).not.toBeNull();
+    expect(query('[data-testid="more-button"]')).toBeNull();
   });
 
   it('hides the back button beside the split view on desktop', async () => {
@@ -263,7 +295,8 @@ describe('SetPage', () => {
   it('offers downloads in the language or all languages', async () => {
     const page = await create();
 
-    await page.openDownloadActions();
+    page.actions()[1]?.run();
+    await settle();
 
     expect(createSheet.mock.lastCall?.[0].header).toBe('Download images for offline use');
     expect(sheetButtons().map((b) => b.text)).toEqual([
@@ -286,6 +319,10 @@ describe('SetPage', () => {
     await page.openDownloadActions();
 
     expect(createSheet.mock.lastCall?.[0].header).toBe('Downloaded for offline use');
+    expect(page.actions()[1]).toMatchObject({
+      label: 'Downloaded for offline use',
+      icon: 'cloud-done-outline',
+    });
     const remove = sheetButtons().find((b) => b.role === 'destructive');
     remove?.handler?.();
     expect(downloads.removeSet).toHaveBeenCalledWith('intl:sv01');
@@ -301,6 +338,7 @@ describe('SetPage', () => {
   });
 
   it('shows progress and disables the download button while downloading', async () => {
+    wide.set(true);
     downloads.progress.set(new Map([['intl:sv01', { running: true, done: 1, total: 4 }]]));
     const page = await create();
 
