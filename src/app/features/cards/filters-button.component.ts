@@ -8,17 +8,30 @@ import { FILTER_KINDS, pickedValues } from './search-filters';
 
 /**
  * The phone Filters button (docs/ui.md → Cards → Search), in the Cards title
- * toolbar: an icon IonButton, with an IonBadge to its left counting the
- * picked values. It shows search and opens the filters sheet.
+ * toolbar: an icon IonButton with an IonBadge on the icon's top-right corner
+ * counting the picked values. It shows search and opens the filters sheet.
  */
 @Component({
   selector: 'app-filters-button',
-  // The badge sits left of the button, so the button never moves.
-  host: { class: 'ion-display-flex ion-align-items-center' },
+  styles: [
+    `
+      :host {
+        position: relative;
+        display: inline-block;
+      }
+      /* On the icon's corner, over the button; taps go to the button. */
+      .count {
+        position: absolute;
+        top: 2px;
+        right: 0;
+        min-width: 16px;
+        padding: 2px 4px;
+        font-size: 0.65rem;
+        pointer-events: none;
+      }
+    `,
+  ],
   template: `
-    @if (count(); as count) {
-      <ion-badge aria-hidden="true" data-testid="filters-count">{{ count }}</ion-badge>
-    }
     <ion-button
       (click)="open()"
       [attr.aria-label]="count() ? 'Filters, ' + count() + ' picked' : 'Filters'"
@@ -26,6 +39,11 @@ import { FILTER_KINDS, pickedValues } from './search-filters';
     >
       <ion-icon slot="icon-only" name="options-outline"></ion-icon>
     </ion-button>
+    @if (count(); as count) {
+      <ion-badge class="count" aria-hidden="true" data-testid="filters-count">
+        {{ count }}
+      </ion-badge>
+    }
   `,
   imports: [IonButton, IonIcon, IonBadge],
   changeDetection: ChangeDetectionStrategy.OnPush,
