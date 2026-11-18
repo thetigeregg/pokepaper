@@ -82,7 +82,7 @@ After each release, the `iOS TestFlight` workflow (`.github/workflows/ios-testfl
   - **Manual runs:** `workflow_dispatch` always builds, which is useful for signing retries.
 - **Version:** the build's version is the release's `package.json` version. Its build number is one more than the latest in TestFlight (`sync-ios-version.mjs --build-number`).
 - **Signing:** [fastlane match](https://docs.fastlane.tools/actions/match/) installs the App Store certificate and profile from the team's shared, encrypted match repo (`ios/fastlane/Matchfile`). That's the same repo go-gather uses: one Apple Distribution certificate per team, and one profile per app. CI uses match read-only, so it never creates signing assets.
-- **Xcode:** the workflow pins an Xcode with the iOS 26 SDK, because Apple rejects uploads built with older SDKs.
+- **Xcode:** the workflow pins Xcode 27.2 on GitHub's `xcode-27` runner. Uploads need the iOS 26 SDK today, and the iOS 27 SDK from April 2027 (App Store Connect warns about it with ITMS-90725). Keep the pin at least at the SDK Apple requires.
 
 ### One-time setup
 
