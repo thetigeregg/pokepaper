@@ -89,11 +89,12 @@ describe('CollectionService', () => {
     error.mockRestore();
   });
 
-  it('counts only variants and languages this build knows, keeping the others stored', async () => {
+  it('counts only regions, variants and languages this build knows, keeping the others stored', async () => {
     seed(
       { ...target(), quantity: 1 },
       { ...target({ variant: 'stamped' }), quantity: 5 },
-      { ...target({ language: 'ko' }), quantity: 7 }
+      { ...target({ language: 'ko' }), quantity: 7 },
+      { ...target({ region: 'eu' }), quantity: 9 }
     );
     const service = await create();
 
@@ -117,6 +118,7 @@ describe('CollectionService', () => {
       expect(service.cardTotal('intl', 'sv01-001', 'en')).toBe(3);
     });
     expect(service.cardTotal('intl', 'sv01-001', 'de')).toBe(4);
+    expect(service.cardTotalByKey('intl:sv01-001', 'en')).toBe(3); // A search row's key.
     expect(service.cardTotal('intl', 'sv01-001', 'fr')).toBe(0);
     expect(service.cardTotal('asia', 'sv01-001', 'en')).toBe(0);
   });

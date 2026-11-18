@@ -37,11 +37,11 @@ describe('FilterPickerComponent', () => {
         ['intl:sv01', 7],
         ['intl:sv02', 2],
       ]),
-      owned: [
-        { value: 'owned', count: 0 },
-        { value: 'missing', count: 42 },
-      ],
     }),
+    ownedCounts: signal([
+      { value: 'owned', count: 0 },
+      { value: 'missing', count: 42 },
+    ]),
   };
   const sv01 = { ...makeContractPack('intl', 'sv01', []).set, names: { en: 'Scarlet & Violet' } };
   const sv02 = { ...makeContractPack('intl', 'sv02', []).set, names: { en: 'Paldea Evolved' } };

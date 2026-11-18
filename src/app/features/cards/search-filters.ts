@@ -1,7 +1,11 @@
 import type { CatalogLanguage, CatalogSet } from '@pokepaper/shared';
 import type { SeriesGroup } from '../../core/services/catalog-browse.service';
 import { localized } from '../../core/services/catalog-browse.service';
-import type { FilterCount, SearchFilters } from '../../core/services/catalog-search.service';
+import type {
+  FilterCount,
+  OwnedValue,
+  SearchFilters,
+} from '../../core/services/catalog-search.service';
 import { normalizeSearchText } from '../../core/utils/search-text.util';
 import { ENERGY_TYPES } from './energy';
 
@@ -114,15 +118,17 @@ export function typeOptions(counts: readonly FilterCount[]): FilterOption[] {
     .map(({ value, count }) => ({ value, label: value, count, energy: value }));
 }
 
-const OWNED_LABELS: Readonly<Record<string, string>> = { owned: 'Owned', missing: 'Missing' };
+const OWNED_LABELS: Readonly<Record<OwnedValue, string>> = { owned: 'Owned', missing: 'Missing' };
+
+function isOwnedValue(value: string): value is OwnedValue {
+  return Object.hasOwn(OWNED_LABELS, value);
+}
 
 /** Owned, then Missing (docs/collection.md), both always offered. */
-export function collectionOptions(counts: readonly FilterCount[]): FilterOption[] {
-  return counts.map(({ value, count }) => ({
-    value,
-    label: OWNED_LABELS[value] ?? value,
-    count,
-  }));
+export function collectionOptions(
+  counts: readonly { value: OwnedValue; count: number }[]
+): FilterOption[] {
+  return counts.map(({ value, count }) => ({ value, label: OWNED_LABELS[value], count }));
 }
 
 /** Rarities, most common first. */
@@ -208,7 +214,7 @@ export function valueLabel(kind: FilterKind, names: SetNames): (value: string) =
   return (value) => {
     switch (kind) {
       case 'collection':
-        return OWNED_LABELS[value] ?? value;
+        return isOwnedValue(value) ? OWNED_LABELS[value] : value;
       case 'category':
         return categoryLabel(value);
       case 'set': {

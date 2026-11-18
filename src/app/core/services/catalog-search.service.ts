@@ -145,18 +145,52 @@ export class CatalogSearchService {
       )
   );
 
-  /** Whether a card is owned in the language its set opens in (any variant). */
+  /**
+   * Bumped whenever the search changes (query, filters, showing search), so
+   * collection status is read afresh then (see `ownedTest`).
+   */
+  private readonly searchChanges = signal(0);
+
+  /**
+   * Whether a card is owned in the language its set opens in (any variant).
+   * Status is read when the search changes, the catalog or its language
+   * changes, or the collection first loads, not on every quantity change:
+   * adding a copy from the card modal while Missing is picked keeps the card
+   * in the results (its badge updates) instead of reshuffling the list the
+   * modal is paging through.
+   */
   private readonly ownedTest = computed(() => {
+    this.searchChanges();
+    this.collection.loaded();
     const languages = this.setLanguages();
-    const fallback = this.catalogLanguage.forSet(this.region(), []);
+    const fallback = this.language();
     return (row: CatalogSearchRow): OwnedValue =>
-      this.collection.cardTotal(
-        row.region,
-        row.key.slice(row.region.length + 1),
-        languages.get(row.setKey) ?? fallback
+      untracked(() =>
+        this.collection.cardTotalByKey(row.key, languages.get(row.setKey) ?? fallback)
       ) > 0
         ? 'owned'
         : 'missing';
+  });
+
+  /**
+   * How many cards the search leaves owned and missing, both always listed:
+   * counted over the query and every other filter, like `counts`. Kept apart
+   * so status is only looked up while the Collection picker shows.
+   */
+  readonly ownedCounts = computed<{ value: OwnedValue; count: number }[]>(() => {
+    const owned = this.ownedTest();
+    const filters = { ...this._filters(), owned: [] };
+    const sets = this.sets();
+    const tally: Record<OwnedValue, number> = { owned: 0, missing: 0 };
+    for (const { row } of this.queryMatches()) {
+      if (matchesFilters(row, filters, sets.get(row.setKey)?.seriesKey, owned)) {
+        tally[owned(row)] += 1;
+      }
+    }
+    return [
+      { value: 'owned', count: tally.owned },
+      { value: 'missing', count: tally.missing },
+    ];
   });
 
   /** What the current catalog calls its sets and series, for labeling filter picks. */
@@ -237,7 +271,6 @@ export class CatalogSearchService {
       [...map]
         .map(([value, count]) => ({ value, count }))
         .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
-    const ownedCounts = tally(matching({ owned: [] }), (row) => [owned(row)]);
     return {
       categories: sorted(tally(matching({ categories: [] }), categoryValues)),
       types: sorted(tally(matching({ types: [] }), (row) => row.types)),
@@ -246,11 +279,6 @@ export class CatalogSearchService {
       ),
       /** By set key. */
       sets: tally(matching({ series: [], sets: [] }), (row) => [row.setKey]),
-      /** Owned and missing cards, both always listed. */
-      owned: (['owned', 'missing'] as const).map((value) => ({
-        value,
-        count: ownedCounts.get(value) ?? 0,
-      })),
     };
   });
 
@@ -281,11 +309,13 @@ export class CatalogSearchService {
   setQuery(query: string): void {
     this._query.set(query);
     this._active.set(true);
+    this.searchChanges.update((count) => count + 1);
   }
 
   setFilters(filters: SearchFilters): void {
     this._filters.set(filters);
     this._active.set(true);
+    this.searchChanges.update((count) => count + 1);
   }
 
   /** Loads the current catalog's search rows again after a failure. */
@@ -298,6 +328,7 @@ export class CatalogSearchService {
       this.retry();
     }
     this._active.set(true);
+    this.searchChanges.update((count) => count + 1);
   }
 
   /** Hides search, keeping the query and filters (desktop: a set was opened). */
@@ -403,7 +434,7 @@ export class CatalogSearchService {
   }
 }
 
-/** `owned` tells a card's collection status; it's only asked while that filter is used. */
+/** `owned` tells a card's collection status; it's only asked while the Collection filter is used. */
 function matchesFilters(
   row: CatalogSearchRow,
   filters: SearchFilters,

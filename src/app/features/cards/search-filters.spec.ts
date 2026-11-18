@@ -194,6 +194,7 @@ describe('search filters', () => {
     expect(chipLabel('collection', { ...NO_FILTERS, owned: ['owned', 'missing'] }, label)).toBe(
       'Collection: Owned +1'
     );
+    expect(label('toString')).toBe('toString'); // Only its own statuses get labels.
     expect(kindActive(NO_FILTERS, 'collection')).toBe(false);
     expect(withoutKind({ ...NO_FILTERS, owned: ['owned'] }, 'collection')).toEqual(NO_FILTERS);
   });

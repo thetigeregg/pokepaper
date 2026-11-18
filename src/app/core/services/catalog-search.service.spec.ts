@@ -87,6 +87,7 @@ describe('CatalogSearchService', () => {
   const owned = signal<Record<string, number>>({});
   /** Which language each catalog's sets open in (when they have it). */
   const remembered = signal<Record<string, string>>({ intl: 'en', asia: 'ja' });
+  const collectionLoaded = signal(true);
 
   async function create(): Promise<CatalogSearchService> {
     const service = TestBed.inject(CatalogSearchService);
@@ -105,6 +106,7 @@ describe('CatalogSearchService', () => {
     preferences.clear();
     owned.set({});
     remembered.set({ intl: 'en', asia: 'ja' });
+    collectionLoaded.set(true);
     TestBed.configureTestingModule({
       providers: [
         AppDb,
@@ -137,8 +139,9 @@ describe('CatalogSearchService', () => {
         {
           provide: CollectionService,
           useValue: {
-            cardTotal: (_region: string, cardId: string, language: string) =>
-              owned()[`${cardId}:${language}`] ?? 0,
+            loaded: collectionLoaded,
+            cardTotalByKey: (cardKey: string, language: string) =>
+              owned()[`${cardKey.slice(cardKey.indexOf(':') + 1)}:${language}`] ?? 0,
           },
         },
         { provide: CatalogSyncService, useValue: { changed$: changed.asObservable() } },
@@ -300,30 +303,48 @@ describe('CatalogSearchService', () => {
       remembered.set({ intl: 'de', asia: 'ja' }); // The contract sets are English-only…
       expect(keys(service)).toEqual([]);
       owned.set({ 'sv01-2:en': 1 }); // …so they still open, and count, in English.
+      service.setFilters({ ...NO_FILTERS, owned: ['owned'] });
       expect(keys(service)).toEqual(['intl:sv01-2']);
     });
 
-    it('updates as the collection changes', async () => {
+    it('keeps results steady as quantities change, rereading status when the search changes', async () => {
+      const service = await create();
+      service.setFilters({ ...NO_FILTERS, owned: ['missing'], sets: ['intl:sv02'] });
+      expect(keys(service)).toEqual(['intl:sv02-1']);
+
+      owned.set({ 'sv02-1:en': 1 }); // Added from the card modal.
+      expect(keys(service)).toEqual(['intl:sv02-1']); // Still listed while paging.
+
+      service.setQuery('');
+      expect(keys(service)).toEqual([]);
+      owned.set({});
+      service.activate();
+      expect(keys(service)).toEqual(['intl:sv02-1']);
+    });
+
+    it('rereads status once the collection has loaded', async () => {
+      collectionLoaded.set(false);
       const service = await create();
       service.setFilters({ ...NO_FILTERS, owned: ['owned'] });
       expect(keys(service)).toEqual([]);
 
-      owned.set({ 'sv02-1:en': 1 });
+      owned.set({ 'sv01-1:en': 2 });
+      collectionLoaded.set(true);
 
-      expect(keys(service)).toEqual(['intl:sv02-1']);
+      expect(keys(service)).toEqual(['intl:sv01-1']);
     });
 
     it('counts owned and missing cards, both always listed, narrowed by the other filters', async () => {
       owned.set({ 'sv01-2:en': 1 });
       const service = await create();
 
-      expect(service.counts().owned).toEqual([
+      expect(service.ownedCounts()).toEqual([
         { value: 'owned', count: 1 },
         { value: 'missing', count: 4 },
       ]);
 
       service.setFilters({ ...NO_FILTERS, owned: ['owned'], types: ['Grass'] });
-      expect(service.counts().owned).toEqual([
+      expect(service.ownedCounts()).toEqual([
         { value: 'owned', count: 0 },
         { value: 'missing', count: 1 },
       ]);

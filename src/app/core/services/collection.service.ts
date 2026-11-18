@@ -1,6 +1,7 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
+  CATALOG_REGIONS,
   collectionEntry,
   collectionEntryId,
   isCatalogLanguage,
@@ -13,8 +14,20 @@ import {
   type CollectionTarget,
 } from '@pokepaper/shared';
 import { LocalUserDataRepository } from '../data/local-user-data-repository';
+import { catalogKey } from '../data/storage-engine';
 import { inDisplayOrder } from './catalog-language.service';
 import { SyncService } from './sync.service';
+
+/** An entry with a region, variant and language this build knows. */
+type ShownEntry = CollectionEntry & { region: CatalogRegion; language: CatalogLanguage };
+
+function isShown(entry: CollectionEntry): entry is ShownEntry {
+  return (
+    (CATALOG_REGIONS as readonly string[]).includes(entry.region) &&
+    isCollectionVariant(entry.variant) &&
+    isCatalogLanguage(entry.language)
+  );
+}
 
 /** A card's copies in one language, across variants. */
 export interface LanguageQuantity {
@@ -47,27 +60,22 @@ export class CollectionService {
   readonly loaded = this._loaded.asReadonly();
 
   /**
-   * Entries this build can show: known variants and languages. Badges and
-   * progress count only these, so every counted copy has a stepper.
+   * Entries this build can show: known regions, variants and languages.
+   * Badges and progress count only these, so every counted copy has a stepper.
    */
-  private readonly shown = computed(() =>
-    [...this.entries().values()].filter(
-      (entry) => isCollectionVariant(entry.variant) && isCatalogLanguage(entry.language)
-    )
-  );
+  private readonly shown = computed(() => [...this.entries().values()].filter(isShown));
 
-  /** Copies of each card per language, keyed `region:cardId`. */
+  /** Copies of each card per language, keyed like the catalog (`catalogKey`). */
   private readonly cardLanguages = computed(() => {
     const cards = new Map<string, Map<CatalogLanguage, number>>();
     for (const entry of this.shown()) {
-      const key = `${entry.region}:${entry.cardId}`;
-      const language = entry.language as CatalogLanguage;
+      const key = catalogKey(entry.region, entry.cardId);
       let languages = cards.get(key);
       if (!languages) {
         languages = new Map();
         cards.set(key, languages);
       }
-      languages.set(language, (languages.get(language) ?? 0) + entry.quantity);
+      languages.set(entry.language, (languages.get(entry.language) ?? 0) + entry.quantity);
     }
     return cards;
   });
@@ -105,7 +113,12 @@ export class CollectionService {
 
   /** Copies of a card in `language`, across variants. */
   cardTotal(region: CatalogRegion, cardId: string, language: CatalogLanguage): number {
-    return this.cardLanguages().get(`${region}:${cardId}`)?.get(language) ?? 0;
+    return this.cardTotalByKey(catalogKey(region, cardId), language);
+  }
+
+  /** `cardTotal` by the card's catalog key (`region:id`), as search rows have it. */
+  cardTotalByKey(cardKey: string, language: CatalogLanguage): number {
+    return this.cardLanguages().get(cardKey)?.get(language) ?? 0;
   }
 
   /** A card's copies in every language but `language`, in display order. */
@@ -115,7 +128,7 @@ export class CollectionService {
     language: CatalogLanguage
   ): LanguageQuantity[] {
     const languages =
-      this.cardLanguages().get(`${region}:${cardId}`) ?? new Map<CatalogLanguage, number>();
+      this.cardLanguages().get(catalogKey(region, cardId)) ?? new Map<CatalogLanguage, number>();
     return inDisplayOrder([...languages.keys()].filter((other) => other !== language)).map(
       (other) => ({ language: other, quantity: languages.get(other) ?? 0 })
     );

@@ -138,15 +138,14 @@ export class FilterPickerComponent implements OnInit {
   });
 
   readonly options = computed<FilterOption[]>(() => {
-    const counts = this.search.counts();
     const filters = this.search.filters();
     switch (this.kind()) {
       case 'collection':
-        return collectionOptions(counts.owned);
+        return collectionOptions(this.search.ownedCounts());
       case 'type':
-        return typeOptions(withPicked(counts.types, filters.types));
+        return typeOptions(withPicked(this.search.counts().types, filters.types));
       case 'rarity':
-        return rarityOptions(withPicked(counts.rarities, filters.rarities));
+        return rarityOptions(withPicked(this.search.counts().rarities, filters.rarities));
       default:
         return [];
     }
