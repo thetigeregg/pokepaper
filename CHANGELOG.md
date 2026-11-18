@@ -77,3 +77,7 @@
 ## v0.12.0 - 2026-11-18
 
 - 858840d feat(collection): filter card search by owned or missing (#27)
+
+## v0.13.0 - 2026-11-18
+
+- e796765 feat(collection): add a per-set checklist for quick entry (#28)
