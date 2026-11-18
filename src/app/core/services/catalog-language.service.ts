@@ -11,16 +11,38 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { LocalUserDataRepository } from '../data/local-user-data-repository';
 import { SyncService } from './sync.service';
 
-/** Short labels for language buttons, and full names for pickers. */
+/**
+ * Labels per language: `short` for badges, `name` everywhere else. Names
+ * are always English ("German", not "Deutsch"), in pickers and app text
+ * alike (docs/ui.md → Language).
+ */
 export const LANGUAGE_LABELS: Readonly<Record<CatalogLanguage, { short: string; name: string }>> = {
   en: { short: 'EN', name: 'English' },
-  fr: { short: 'FR', name: 'Français' },
-  it: { short: 'IT', name: 'Italiano' },
-  de: { short: 'DE', name: 'Deutsch' },
-  ja: { short: 'JA', name: '日本語' },
-  'zh-tw': { short: '繁中', name: '繁體中文' },
-  'zh-cn': { short: '简中', name: '简体中文' },
+  fr: { short: 'FR', name: 'French' },
+  it: { short: 'IT', name: 'Italian' },
+  de: { short: 'DE', name: 'German' },
+  ja: { short: 'JA', name: 'Japanese' },
+  'zh-tw': { short: '繁中', name: 'Traditional Chinese' },
+  'zh-cn': { short: '简中', name: 'Simplified Chinese' },
 };
+
+/** The order languages are listed in pickers and app text. */
+const LANGUAGE_DISPLAY_ORDER: readonly CatalogLanguage[] = [
+  'en',
+  'de',
+  'fr',
+  'it',
+  'ja',
+  'zh-tw',
+  'zh-cn',
+];
+
+/** `languages` in display order (English, German, French, Italian, then Asian languages). */
+export function inDisplayOrder(languages: readonly CatalogLanguage[]): CatalogLanguage[] {
+  return [...languages].sort(
+    (a, b) => LANGUAGE_DISPLAY_ORDER.indexOf(a) - LANGUAGE_DISPLAY_ORDER.indexOf(b)
+  );
+}
 
 /**
  * The language sets and cards open in: the last one picked in each catalog
@@ -55,11 +77,13 @@ export class CatalogLanguageService {
 
   /**
    * The language to show a set in: the catalog's remembered language if the
-   * set has it, else the set's first language.
+   * set has it, else the set's first language in display order.
    */
   forSet(region: CatalogRegion, setLanguages: readonly CatalogLanguage[]): CatalogLanguage {
     const remembered = this.languages()[region];
-    return setLanguages.includes(remembered) ? remembered : (setLanguages[0] ?? remembered);
+    return setLanguages.includes(remembered)
+      ? remembered
+      : (inDisplayOrder(setLanguages)[0] ?? remembered);
   }
 
   /**

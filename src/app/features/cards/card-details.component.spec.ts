@@ -1,8 +1,19 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
-import type { CatalogCard, CatalogCardText, CatalogSet } from '@pokepaper/shared';
+import {
+  collectionEntry,
+  collectionEntryId,
+  type CatalogCard,
+  type CatalogCardText,
+  type CatalogSet,
+  type CollectionEntry,
+  type CollectionTarget,
+} from '@pokepaper/shared';
+import { NEVER } from 'rxjs';
 import { vi } from 'vitest';
+import { LocalUserDataRepository } from '../../core/data/local-user-data-repository';
 import { makeContractCard, makeContractPack } from '../../core/data/storage-engine.contract';
 import { ImageCacheService } from '../../core/services/image-cache.service';
+import { SyncService } from '../../core/services/sync.service';
 import { VisibilityService } from '../../core/services/visibility.service';
 import { CardDetailsComponent } from './card-details.component';
 
@@ -10,6 +21,7 @@ describe('CardDetailsComponent', () => {
   const base = makeContractCard('intl', 'sv01', 'sv01-004', 3);
   const set: CatalogSet = {
     ...makeContractPack('intl', 'sv01', []).set,
+    languages: ['en', 'fr', 'de'],
     abbreviation: 'SVI',
     cardCount: { total: 258, official: 198 },
   };
@@ -34,9 +46,50 @@ describe('CardDetailsComponent', () => {
   const detail = (fixture: ComponentFixture<CardDetailsComponent>, testId: string) =>
     element(fixture).querySelector(`[data-testid="detail-${testId}"]`)?.textContent.trim();
 
+  /** The collection's storage: the real CollectionService runs on top of it. */
+  let stored: Map<string, CollectionEntry>;
+  const repository = {
+    listCollection: vi.fn(() => Promise.resolve([...stored.values()])),
+    setCollectionQuantity: vi.fn((target: CollectionTarget, quantity: number) => {
+      if (quantity > 0) {
+        stored.set(collectionEntryId(target), collectionEntry(target, quantity));
+      } else {
+        stored.delete(collectionEntryId(target));
+      }
+      return Promise.resolve();
+    }),
+  };
+  const entry = (overrides: Partial<CollectionEntry>): CollectionEntry => ({
+    region: 'intl',
+    cardId: base.id,
+    setId: 'sv01',
+    variant: 'normal',
+    language: 'en',
+    quantity: 1,
+    ...overrides,
+  });
+  const rows = (fixture: ComponentFixture<CardDetailsComponent>) =>
+    [...element(fixture).querySelectorAll('[data-testid^="variant-"]')].map((row) => ({
+      variant: row.getAttribute('data-testid'),
+      quantity: row.querySelector('[data-testid="quantity"]')?.textContent.trim(),
+    }));
+  const button = (fixture: ComponentFixture<CardDetailsComponent>, variant: string, id: string) =>
+    element(fixture).querySelector<HTMLIonButtonElement>(
+      `[data-testid="variant-${variant}"] [data-testid="${id}"]`
+    );
+  /** Lets the collection load (native async isn't tracked by zone.js). */
+  const settle = async (fixture: ComponentFixture<CardDetailsComponent>) => {
+    await new Promise((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+  };
+
   beforeEach(() => {
+    stored = new Map();
+    repository.setCollectionQuantity.mockClear();
     TestBed.configureTestingModule({
       providers: [
+        { provide: LocalUserDataRepository, useValue: repository },
+        { provide: SyncService, useValue: { dataChanged$: NEVER } },
         { provide: ImageCacheService, useValue: { resolve: vi.fn(), release: vi.fn() } },
         { provide: VisibilityService, useValue: { whenVisible: () => () => undefined } },
       ],
@@ -67,7 +120,7 @@ describe('CardDetailsComponent', () => {
     expect(root.querySelector('h2')?.textContent).toBe('Bulbasaur');
     expect(root.textContent).toContain('HP 110 · Stage 1');
     expect(root.textContent).toContain('Evolves from Seed');
-    expect(headers(fixture)).toEqual(['Attacks', 'Details']);
+    expect(headers(fixture)).toEqual(['Attacks', 'Collection · English', 'Details']);
 
     const costs = [...root.querySelectorAll('.cost')];
     expect(costs.map((cost) => cost.getAttribute('aria-label'))).toEqual([
@@ -97,7 +150,7 @@ describe('CardDetailsComponent', () => {
       }),
     });
 
-    expect(headers(fixture)).toEqual(['Abilities', 'Attacks', 'Details']);
+    expect(headers(fixture)).toEqual(['Abilities', 'Attacks', 'Collection · English', 'Details']);
     expect(element(fixture).querySelector('[data-testid="ability-name"]')?.textContent.trim()).toBe(
       'Ability: Overgrow'
     );
@@ -152,7 +205,7 @@ describe('CardDetailsComponent', () => {
     });
     const root = element(fixture);
 
-    expect(headers(fixture)).toEqual(['Effect', 'Details']);
+    expect(headers(fixture)).toEqual(['Effect', 'Collection · English', 'Details']);
     expect(root.textContent).toContain('Draw 2 cards.');
     expect(root.querySelector('.stats')).toBeNull();
     expect(root.querySelector('.types')).toBeNull();
@@ -172,5 +225,136 @@ describe('CardDetailsComponent', () => {
     const fixture = create(base, 'de');
 
     expect(element(fixture).querySelector('h2')?.textContent).toBe('sv01-004');
+  });
+
+  describe('collection', () => {
+    it('lists the card’s variants with the copies owned in the current language', async () => {
+      stored.set('intl:sv01-004:reverse:en', entry({ variant: 'reverse', quantity: 2 }));
+      stored.set('intl:sv01-004:normal:de', entry({ language: 'de', quantity: 5 }));
+      const fixture = create(base);
+      await settle(fixture);
+
+      expect(rows(fixture)).toEqual([
+        { variant: 'variant-normal', quantity: '0' },
+        { variant: 'variant-reverse', quantity: '2' },
+      ]);
+      expect(button(fixture, 'normal', 'remove-copy')?.disabled).toBe(true);
+      expect(button(fixture, 'reverse', 'remove-copy')?.disabled).toBe(false);
+    });
+
+    it('offers just Normal when TCGdex lists no variants', () => {
+      const fixture = create({
+        ...base,
+        variants: {
+          normal: false,
+          reverse: false,
+          holo: false,
+          firstEdition: false,
+          wPromo: false,
+        },
+      });
+
+      expect(rows(fixture).map((row) => row.variant)).toEqual(['variant-normal']);
+    });
+
+    it('adds and removes copies in the current language', async () => {
+      const fixture = create(base, 'de');
+      await settle(fixture);
+
+      button(fixture, 'reverse', 'add-copy')?.click();
+      button(fixture, 'reverse', 'add-copy')?.click();
+      await settle(fixture);
+      expect(rows(fixture)[1]?.quantity).toBe('2');
+
+      button(fixture, 'reverse', 'remove-copy')?.click();
+      await settle(fixture);
+
+      expect(element(fixture).querySelector('[data-testid="collection-header"]')?.textContent).toBe(
+        'Collection · German'
+      );
+      expect(rows(fixture)[1]?.quantity).toBe('1');
+      expect(repository.setCollectionQuantity.mock.calls.map(([, quantity]) => quantity)).toEqual([
+        1, 2, 1,
+      ]);
+      expect([...stored.values()]).toEqual([entry({ variant: 'reverse', language: 'de' })]);
+    });
+
+    it('notes copies owned in the set’s other languages, in English and display order', async () => {
+      stored.set('intl:sv01-004:normal:de', entry({ language: 'de', quantity: 2 }));
+      stored.set('intl:sv01-004:holo:fr', entry({ language: 'fr', variant: 'holo' }));
+      stored.set('intl:sv01-004:normal:en', entry({}));
+      const fixture = create(base);
+      await settle(fixture);
+
+      expect(
+        element(fixture).querySelector('[data-testid="other-languages"]')?.textContent.trim()
+      ).toBe('Also 2 in German · 1 in French');
+    });
+
+    it('keeps the steppers disabled until the collection has loaded', async () => {
+      stored.set('intl:sv01-004:normal:en', entry({ quantity: 5 }));
+      let finishLoad: () => void = () => undefined;
+      repository.listCollection.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishLoad = () => {
+              resolve([...stored.values()]);
+            };
+          })
+      );
+      const fixture = create(base);
+
+      expect(button(fixture, 'normal', 'add-copy')?.disabled).toBe(true);
+      expect(button(fixture, 'reverse', 'add-copy')?.disabled).toBe(true);
+
+      finishLoad();
+      await settle(fixture);
+
+      expect(rows(fixture)[0]?.quantity).toBe('5');
+      expect(button(fixture, 'normal', 'add-copy')?.disabled).toBe(false);
+    });
+
+    it('also lists variants owned that TCGdex doesn’t flag, so they can be changed', async () => {
+      stored.set('intl:sv01-004:holo:en', entry({ variant: 'holo', quantity: 1 }));
+      const fixture = create(base);
+      await settle(fixture);
+
+      expect(rows(fixture)).toEqual([
+        { variant: 'variant-normal', quantity: '0' },
+        { variant: 'variant-reverse', quantity: '0' },
+        { variant: 'variant-holo', quantity: '1' },
+      ]);
+    });
+
+    it('notes copies in languages the set no longer lists', async () => {
+      stored.set('intl:sv01-004:normal:it', entry({ language: 'it', quantity: 3 }));
+      const fixture = create(base);
+      await settle(fixture);
+
+      expect(
+        element(fixture).querySelector('[data-testid="other-languages"]')?.textContent.trim()
+      ).toBe('Also 3 in Italian');
+    });
+
+    it('logs a change that can’t be saved instead of failing silently', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const fixture = create({ ...base, id: 'x'.repeat(65) });
+      await settle(fixture);
+
+      fixture.componentInstance.step('normal', 1);
+      await settle(fixture);
+
+      expect(error).toHaveBeenCalledWith('collection.step_failed', expect.any(RangeError));
+      expect(repository.setCollectionQuantity).not.toHaveBeenCalled();
+      error.mockRestore();
+    });
+
+    it('has no other-languages note when only this language is owned', async () => {
+      stored.set('intl:sv01-004:normal:en', entry({}));
+      const fixture = create(base);
+      await settle(fixture);
+
+      expect(element(fixture).querySelector('[data-testid="other-languages"]')).toBeNull();
+    });
   });
 });

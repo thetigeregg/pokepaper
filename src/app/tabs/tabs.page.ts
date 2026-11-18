@@ -11,7 +11,7 @@ import {
   IonTabs,
 } from '@ionic/angular';
 import { addIcons } from 'ionicons';
-import { albums, layers, library, settings } from 'ionicons/icons';
+import { albums, layers, settings } from 'ionicons/icons';
 import { filter, map } from 'rxjs';
 import { LayoutService } from '../core/services/layout.service';
 import { CardsMenuComponent } from '../features/cards/cards-menu.component';
@@ -53,7 +53,7 @@ export class TabsPage {
   readonly cardsMenu = computed(() => this.layout.wide() && this.onCardsTab());
 
   constructor() {
-    addIcons({ albums, library, layers, settings });
+    addIcons({ albums, layers, settings });
   }
 }
 

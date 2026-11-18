@@ -9,7 +9,7 @@ import {
   IonRadioGroup,
 } from '@ionic/angular';
 import type { CatalogLanguage } from '@pokepaper/shared';
-import { LANGUAGE_LABELS } from '../../core/services/catalog-language.service';
+import { LANGUAGE_LABELS, inDisplayOrder } from '../../core/services/catalog-language.service';
 import { addIcons } from 'ionicons';
 import { languageOutline } from 'ionicons/icons';
 
@@ -18,7 +18,7 @@ let nextId = 0;
 /**
  * Header language switch (docs/ui.md): an icon-only IonButton (the current
  * language is in its accessible label), opening an IonPopover with an IonRadioGroup of the
- * languages the set or card exists in.
+ * languages the set or card exists in, in display order (`inDisplayOrder`).
  */
 @Component({
   selector: 'app-language-button',
@@ -35,7 +35,7 @@ let nextId = 0;
       <ng-template>
         <ion-list lines="none">
           <ion-radio-group [value]="value()" (ionChange)="changed.emit($event.detail.value)">
-            @for (language of languages(); track language) {
+            @for (language of ordered(); track language) {
               <ion-item>
                 <ion-radio [value]="language">{{ labels[language].name }}</ion-radio>
               </ion-item>
@@ -60,4 +60,5 @@ export class LanguageButtonComponent {
   readonly triggerId = `language-button-${String(nextId++)}`;
   readonly labels = LANGUAGE_LABELS;
   readonly label = computed(() => LANGUAGE_LABELS[this.value()]);
+  readonly ordered = computed(() => inDisplayOrder(this.languages()));
 }

@@ -47,6 +47,9 @@
                   }
                   {{ set.cardCount.total }} cards
                 </p>
+                @if (owned(set); as owned) {
+                  <p data-testid="set-progress">{{ owned }} / {{ set.cardCount.total }} owned</p>
+                }
               </div>
             </div>
           </ion-label>

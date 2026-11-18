@@ -9,6 +9,7 @@ import { makeContractPack } from '../../core/data/storage-engine.contract';
 import { StorageEngineFactory } from '../../core/data/storage-engine.factory';
 import { CatalogLanguageService } from '../../core/services/catalog-language.service';
 import { CatalogSyncService } from '../../core/services/catalog-sync.service';
+import { CollectionService } from '../../core/services/collection.service';
 import { ImageCacheService } from '../../core/services/image-cache.service';
 import {
   ImageDownloadService,
@@ -18,6 +19,15 @@ import { LayoutService } from '../../core/services/layout.service';
 import { VisibilityService } from '../../core/services/visibility.service';
 import { CardDetailComponent } from '../../features/cards/card-detail.component';
 import { SetPage } from './set.page';
+
+/** An empty collection, for specs that don't test collection tracking. */
+const EMPTY_COLLECTION: Partial<CollectionService> = {
+  loaded: signal(true),
+  quantity: () => 0,
+  cardTotal: () => 0,
+  otherLanguages: () => [],
+  ownedInSet: () => 0,
+};
 
 interface SheetButton {
   text: string;
@@ -89,6 +99,7 @@ describe('SetPage', () => {
     engine.listCatalogCards.mockResolvedValue(cards);
     TestBed.configureTestingModule({
       providers: [
+        { provide: CollectionService, useValue: EMPTY_COLLECTION },
         provideRouter([]),
         { provide: StorageEngineFactory, useValue: { getEngine: () => engine } },
         {
@@ -192,7 +203,7 @@ describe('SetPage', () => {
 
     expect(createSheet.mock.lastCall?.[0].header).toBe('Download images for offline use');
     expect(sheetButtons().map((b) => b.text)).toEqual([
-      'Download in Deutsch',
+      'Download in German',
       'Download in all languages',
       'Cancel',
     ]);
@@ -222,7 +233,7 @@ describe('SetPage', () => {
 
     await page.openDownloadActions();
 
-    expect(sheetButtons().map((b) => b.text)).toEqual(['Download in Deutsch', 'Cancel']);
+    expect(sheetButtons().map((b) => b.text)).toEqual(['Download in German', 'Cancel']);
   });
 
   it('shows progress and disables the download button while downloading', async () => {

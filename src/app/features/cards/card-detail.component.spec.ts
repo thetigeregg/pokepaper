@@ -5,10 +5,20 @@ import { DEFAULT_CATALOG_LANGUAGES } from '@pokepaper/shared';
 import { vi } from 'vitest';
 import { makeContractPack } from '../../core/data/storage-engine.contract';
 import { CatalogLanguageService } from '../../core/services/catalog-language.service';
+import { CollectionService } from '../../core/services/collection.service';
 import { ImageCacheService } from '../../core/services/image-cache.service';
 import { VisibilityService } from '../../core/services/visibility.service';
 import { CardDetailComponent, LOAD_MORE_WITHIN } from './card-detail.component';
 import type { CatalogCard } from '@pokepaper/shared';
+
+/** An empty collection, for specs that don't test collection tracking. */
+const EMPTY_COLLECTION: Partial<CollectionService> = {
+  loaded: signal(true),
+  quantity: () => 0,
+  cardTotal: () => 0,
+  otherLanguages: () => [],
+  ownedInSet: () => 0,
+};
 
 const swiper = vi.hoisted(() => ({
   instances: [] as {
@@ -76,6 +86,7 @@ describe('CardDetailComponent', () => {
     swiper.instances.length = 0;
     TestBed.configureTestingModule({
       providers: [
+        { provide: CollectionService, useValue: EMPTY_COLLECTION },
         { provide: ModalController, useValue: { dismiss } },
         {
           // A remembered language other than the default, to tell them apart.
@@ -117,6 +128,44 @@ describe('CardDetailComponent', () => {
     await new Promise((resolve) => requestAnimationFrame(resolve));
     expect(swiper.instances[0]?.updateSlides).toHaveBeenCalled();
     expect(swiper.instances[0]?.updateAutoHeight).toHaveBeenCalledWith(0);
+  });
+
+  it('resizes when a rendered slide’s content changes height', async () => {
+    let resized: () => void = () => undefined;
+    const observed: Element[] = [];
+    const disconnect = vi.fn(() => {
+      observed.length = 0;
+    });
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: () => void) {
+          resized = callback;
+        }
+        observe(element: Element) {
+          observed.push(element);
+        }
+        disconnect = disconnect;
+      }
+    );
+    try {
+      create(0);
+      options().virtual.renderExternal({ offset: 0, from: 0, slides: cards.slice(0, 2) });
+      fixture.detectChanges();
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      expect(observed).toEqual([...root().querySelectorAll('.swiper-slide')]);
+      expect(observed).toHaveLength(2);
+      const updateAutoHeight = swiper.instances[0]?.updateAutoHeight;
+      vi.clearAllMocks();
+
+      resized();
+      expect(updateAutoHeight).toHaveBeenCalledWith(0);
+
+      fixture.destroy();
+      expect(disconnect).toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('titles the card paged to', () => {

@@ -2,7 +2,14 @@
 
 PokePaper tracks how many copies of each card you own, per **variant** and **language**. Collection tracking lives in the Cards tab, alongside the catalog: there's no separate Collection screen.
 
-Status: storage and sync are implemented (`shared/src/collection.ts`, `CollectionService`). The screens (quantity stepper, owned badges, set progress, Owned filter) are next.
+Status: storage, sync and the Cards tab screens (quantity stepper, owned badges, set progress) are implemented. An Owned search filter is next.
+
+## Screens
+
+- **Card detail:** a "Collection · English" section, after the attacks and before Details, lists the card's variants (plus any other variant owned), each with a − count + stepper for the copies in the current language. Switch the language button to German to see and edit German copies. A note lists copies in the card's other languages.
+- **Card grids** (set page, search results): owned cards get a red badge (bottom right) with the copies owned in the grid's language. Unowned cards look unchanged.
+- **Sets list:** a second line, "87 / 198 owned", appears under "date · 198 cards" once any card of the set is owned, counted in the language the set opens in.
+- The old Collection tab is gone; `/tabs/collection` redirects to Cards. UI details are in [`ui.md`](ui.md) → Cards.
 
 ## Data model
 
@@ -32,11 +39,11 @@ Each entry syncs as its own entity (`entityType: 'collectionEntry'`) with the ID
 
 Entries live in the `collection` store (Dexie version 5, SQLite schema version 5). `LocalUserDataRepository.setCollectionQuantity` writes or deletes the entry and queues its sync operation in one transaction.
 
-`CollectionService` keeps the whole collection in memory (a large collection is a few thousand small entries), so screens read it synchronously:
+`CollectionService` keeps the whole collection in memory (a large collection is a few thousand small entries), so screens read it synchronously. Counts include only variants and languages this build knows (others stay stored and synced), so every counted copy has a stepper. `loaded` turns true once storage has been read; steppers stay disabled until then, since a change made while counts still read 0 would overwrite the stored quantity:
 
 - `quantity(target)`: copies of one card, variant and language.
 - `cardTotal(region, cardId, language)`: a card's copies in one language, across variants (the owned badge).
-- `otherLanguages(…)`: a card's copies in the other languages.
+- `otherLanguages(region, cardId, language)`: a card's copies in its other languages, in display order.
 - `ownedInSet(region, setId, language)`: distinct cards of a set owned in one language, any variant (set progress).
 - `setQuantity(target, quantity)`: shown at once, then saved in order. A failed save shows the saved collection again. Pulled changes reload the collection.
 

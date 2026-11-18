@@ -6,6 +6,7 @@ import { vi } from 'vitest';
 import { makeContractCard, makeContractPack } from '../../core/data/storage-engine.contract';
 import { StorageEngineFactory } from '../../core/data/storage-engine.factory';
 import { CatalogLanguageService } from '../../core/services/catalog-language.service';
+import { CollectionService } from '../../core/services/collection.service';
 import {
   CatalogSearchService,
   type SearchResults,
@@ -15,6 +16,15 @@ import { LayoutService } from '../../core/services/layout.service';
 import { VisibilityService } from '../../core/services/visibility.service';
 import { CardDetailComponent } from './card-detail.component';
 import { RESULTS_PAGE_SIZE, SearchResultsComponent } from './search-results.component';
+
+/** An empty collection, for specs that don't test collection tracking. */
+const EMPTY_COLLECTION: Partial<CollectionService> = {
+  loaded: signal(true),
+  quantity: () => 0,
+  cardTotal: () => 0,
+  otherLanguages: () => [],
+  ownedInSet: () => 0,
+};
 
 describe('SearchResultsComponent', () => {
   const sv01 = { ...makeContractPack('intl', 'sv01', []).set, names: { en: 'Scarlet & Violet' } };
@@ -88,6 +98,7 @@ describe('SearchResultsComponent', () => {
     wide.set(false);
     TestBed.configureTestingModule({
       providers: [
+        { provide: CollectionService, useValue: EMPTY_COLLECTION },
         { provide: CatalogSearchService, useValue: search },
         { provide: StorageEngineFactory, useValue: { getEngine: () => engine } },
         { provide: CatalogLanguageService, useValue: { forSet: () => 'en' } },

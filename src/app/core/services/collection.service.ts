@@ -3,19 +3,22 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   collectionEntry,
   collectionEntryId,
+  isCatalogLanguage,
   isCollectionQuantity,
   isCollectionTarget,
+  isCollectionVariant,
   type CatalogLanguage,
   type CatalogRegion,
   type CollectionEntry,
   type CollectionTarget,
 } from '@pokepaper/shared';
 import { LocalUserDataRepository } from '../data/local-user-data-repository';
+import { inDisplayOrder } from './catalog-language.service';
 import { SyncService } from './sync.service';
 
 /** A card's copies in one language, across variants. */
 export interface LanguageQuantity {
-  language: string;
+  language: CatalogLanguage;
   quantity: number;
 }
 
@@ -35,23 +38,44 @@ export class CollectionService {
   private pending = 0;
   /** Bumped by each change, so a load that started before it is dropped too. */
   private generation = 0;
-  /** Whether `entries` reflects storage yet (until then, every change is saved). */
-  private loaded = false;
+  private readonly _loaded = signal(false);
+  /**
+   * Whether the collection has been read from storage. Until then counts
+   * show 0, so screens disable editing (a change would overwrite what's
+   * stored with a count based on 0).
+   */
+  readonly loaded = this._loaded.asReadonly();
 
-  /** Copies of each card per language, keyed `region:cardId:language`. */
-  private readonly cardTotals = computed(() => {
-    const totals = new Map<string, number>();
-    for (const entry of this.entries().values()) {
-      const key = languageKey(entry.region, entry.cardId, entry.language);
-      totals.set(key, (totals.get(key) ?? 0) + entry.quantity);
+  /**
+   * Entries this build can show: known variants and languages. Badges and
+   * progress count only these, so every counted copy has a stepper.
+   */
+  private readonly shown = computed(() =>
+    [...this.entries().values()].filter(
+      (entry) => isCollectionVariant(entry.variant) && isCatalogLanguage(entry.language)
+    )
+  );
+
+  /** Copies of each card per language, keyed `region:cardId`. */
+  private readonly cardLanguages = computed(() => {
+    const cards = new Map<string, Map<CatalogLanguage, number>>();
+    for (const entry of this.shown()) {
+      const key = `${entry.region}:${entry.cardId}`;
+      const language = entry.language as CatalogLanguage;
+      let languages = cards.get(key);
+      if (!languages) {
+        languages = new Map();
+        cards.set(key, languages);
+      }
+      languages.set(language, (languages.get(language) ?? 0) + entry.quantity);
     }
-    return totals;
+    return cards;
   });
 
   /** Owned cards per set and language, keyed `region:setId:language`. */
   private readonly setCards = computed(() => {
     const cards = new Map<string, Set<string>>();
-    for (const entry of this.entries().values()) {
+    for (const entry of this.shown()) {
       const key = languageKey(entry.region, entry.setId, entry.language);
       let owned = cards.get(key);
       if (!owned) {
@@ -81,20 +105,20 @@ export class CollectionService {
 
   /** Copies of a card in `language`, across variants. */
   cardTotal(region: CatalogRegion, cardId: string, language: CatalogLanguage): number {
-    return this.cardTotals().get(languageKey(region, cardId, language)) ?? 0;
+    return this.cardLanguages().get(`${region}:${cardId}`)?.get(language) ?? 0;
   }
 
-  /** A card's copies in every language but `language`, in `languages` order. */
+  /** A card's copies in every language but `language`, in display order. */
   otherLanguages(
     region: CatalogRegion,
     cardId: string,
-    language: CatalogLanguage,
-    languages: readonly CatalogLanguage[]
+    language: CatalogLanguage
   ): LanguageQuantity[] {
-    return languages
-      .filter((other) => other !== language)
-      .map((other) => ({ language: other, quantity: this.cardTotal(region, cardId, other) }))
-      .filter((other) => other.quantity > 0);
+    const languages =
+      this.cardLanguages().get(`${region}:${cardId}`) ?? new Map<CatalogLanguage, number>();
+    return inDisplayOrder([...languages.keys()].filter((other) => other !== language)).map(
+      (other) => ({ language: other, quantity: languages.get(other) ?? 0 })
+    );
   }
 
   /** How many of a set's cards the user owns in `language` (any variant). */
@@ -112,7 +136,7 @@ export class CollectionService {
       throw new RangeError('Invalid collection target or quantity');
     }
     const key = collectionEntryId(target);
-    if (this.loaded && (this.entries().get(key)?.quantity ?? 0) === quantity) {
+    if (this._loaded() && (this.entries().get(key)?.quantity ?? 0) === quantity) {
       return;
     }
     this.generation++;
@@ -146,7 +170,7 @@ export class CollectionService {
       const stored = await this.repository.listCollection();
       if (generation === this.generation && this.pending === 0) {
         this.entries.set(new Map(stored.map((entry) => [collectionEntryId(entry), entry])));
-        this.loaded = true;
+        this._loaded.set(true);
       }
     } catch (error: unknown) {
       console.error('collection.load_failed', error);
