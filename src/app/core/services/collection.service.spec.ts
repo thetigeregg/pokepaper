@@ -135,6 +135,7 @@ describe('CollectionService', () => {
         { language: 'fr', quantity: 1 },
       ]);
     });
+    expect(service.otherLanguages('intl', 'sv01-999', 'en')).toEqual([]);
   });
 
   it('counts distinct owned cards per set and language', async () => {

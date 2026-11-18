@@ -69,6 +69,7 @@ describe('CatalogLanguageService', () => {
     expect(service.forSet('intl', ['fr'])).toBe('fr');
     expect(service.forSet('intl', ['it', 'fr'])).toBe('fr'); // Display order, not catalog order.
     expect(service.forSet('asia', ['zh-cn', 'zh-tw'])).toBe('zh-tw');
+    expect(service.forSet('intl', [])).toBe('de'); // No languages: the remembered one.
   });
 
   it('reloads when a sync changes settings', async () => {
