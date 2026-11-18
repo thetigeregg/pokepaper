@@ -97,3 +97,7 @@
 ## v0.16.1 - 2026-11-18
 
 - 4aac699 ci(ios): upload App PROD to TestFlight after app-changing releases (#32)
+
+## v0.16.2 - 2026-11-18
+
+- aec20c7 fix(ci): mask the backend host and build TestFlight with Xcode 27 (#34)
