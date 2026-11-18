@@ -69,3 +69,7 @@
 ## v0.10.0 - 2026-11-18
 
 - e7a2185 feat(collection): store and sync collection entries (#25)
+
+## v0.11.0 - 2026-11-18
+
+- 89f2aba feat(collection): track copies from the Cards tab (#26)
