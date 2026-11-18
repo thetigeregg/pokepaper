@@ -47,6 +47,26 @@ ion-list > ion-item:last-of-type {
   --inner-border-width: 0;
 }
 
+/* Two-column lists on wide screens (docs/ui.md): class="list-grid" on the
+   IonList; rows with class="list-grid-full" span both columns. Each column
+   ends without a divider too: the last two-column rows are the bottom of
+   one column each. */
+@media (min-width: 992px) {
+  ion-list.list-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  ion-list.list-grid > .list-grid-full {
+    grid-column: 1 / -1;
+  }
+
+  ion-list.list-grid > ion-item:nth-last-child(-n + 2 of :not(.list-grid-full)) {
+    --border-width: 0;
+    --inner-border-width: 0;
+  }
+}
+
 /* A row's leading image or icons go inside its label, beside the text,
    instead of slot="start", so a lines="inset" divider runs under them too
    (docs/ui.md). A div inside the label, because Ionic's own label rule

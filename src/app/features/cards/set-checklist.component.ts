@@ -50,16 +50,7 @@ interface ChecklistRow {
         gap: 10px 8px;
         margin-top: 6px;
       }
-      /* Desktop: two columns of cards, the summary across both. */
-      @media (min-width: 992px) {
-        ion-list {
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-        .summary {
-          grid-column: 1 / -1;
-        }
-      }
+
       .variants ion-button {
         margin: 0;
       }
@@ -69,8 +60,9 @@ interface ChecklistRow {
     `,
   ],
   template: `
-    <ion-list>
-      <ion-item class="summary" data-testid="checklist-summary">
+    <!-- Two columns on desktop (global list-grid), the summary across both. -->
+    <ion-list class="list-grid">
+      <ion-item class="list-grid-full" data-testid="checklist-summary">
         <ion-label>
           {{ owned() }} / {{ set().cardCount.total }} owned
           <p class="hint">In {{ languageName() }}</p>
