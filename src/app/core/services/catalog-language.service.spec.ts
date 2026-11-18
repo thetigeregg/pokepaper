@@ -54,7 +54,7 @@ describe('CatalogLanguageService', () => {
       cardLanguage: 'en',
       catalogLanguages: { intl: 'de' },
     });
-    await service.pick('intl', 'de');
+    await service.pick('intl', 'de'); // Already remembered: not saved again.
     expect(repository.updateSettings).toHaveBeenCalledTimes(1);
   });
 
@@ -112,13 +112,63 @@ describe('CatalogLanguageService', () => {
     expect(service.languages().intl).toBe('fr');
   });
 
-  it('saves only the latest of two quick picks', async () => {
+  it('saves quick picks in order, in either catalog', async () => {
     const service = await create();
 
-    await Promise.all([service.pick('intl', 'fr'), service.pick('intl', 'it')]);
+    await Promise.all([
+      service.pick('intl', 'fr'),
+      service.pick('asia', 'zh-tw'),
+      service.pick('intl', 'it'),
+    ]);
 
-    expect(service.languages().intl).toBe('it');
-    expect(stored.catalogLanguages?.intl).toBe('it');
-    expect(repository.updateSettings).toHaveBeenCalledTimes(1);
+    expect(service.languages()).toEqual({ intl: 'it', asia: 'zh-tw' });
+    expect(stored.catalogLanguages).toEqual({ intl: 'it', asia: 'zh-tw' });
+  });
+
+  it('ignores a settings load while a pick is still saving', async () => {
+    const service = await create();
+    let commit: () => void = () => undefined;
+    repository.updateSettings.mockImplementationOnce((settings: UserSettings) => {
+      return new Promise<void>((resolve) => {
+        commit = () => {
+          stored = settings;
+          resolve();
+        };
+      });
+    });
+    const picking = service.pick('intl', 'fr');
+    await vi.waitFor(() => {
+      expect(repository.updateSettings).toHaveBeenCalled();
+    });
+
+    dataChanged.next(new Set(['settings'])); // Reads the old, uncommitted settings.
+    await Promise.resolve();
+    expect(service.languages().intl).toBe('fr');
+
+    commit();
+    await picking;
+    expect(service.languages().intl).toBe('fr');
+  });
+
+  it('shows the saved language again when saving a pick fails', async () => {
+    const service = await create();
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    repository.updateSettings.mockRejectedValueOnce(new Error('quota'));
+
+    await service.pick('intl', 'fr');
+
+    expect(service.languages().intl).toBe('en');
+    expect(error).toHaveBeenCalledWith('catalog.language_save_failed', expect.any(Error));
+    error.mockRestore();
+  });
+
+  it('keeps catalog languages from newer clients when saving', async () => {
+    stored = { cardLanguage: 'en', catalogLanguages: { kr: 'ko' } };
+    const service = await create();
+
+    await service.pick('asia', 'zh-cn');
+
+    expect(stored.catalogLanguages).toEqual({ kr: 'ko', asia: 'zh-cn' });
+    expect(service.languages()).toEqual({ intl: 'en', asia: 'zh-cn' });
   });
 });

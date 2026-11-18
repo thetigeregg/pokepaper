@@ -18,7 +18,12 @@ import {
   IonToolbar,
   ModalController,
 } from '@ionic/angular';
-import type { CatalogCard, CatalogLanguage, CatalogSet } from '@pokepaper/shared';
+import {
+  DEFAULT_CATALOG_LANGUAGES,
+  type CatalogCard,
+  type CatalogLanguage,
+  type CatalogSet,
+} from '@pokepaper/shared';
 import Swiper from 'swiper';
 import { Keyboard, Virtual } from 'swiper/modules';
 import { CatalogLanguageService } from '../../core/services/catalog-language.service';
@@ -63,7 +68,8 @@ export class CardDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   cardsProp: CatalogCard[] = [];
   startIndex = 0;
 
-  readonly set = signal<CatalogSet>({} as CatalogSet);
+  /** Null until ngOnInit copies the modal's props. */
+  readonly set = signal<CatalogSet | null>(null);
   readonly cards = signal<CatalogCard[]>([]);
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
@@ -71,9 +77,12 @@ export class CardDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   readonly index = signal(0);
   readonly window = signal<VirtualWindow>({ offset: 0, from: 0, slides: [] });
-  readonly language = computed<CatalogLanguage>(() =>
-    this.catalogLanguage.forSet(this.set().region, this.set().languages)
-  );
+  readonly language = computed<CatalogLanguage>(() => {
+    const set = this.set();
+    return set
+      ? this.catalogLanguage.forSet(set.region, set.languages)
+      : DEFAULT_CATALOG_LANGUAGES.intl;
+  });
 
   ngOnInit(): void {
     this.set.set(this.setProp);
@@ -129,7 +138,10 @@ export class CardDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   pickLanguage(language: CatalogLanguage): void {
-    void this.catalogLanguage.pick(this.set().region, language);
+    const set = this.set();
+    if (set) {
+      void this.catalogLanguage.pick(set.region, language);
+    }
     requestAnimationFrame(() => this.swiper?.updateAutoHeight(0));
   }
 

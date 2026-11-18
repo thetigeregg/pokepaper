@@ -6,10 +6,10 @@
       </ion-buttons>
     }
     <ion-title>
-      @if (titleLogo(); as logo) {
-        <img class="title-logo" [src]="logo" [alt]="title()" />
-      } @else {
-        {{ title() }}
+      @if (set(); as set) {
+        <app-set-logo [set]="set" [language]="language()" [logoOnly]="true" [alt]="title()">
+          {{ title() }}
+        </app-set-logo>
       }
     </ion-title>
     @if (set(); as set) {

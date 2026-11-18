@@ -2,6 +2,7 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import {
   DEFAULT_CATALOG_LANGUAGES,
   DEFAULT_SETTINGS,
+  knownCatalogLanguages,
   type CatalogLanguage,
   type CatalogRegion,
   type UserSettings,
@@ -29,12 +30,16 @@ export const LANGUAGE_LABELS: Readonly<Record<CatalogLanguage, { short: string; 
 export class CatalogLanguageService {
   private readonly repository = inject(LocalUserDataRepository);
   private readonly settings = signal<UserSettings>({ ...DEFAULT_SETTINGS });
-  /** Bumped by each pick, so a load that started before it is dropped. */
+  /** Picks are saved one at a time, each merged into the stored settings. */
+  private saves: Promise<void> = Promise.resolve();
+  /** Picks not yet saved: loads meanwhile are dropped (they'd show stale settings). */
+  private pending = 0;
+  /** Bumped by each pick, so a load that started before it is dropped too. */
   private generation = 0;
 
   readonly languages = computed<Record<CatalogRegion, CatalogLanguage>>(() => ({
     ...DEFAULT_CATALOG_LANGUAGES,
-    ...this.settings().catalogLanguages,
+    ...knownCatalogLanguages(this.settings()),
   }));
 
   constructor() {
@@ -57,33 +62,50 @@ export class CatalogLanguageService {
     return setLanguages.includes(remembered) ? remembered : (setLanguages[0] ?? remembered);
   }
 
-  /** Remembers `language` for its catalog (saved locally, then synced). */
+  /**
+   * Remembers `language` for its catalog: shown at once, then saved locally
+   * (and synced). If saving fails, the saved settings are shown again.
+   */
   async pick(region: CatalogRegion, language: CatalogLanguage): Promise<void> {
     if (this.languages()[region] === language) {
       return;
     }
-    // Show it at once; a load already in flight must not undo it.
-    const generation = ++this.generation;
+    this.generation++;
+    this.pending++;
     this.settings.update((current) => withLanguage(current, region, language));
     // Merge into the stored settings, not the in-memory copy, which may not
-    // have loaded yet (it would drop the other catalog's language).
-    const next = withLanguage(await this.repository.getSettings(), region, language);
-    if (generation !== this.generation) {
-      return; // A newer pick saves instead.
+    // have loaded yet; queued so concurrent picks (either catalog) all land.
+    const save = this.saves.then(async () => {
+      const next = withLanguage(await this.repository.getSettings(), region, language);
+      await this.repository.updateSettings(next);
+    });
+    this.saves = save.catch(() => undefined);
+    try {
+      await save;
+    } catch (error: unknown) {
+      console.error('catalog.language_save_failed', error);
+    } finally {
+      this.pending--;
+      if (this.pending === 0) {
+        await this.load(); // What was actually saved (rolls back a failed pick).
+      }
     }
-    this.settings.set(next);
-    await this.repository.updateSettings(next);
   }
 
   private async load(): Promise<void> {
     const generation = this.generation;
-    const stored = await this.repository.getSettings();
-    if (generation === this.generation) {
-      this.settings.set(stored);
+    try {
+      const stored = await this.repository.getSettings();
+      if (generation === this.generation && this.pending === 0) {
+        this.settings.set(stored);
+      }
+    } catch (error: unknown) {
+      console.error('catalog.language_load_failed', error);
     }
   }
 }
 
+/** `settings` with `language` remembered for `region` (other entries kept, unknown ones too). */
 function withLanguage(
   settings: UserSettings,
   region: CatalogRegion,

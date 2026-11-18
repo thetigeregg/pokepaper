@@ -21,6 +21,8 @@ import {
 } from '@ionic/angular';
 import type { CatalogCard, CatalogImageQuality, CatalogLanguage } from '@pokepaper/shared';
 import { ImageCacheService } from '../../core/services/image-cache.service';
+import { ImageSlot } from '../../core/services/image-slot';
+import { VisibilityService } from '../../core/services/visibility.service';
 import { LANGUAGE_LABELS } from '../../core/services/catalog-language.service';
 import { displayImage } from '../../core/utils/catalog-image.util';
 import { cardSubtitle, cardText, cardTint } from './card-display';
@@ -52,8 +54,7 @@ type ImageState = 'loading' | 'image' | 'none';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CardImageComponent {
-  private readonly imageCache = inject(ImageCacheService);
-  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly slot = new ImageSlot(inject(ImageCacheService));
 
   readonly card = input.required<CatalogCard>();
   readonly language = input.required<CatalogLanguage>();
@@ -83,18 +84,13 @@ export class CardImageComponent {
 
   constructor() {
     // Grid images load when they scroll into view; detail images right away.
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          this.visible.set(true);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: '300px' }
-    );
-    observer.observe(this.host.nativeElement);
+    const element = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
+    const stopWatching = inject(VisibilityService).whenVisible(element, () => {
+      this.visible.set(true);
+    });
     inject(DestroyRef).onDestroy(() => {
-      observer.disconnect();
+      stopWatching();
+      this.slot.clear();
     });
 
     effect(() => {
@@ -102,6 +98,7 @@ export class CardImageComponent {
       const wanted = this.quality() === 'high' || this.visible();
       untracked(() => {
         if (!image) {
+          this.slot.clear();
           this.state.set('none');
         } else if (wanted) {
           void this.load(image.url);
@@ -111,11 +108,14 @@ export class CardImageComponent {
   }
 
   private async load(url: string): Promise<void> {
-    this.state.set('loading');
+    // Fresh card objects with the same image (a catalog refresh) keep showing it.
+    if (this.slot.current !== url) {
+      this.state.set('loading');
+    }
     try {
-      const src = await this.imageCache.resolve(url);
-      if (this.image()?.url !== url) {
-        return; // Language changed meanwhile.
+      const src = await this.slot.show(url);
+      if (src === undefined) {
+        return; // Superseded (language changed meanwhile).
       }
       this.src.set(src);
       this.state.set(src ? 'image' : 'none');

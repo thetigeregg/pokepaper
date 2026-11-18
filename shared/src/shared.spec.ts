@@ -1,4 +1,10 @@
-import { DEFAULT_SETTINGS, isSyncEntityType, isUserSettings, SYNC_ENTITY_TYPES } from './index';
+import {
+  DEFAULT_SETTINGS,
+  isSyncEntityType,
+  isUserSettings,
+  knownCatalogLanguages,
+  SYNC_ENTITY_TYPES,
+} from './index';
 
 describe('isSyncEntityType', () => {
   it('accepts every declared entity type and rejects anything else', () => {
@@ -24,9 +30,21 @@ describe('isUserSettings', () => {
     ['a non-string language', { cardLanguage: 3 }],
     ['an oversized language', { cardLanguage: 'x'.repeat(17) }],
     ['catalog languages that are not an object', { cardLanguage: 'en', catalogLanguages: 'de' }],
-    ['an unknown catalog region', { cardLanguage: 'en', catalogLanguages: { eu: 'de' } }],
-    ['an unsupported language', { cardLanguage: 'en', catalogLanguages: { intl: 'es' } }],
-    ['a language from the other region', { cardLanguage: 'en', catalogLanguages: { intl: 'ja' } }],
+    ['a non-string catalog language', { cardLanguage: 'en', catalogLanguages: { intl: 3 } }],
+    ['an empty catalog language', { cardLanguage: 'en', catalogLanguages: { intl: '' } }],
+    [
+      'an oversized catalog language',
+      { cardLanguage: 'en', catalogLanguages: { intl: 'x'.repeat(17) } },
+    ],
+    [
+      'too many catalog languages',
+      {
+        cardLanguage: 'en',
+        catalogLanguages: Object.fromEntries(
+          Array.from({ length: 9 }, (_, index) => [`r${String(index)}`, 'en'])
+        ),
+      },
+    ],
   ])('rejects %s', (_label, value) => {
     expect(isUserSettings(value)).toBe(false);
   });
@@ -37,5 +55,18 @@ describe('isUserSettings', () => {
     ).toBe(true);
     expect(isUserSettings({ cardLanguage: 'en', catalogLanguages: { asia: 'ja' } })).toBe(true);
     expect(isUserSettings({ cardLanguage: 'ko' })).toBe(true);
+  });
+
+  it('accepts catalogs and languages from newer clients, which this build ignores', () => {
+    const settings = {
+      cardLanguage: 'en',
+      catalogLanguages: { intl: 'de', asia: 'ko', eu: 'es', kr: 'ko' },
+    };
+
+    expect(isUserSettings(settings)).toBe(true);
+    expect(knownCatalogLanguages(settings)).toEqual({ intl: 'de' });
+    expect(knownCatalogLanguages({ cardLanguage: 'en', catalogLanguages: { intl: 'ja' } })).toEqual(
+      {}
+    );
   });
 });

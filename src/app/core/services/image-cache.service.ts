@@ -19,8 +19,6 @@ export const DEFAULT_IMAGE_CACHE_LIMIT_MB = 500;
 export const IMAGE_CACHE_LIMIT_OPTIONS_MB = [250, 500, 1000, 2000] as const;
 /** After evicting, recently viewed images take at most this share of the limit. */
 const EVICT_TO = 0.9;
-/** Object URLs kept for display (web); older ones are released. */
-export const MAX_OBJECT_URLS = 400;
 /** A cached image's last-viewed time is refreshed at most this often. */
 const TOUCH_INTERVAL_MS = 60 * 60 * 1000;
 
@@ -43,7 +41,8 @@ export class ImageCacheService {
   private readonly fileStore = inject(ImageFileStore);
   private readonly preferences = inject(PreferenceStorageService);
 
-  private readonly objectUrls = new Map<string, string>();
+  /** Object URLs for cached blobs (web), with how many displays hold each. */
+  private readonly objectUrls = new Map<string, { url: string; holders: number }>();
   private readonly inFlight = new Map<string, Promise<ImageStoreResult>>();
   /** Images the server answered 404 for this session; not asked again. */
   private readonly missing = new Set<string>();
@@ -63,6 +62,9 @@ export class ImageCacheService {
   /**
    * A displayable URL for the image at `url`, downloading and caching it on
    * first use. Null when the server has no such image.
+   *
+   * Each non-null result holds the image's object URL (web): call
+   * `release(url)` once it's no longer shown (`ImageSlot` does this).
    */
   async resolve(url: string): Promise<string | null> {
     const cached = await this.displayCached(url);
@@ -202,6 +204,15 @@ export class ImageCacheService {
     return 'downloaded';
   }
 
+  /** Lets go of a display URL from `resolve`; the last holder releases its memory. */
+  release(url: string): void {
+    const entry = this.objectUrls.get(url);
+    if (entry && --entry.holders <= 0) {
+      URL.revokeObjectURL(entry.url);
+      this.objectUrls.delete(url);
+    }
+  }
+
   /** The cached image's display URL, refreshing its last-viewed time; null if not cached. */
   private async displayCached(url: string): Promise<string | null> {
     const record = await this.engine.getImage(url);
@@ -230,26 +241,15 @@ export class ImageCacheService {
   }
 
   /**
-   * An object URL for a cached blob. At most MAX_OBJECT_URLS are kept: the
-   * least recently used are released, so browsing thousands of scans doesn't
-   * pin their blobs in memory. (An image already on screen keeps showing.)
+   * An object URL for a cached blob, shared by everything showing it and
+   * revoked when the last holder releases it, so browsing thousands of scans
+   * doesn't keep their blobs in memory.
    */
   private objectUrl(key: string, blob: Blob): string {
-    let url = this.objectUrls.get(key);
-    if (url) {
-      this.objectUrls.delete(key); // Re-inserted below as most recently used.
-    } else {
-      url = URL.createObjectURL(blob);
-    }
-    this.objectUrls.set(key, url);
-    for (const [oldKey, oldUrl] of this.objectUrls) {
-      if (this.objectUrls.size <= MAX_OBJECT_URLS) {
-        break;
-      }
-      URL.revokeObjectURL(oldUrl);
-      this.objectUrls.delete(oldKey);
-    }
-    return url;
+    const entry = this.objectUrls.get(key) ?? { url: URL.createObjectURL(blob), holders: 0 };
+    entry.holders++;
+    this.objectUrls.set(key, entry);
+    return entry.url;
   }
 
   /** Releases object URLs and deletes files for removed images. */
@@ -257,7 +257,7 @@ export class ImageCacheService {
     for (const ref of refs) {
       const objectUrl = this.objectUrls.get(ref.key);
       if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
+        URL.revokeObjectURL(objectUrl.url);
         this.objectUrls.delete(ref.key);
       }
       if (ref.filePath) {

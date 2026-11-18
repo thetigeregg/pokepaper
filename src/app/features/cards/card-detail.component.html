@@ -4,13 +4,15 @@
       <ion-button (click)="close()" data-testid="card-close">Close</ion-button>
     </ion-buttons>
     <ion-title>{{ title() }}</ion-title>
-    <ion-buttons slot="end">
-      <app-language-button
-        [languages]="set().languages"
-        [value]="language()"
-        (changed)="pickLanguage($event)"
-      />
-    </ion-buttons>
+    @if (set(); as set) {
+      <ion-buttons slot="end">
+        <app-language-button
+          [languages]="set.languages"
+          [value]="language()"
+          (changed)="pickLanguage($event)"
+        />
+      </ion-buttons>
+    }
   </ion-toolbar>
 </ion-header>
 
@@ -23,7 +25,9 @@
           [style.left.px]="window().offset"
           [attr.data-swiper-slide-index]="window().from + i"
         >
-          <app-card-details [card]="card" [set]="set()" [language]="language()" />
+          @if (set(); as set) {
+            <app-card-details [card]="card" [set]="set" [language]="language()" />
+          }
         </div>
       }
     </div>
