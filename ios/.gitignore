@@ -14,3 +14,12 @@ App/App/config.xml
 
 # Passkey domain for the entitlements (scripts/write-environment-ios.mjs)
 passkey.xcconfig
+
+# Fastlane outputs (build_app, lane reports)
+*.ipa
+*.dSYM.zip
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/README.md
+vendor/
+.bundle/

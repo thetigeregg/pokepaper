@@ -2,7 +2,7 @@
 
 PokePaper ships as a native iOS app through [Capacitor](https://capacitorjs.com/) 8. The same Angular build runs in the app's web view, with on-device SQLite storage (`SqliteStorageEngine`) in place of IndexedDB.
 
-Status: the native shell, both Xcode targets and native passkey sign-in are in place. Planned next: TestFlight delivery, and possibly over-the-air web updates.
+Status: the native shell, both Xcode targets, native passkey sign-in and TestFlight delivery are in place. Over-the-air web updates may come later.
 
 ## Targets
 
@@ -54,7 +54,7 @@ npm run sync:ios:prod
 
 and run or archive the **App PROD** scheme.
 
-Both targets bundle whatever was synced last (`ios/App/App/public`), and nothing in Xcode checks which build that was. Always run `sync:ios:prod` before running or archiving App PROD, and `sync:ios:local` before App DEV. Otherwise App PROD ships pointed at your LAN, or App DEV talks to production data. CI checks that the `ios-prod` Angular build still compiles (`ios_prod_build_validation` in `ci-pr.yml`). There are no Xcode builds in CI yet.
+Both targets bundle whatever was synced last (`ios/App/App/public`), and nothing in Xcode checks which build that was. Always run `sync:ios:prod` before running or archiving App PROD, and `sync:ios:local` before App DEV. Otherwise App PROD ships pointed at your LAN, or App DEV talks to production data. CI checks that the `ios-prod` Angular build still compiles (`ios_prod_build_validation` in `ci-pr.yml`), and releases ship App PROD to TestFlight ([TestFlight](#testflight)).
 
 ## Passkeys
 
@@ -70,6 +70,38 @@ The app signs in with the same passkeys as the web app (iCloud Keychain syncs th
   - If the Keychain write fails after sign-in, the app revokes the new session instead of leaving it behind.
 
 To sign in on a device, build App PROD (`npm run sync:ios:prod`) with your team selected. Automatic signing adds the Associated Domains capability to the App ID. That needs a paid Apple Developer team. A LAN build (App DEV with `sync:ios:local`) talks to a server whose relying party is `localhost`, so it can't use passkeys. Use `AUTH_DEV_BYPASS` there, as described in [Local development](#local-development).
+
+## TestFlight
+
+After each release, the `iOS TestFlight` workflow (`.github/workflows/ios-testflight.yml`) builds App PROD on a macOS runner with Fastlane (`ios/fastlane/`) and uploads it to TestFlight. Install builds with Apple's TestFlight app.
+
+- **When:** after `Release & Publish` succeeds on `main`, but only if that run produced a release tag and the release changed the app. `scripts/ios-testflight-should-deploy.mjs` compares the release with the previous tag.
+  - **Counts:** `src/`, `shared/`, `public/`, `ios/`, the Capacitor and Angular config, dependency changes, and the iOS scripts.
+  - **Doesn't count:** server, edge, docs, CI, and version-only bumps of the manifests or the Xcode project.
+  - **Why web changes count:** there are no over-the-air updates, so web changes need a new build too. go-gather skips them because it ships them over the air.
+  - **Manual runs:** `workflow_dispatch` always builds, which is useful for signing retries.
+- **Version:** the build's version is the release's `package.json` version. Its build number is one more than the latest in TestFlight (`sync-ios-version.mjs --build-number`).
+- **Signing:** [fastlane match](https://docs.fastlane.tools/actions/match/) installs the App Store certificate and profile from the team's shared, encrypted match repo (`ios/fastlane/Matchfile`). That's the same repo go-gather uses: one Apple Distribution certificate per team, and one profile per app. CI uses match read-only, so it never creates signing assets.
+- **Xcode:** the workflow pins an Xcode with the iOS 26 SDK, because Apple rejects uploads built with older SDKs.
+
+### One-time setup
+
+1. **App Store Connect:** create the app record (Apps → + → New App) with bundle ID `io.github.thetigeregg.poketcg`, any SKU, and a name. The store name must be unique across the App Store, but the home screen name stays "PokePaper". The App ID needs the Associated Domains capability. Your first signed device build with automatic signing already enabled it.
+2. **App Store profile:** create it once from your Mac, since CI can't create it:
+
+   ```bash
+   cd ios && bundle install
+   MATCH_PASSWORD=… bundle exec fastlane match appstore
+   ```
+
+   This signs in with your Apple ID (or set the `APP_STORE_CONNECT_API_*` variables), reuses the team's distribution certificate, and adds a `match AppStore io.github.thetigeregg.poketcg` profile to the match repo.
+
+3. **GitHub secrets**, in the `production` environment (Settings → Environments → production):
+   - `APP_STORE_CONNECT_API_KEY_ID`, `APP_STORE_CONNECT_API_ISSUER_ID`, `APP_STORE_CONNECT_API_KEY` (the `.p8` file, base64-encoded): an App Store Connect API key with App Manager access. The one go-gather uses works.
+   - `MATCH_PASSWORD`: the match repo's encryption password.
+   - `MATCH_GIT_BASIC_AUTHORIZATION`: `base64("<github-user>:<token>")` for a token that can read the match repo. Fastlane passes it verbatim into an HTTP Basic header.
+   - `IOS_BACKEND_ORIGIN_PROD`: the public origin, the same value as in your `.env`. It also sets the passkey domain, so it lives only in secrets, never in the repo.
+4. Run the workflow once with **workflow_dispatch** to check everything. Its `validate_asc_app` and `validate_match` steps fail fast with a clear error if the app record or profile is missing.
 
 ## How the build fits together
 
