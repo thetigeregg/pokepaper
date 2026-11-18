@@ -15,8 +15,11 @@ export const routes: Routes = [
         loadComponent: () => import('../cards/set/set.page').then((m) => m.SetPage),
       },
       {
+        // Collection tracking moved into the Cards tab (docs/collection.md);
+        // kept so old links and bookmarks still land somewhere.
         path: 'collection',
-        loadComponent: () => import('../collection/collection.page').then((m) => m.CollectionPage),
+        redirectTo: '/tabs/cards',
+        pathMatch: 'full',
       },
       {
         path: 'decks',

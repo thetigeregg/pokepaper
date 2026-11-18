@@ -25,6 +25,13 @@ describe('tab routes', () => {
     expect(loaded.every(Boolean)).toBe(true);
   });
 
+  it('redirects the old Collection tab to the Cards tab', () => {
+    expect(tabs?.children?.find((route) => route.path === 'collection')).toMatchObject({
+      redirectTo: '/tabs/cards',
+      pathMatch: 'full',
+    });
+  });
+
   it('redirects the root to the Cards tab', () => {
     expect(routes.find((route) => route.path === '')?.redirectTo).toBe('/tabs/cards');
   });

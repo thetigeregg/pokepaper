@@ -15,7 +15,7 @@ import { SyncService } from './sync.service';
 
 /** A card's copies in one language, across variants. */
 export interface LanguageQuantity {
-  language: string;
+  language: CatalogLanguage;
   quantity: number;
 }
 

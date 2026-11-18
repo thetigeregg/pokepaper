@@ -45,7 +45,13 @@
                   @if (set.releaseDate) {
                     {{ set.releaseDate | date: 'mediumDate' : 'UTC' }} ·
                   }
-                  {{ set.cardCount.total }} cards
+                  @if (owned(set); as owned) {
+                    <span data-testid="set-progress">
+                      {{ owned }} / {{ set.cardCount.total }} owned
+                    </span>
+                  } @else {
+                    {{ set.cardCount.total }} cards
+                  }
                 </p>
               </div>
             </div>

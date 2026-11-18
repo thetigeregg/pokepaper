@@ -83,3 +83,16 @@
   min-height: 1.5em;
   color: var(--ion-text-color);
 }
+
+/* Collection stepper: − count +, the count wide enough for three digits so
+   the buttons don't move. */
+.stepper {
+  display: flex;
+  align-items: center;
+}
+
+.quantity {
+  min-width: 3ch;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}

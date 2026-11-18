@@ -21,6 +21,43 @@
       }
     </ion-item>
 
+    <ion-list-header>
+      <ion-label data-testid="collection-header">Collection · {{ languageName() }}</ion-label>
+    </ion-list-header>
+    @for (row of variants(); track row.variant) {
+      <ion-item lines="inset" [attr.data-testid]="'variant-' + row.variant">
+        <ion-label>{{ row.label }}</ion-label>
+        <div slot="end" class="stepper">
+          <ion-button
+            fill="clear"
+            [disabled]="row.quantity === 0"
+            (click)="step(row.variant, -1)"
+            [attr.aria-label]="'Remove a ' + row.label + ' copy'"
+            data-testid="remove-copy"
+          >
+            <ion-icon slot="icon-only" name="remove-circle-outline"></ion-icon>
+          </ion-button>
+          <span class="quantity" aria-live="polite" data-testid="quantity">{{ row.quantity }}</span>
+          <ion-button
+            fill="clear"
+            [disabled]="row.quantity >= maxQuantity"
+            (click)="step(row.variant, 1)"
+            [attr.aria-label]="'Add a ' + row.label + ' copy'"
+            data-testid="add-copy"
+          >
+            <ion-icon slot="icon-only" name="add-circle-outline"></ion-icon>
+          </ion-button>
+        </div>
+      </ion-item>
+    }
+    @if (otherLanguages(); as others) {
+      <ion-item>
+        <ion-label class="ion-text-wrap">
+          <p data-testid="other-languages">Also {{ others }}</p>
+        </ion-label>
+      </ion-item>
+    }
+
     @if (text()?.abilities?.length) {
       <ion-list-header><ion-label>Abilities</ion-label></ion-list-header>
       @for (ability of text()?.abilities; track $index) {

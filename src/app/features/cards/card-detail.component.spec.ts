@@ -5,10 +5,19 @@ import { DEFAULT_CATALOG_LANGUAGES } from '@pokepaper/shared';
 import { vi } from 'vitest';
 import { makeContractPack } from '../../core/data/storage-engine.contract';
 import { CatalogLanguageService } from '../../core/services/catalog-language.service';
+import { CollectionService } from '../../core/services/collection.service';
 import { ImageCacheService } from '../../core/services/image-cache.service';
 import { VisibilityService } from '../../core/services/visibility.service';
 import { CardDetailComponent, LOAD_MORE_WITHIN } from './card-detail.component';
 import type { CatalogCard } from '@pokepaper/shared';
+
+/** An empty collection, for specs that don't test collection tracking. */
+const EMPTY_COLLECTION: Partial<CollectionService> = {
+  quantity: () => 0,
+  cardTotal: () => 0,
+  otherLanguages: () => [],
+  ownedInSet: () => 0,
+};
 
 const swiper = vi.hoisted(() => ({
   instances: [] as {
@@ -76,6 +85,7 @@ describe('CardDetailComponent', () => {
     swiper.instances.length = 0;
     TestBed.configureTestingModule({
       providers: [
+        { provide: CollectionService, useValue: EMPTY_COLLECTION },
         { provide: ModalController, useValue: { dismiss } },
         {
           // A remembered language other than the default, to tell them apart.

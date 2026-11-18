@@ -1,8 +1,10 @@
 import {
   catalogSetImageUrl,
+  COLLECTION_VARIANTS,
   type CatalogCard,
   type CatalogLanguage,
   type CatalogSet,
+  type CollectionVariant,
 } from '@pokepaper/shared';
 
 /** The card's text in `language`, else in its first available language. */
@@ -57,4 +59,19 @@ export function setLogoUrl(set: CatalogSet, language: CatalogLanguage): string |
     (set.logos[language] ? language : undefined) ??
     (Object.keys(set.logos) as CatalogLanguage[]).at(0);
   return logoLanguage ? catalogSetImageUrl(set, { kind: 'logo', language: logoLanguage }) : null;
+}
+
+/** Collection stepper labels for each variant (docs/collection.md). */
+export const VARIANT_LABELS: Readonly<Record<CollectionVariant, string>> = {
+  normal: 'Normal',
+  reverse: 'Reverse holo',
+  holo: 'Holo',
+  firstEdition: '1st edition',
+  wPromo: 'W promo',
+};
+
+/** The variants a card can be collected in: TCGdex's flags, else just `normal`. */
+export function cardVariants(card: CatalogCard): CollectionVariant[] {
+  const listed = COLLECTION_VARIANTS.filter((variant) => card.variants[variant]);
+  return listed.length > 0 ? listed : ['normal'];
 }
