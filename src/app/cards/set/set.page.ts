@@ -29,7 +29,7 @@ import type { CatalogCard, CatalogLanguage, CatalogRegion, CatalogSet } from '@p
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { addIcons } from 'ionicons';
 import { debounceTime } from 'rxjs';
-import { cloudDoneOutline, cloudDownloadOutline } from 'ionicons/icons';
+import { cloudDoneOutline, cloudDownloadOutline, gridOutline, listOutline } from 'ionicons/icons';
 import { catalogKey, type StorageEngine } from '../../core/data/storage-engine';
 import { StorageEngineFactory } from '../../core/data/storage-engine.factory';
 import { localized } from '../../core/services/catalog-browse.service';
@@ -40,16 +40,23 @@ import {
 import { CatalogSyncService } from '../../core/services/catalog-sync.service';
 import { ImageDownloadService } from '../../core/services/image-download.service';
 import { LayoutService } from '../../core/services/layout.service';
+import { PreferenceStorageService } from '../../core/storage/preference-storage.service';
 import { CardDetailComponent } from '../../features/cards/card-detail.component';
 import { cardText, setLine } from '../../features/cards/card-display';
 import { CardTileComponent } from '../../features/cards/card-tile.component';
 import { LanguageButtonComponent } from '../../features/cards/language-button.component';
+import { SetChecklistComponent } from '../../features/cards/set-checklist.component';
 import { SetLogoComponent } from '../../features/cards/set-logo.component';
+
+/** Preference: how set pages show their cards (`grid` or `checklist`), on this device. */
+export const SET_VIEW_KEY = 'pokepaper.cards.setView';
+export type SetView = 'grid' | 'checklist';
 
 /**
  * A set's cards (docs/ui.md → Cards): an IonGrid of card images with
- * "001 · Pineco" captions. The header has the language switch and the
- * download action; a card opens in the detail modal.
+ * "001 · Pineco" captions, or a checklist for collecting (the view is
+ * remembered on the device). The header has the language switch, the view
+ * switch and the download action; a card opens in the detail modal.
  */
 @Component({
   selector: 'app-set',
@@ -70,6 +77,7 @@ import { SetLogoComponent } from '../../features/cards/set-logo.component';
     IonText,
     CardTileComponent,
     LanguageButtonComponent,
+    SetChecklistComponent,
     SetLogoComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -82,6 +90,7 @@ export class SetPage implements OnInit {
   private readonly modals = inject(ModalController);
   private readonly catalogSync = inject(CatalogSyncService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly preferences = inject(PreferenceStorageService);
   readonly layout = inject(LayoutService);
 
   /** Route parameters (component input binding). */
@@ -91,6 +100,7 @@ export class SetPage implements OnInit {
   readonly set = signal<CatalogSet | null>(null);
   readonly cards = signal<CatalogCard[]>([]);
   readonly loaded = signal(false);
+  readonly view = signal<SetView>('grid');
 
   readonly key = computed(() => catalogKey(this.region(), this.setId()));
   readonly language = computed<CatalogLanguage>(() =>
@@ -111,11 +121,12 @@ export class SetPage implements OnInit {
   }
 
   constructor() {
-    addIcons({ cloudDoneOutline, cloudDownloadOutline });
+    addIcons({ cloudDoneOutline, cloudDownloadOutline, gridOutline, listOutline });
   }
 
   ngOnInit(): void {
     void this.load();
+    void this.loadView();
     void this.downloads.refresh(); // For the downloaded marker.
     // Follow catalog updates (the set's pack replaced, or arriving on first run).
     this.catalogSync.changed$
@@ -135,6 +146,28 @@ export class SetPage implements OnInit {
       console.error('catalog.set_load_failed', error);
     } finally {
       this.loaded.set(true);
+    }
+  }
+
+  /** Switches between the card grid and the checklist, remembered for every set. */
+  async toggleView(): Promise<void> {
+    const view: SetView = this.view() === 'grid' ? 'checklist' : 'grid';
+    this.view.set(view);
+    try {
+      await this.preferences.setItem(SET_VIEW_KEY, view);
+    } catch (error: unknown) {
+      console.error('catalog.set_view_save_failed', error);
+    }
+  }
+
+  private async loadView(): Promise<void> {
+    try {
+      const stored = await this.preferences.getItem(SET_VIEW_KEY);
+      if (stored === 'grid' || stored === 'checklist') {
+        this.view.set(stored);
+      }
+    } catch (error: unknown) {
+      console.error('catalog.set_view_load_failed', error);
     }
   }
 

@@ -1,7 +1,7 @@
 import { signal } from '@angular/core';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { ActionSheetController, ModalController } from '@ionic/angular';
+import { ActionSheetController, AlertController, ModalController } from '@ionic/angular';
 import type { CatalogLanguage, CatalogRegion, CatalogSet } from '@pokepaper/shared';
 import { Subject } from 'rxjs';
 import { vi } from 'vitest';
@@ -18,7 +18,8 @@ import {
 import { LayoutService } from '../../core/services/layout.service';
 import { VisibilityService } from '../../core/services/visibility.service';
 import { CardDetailComponent } from '../../features/cards/card-detail.component';
-import { SetPage } from './set.page';
+import { PreferenceStorageService } from '../../core/storage/preference-storage.service';
+import { SET_VIEW_KEY, SetPage } from './set.page';
 
 /** An empty collection, for specs that don't test collection tracking. */
 const EMPTY_COLLECTION: Partial<CollectionService> = {
@@ -67,6 +68,14 @@ describe('SetPage', () => {
     Promise.resolve({ present })
   );
   const createModal = vi.fn((_options: Record<string, unknown>) => Promise.resolve({ present }));
+  const preferences = new Map<string, string>();
+  const preferenceStorage = {
+    getItem: vi.fn((key: string) => Promise.resolve(preferences.get(key) ?? null)),
+    setItem: vi.fn((key: string, value: string) => {
+      preferences.set(key, value);
+      return Promise.resolve();
+    }),
+  };
 
   let fixture: ComponentFixture<SetPage>;
 
@@ -91,6 +100,7 @@ describe('SetPage', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    preferences.clear();
     language.set('de');
     wide.set(false);
     downloads.progress.set(new Map());
@@ -116,7 +126,73 @@ describe('SetPage', () => {
           useValue: { resolve: vi.fn(() => Promise.resolve(null)), release: vi.fn() },
         },
         { provide: VisibilityService, useValue: { whenVisible: () => () => undefined } },
+        { provide: PreferenceStorageService, useValue: preferenceStorage },
+        { provide: AlertController, useValue: { create: vi.fn() } },
       ],
+    });
+  });
+
+  describe('checklist view', () => {
+    const viewButton = () => query('[data-testid="view-button"]') as HTMLElement | null;
+
+    it('switches between the grid and the checklist, remembering the choice', async () => {
+      const page = await create();
+      expect(page.view()).toBe('grid');
+      expect(query('app-set-checklist')).toBeNull();
+
+      viewButton()?.click();
+      await settle();
+
+      expect(page.view()).toBe('checklist');
+      expect(preferences.get(SET_VIEW_KEY)).toBe('checklist');
+      expect(query('.page-column app-set-checklist')).not.toBeNull();
+      expect(root().querySelectorAll('[data-testid^="checklist-sv01-"]')).toHaveLength(2);
+      expect(query('app-card-tile')).toBeNull();
+
+      viewButton()?.click();
+      await settle();
+      expect(preferences.get(SET_VIEW_KEY)).toBe('grid');
+      expect(query('app-card-tile')).not.toBeNull();
+    });
+
+    it('opens in the remembered view, ignoring unknown values', async () => {
+      preferences.set(SET_VIEW_KEY, 'checklist');
+      expect((await create()).view()).toBe('checklist');
+
+      preferences.set(SET_VIEW_KEY, 'carousel');
+      expect((await create()).view()).toBe('grid');
+    });
+
+    it('opens a checklist card in the card modal', async () => {
+      preferences.set(SET_VIEW_KEY, 'checklist');
+      await create();
+
+      (
+        query('[data-testid="checklist-sv01-002"] [data-testid="open-card"]') as HTMLElement | null
+      )?.click();
+      await settle();
+
+      expect(createModal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          component: CardDetailComponent,
+          componentProps: expect.objectContaining({ startIndex: 1 }) as unknown,
+        })
+      );
+    });
+
+    it('keeps working when the view preference can’t be read or saved', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      preferenceStorage.getItem.mockRejectedValueOnce(new Error('locked'));
+      preferenceStorage.setItem.mockRejectedValueOnce(new Error('locked'));
+      const page = await create();
+      expect(page.view()).toBe('grid');
+
+      await page.toggleView();
+
+      expect(page.view()).toBe('checklist');
+      expect(error).toHaveBeenCalledWith('catalog.set_view_load_failed', expect.any(Error));
+      expect(error).toHaveBeenCalledWith('catalog.set_view_save_failed', expect.any(Error));
+      error.mockRestore();
     });
   });
 

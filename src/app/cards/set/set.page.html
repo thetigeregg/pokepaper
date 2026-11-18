@@ -20,6 +20,16 @@
           (changed)="pickLanguage($event)"
         />
         <ion-button
+          (click)="toggleView()"
+          [attr.aria-label]="view() === 'grid' ? 'Show as checklist' : 'Show as grid'"
+          data-testid="view-button"
+        >
+          <ion-icon
+            slot="icon-only"
+            [name]="view() === 'grid' ? 'list-outline' : 'grid-outline'"
+          ></ion-icon>
+        </ion-button>
+        <ion-button
           (click)="openDownloadActions()"
           [disabled]="downloading()"
           [attr.aria-label]="downloaded() ? 'Downloaded for offline use' : 'Download images'"
@@ -46,19 +56,32 @@
   @if (loaded() && !set()) {
     <ion-text color="medium"><p class="ion-padding">This set isn't on this device.</p></ion-text>
   }
-  <ion-grid>
-    <ion-row>
-      @for (card of cards(); track card.id; let i = $index) {
-        <ion-col size="4" sizeMd="3" sizeLg="2">
-          <app-card-tile
-            [card]="card"
-            [language]="language()"
-            [name]="name(card)"
-            [setLine]="line(card)"
-            (opened)="openCard(i)"
-          />
-        </ion-col>
-      }
-    </ion-row>
-  </ion-grid>
+  @if (view() === 'checklist') {
+    @if (set(); as set) {
+      <div class="page-column">
+        <app-set-checklist
+          [cards]="cards()"
+          [set]="set"
+          [language]="language()"
+          (opened)="openCard($event)"
+        />
+      </div>
+    }
+  } @else {
+    <ion-grid>
+      <ion-row>
+        @for (card of cards(); track card.id; let i = $index) {
+          <ion-col size="4" sizeMd="3" sizeLg="2">
+            <app-card-tile
+              [card]="card"
+              [language]="language()"
+              [name]="name(card)"
+              [setLine]="line(card)"
+              (opened)="openCard(i)"
+            />
+          </ion-col>
+        }
+      </ion-row>
+    </ion-grid>
+  }
 </ion-content>

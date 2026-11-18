@@ -7,6 +7,7 @@ import {
   isCollectionTarget,
   MAX_COLLECTION_QUANTITY,
   SETTINGS_ENTITY_ID,
+  type CollectionChange,
   type CollectionEntry,
   type CollectionTarget,
   type UserSettings,
@@ -68,27 +69,43 @@ export class LocalUserDataRepository {
    * `MAX_COLLECTION_QUANTITY`). 0 deletes the entry, locally and on the server.
    * Rejects targets the server would reject, so nothing unsyncable is stored.
    */
-  async setCollectionQuantity(target: CollectionTarget, quantity: number): Promise<void> {
-    if (!isCollectionQuantity(quantity)) {
-      throw new RangeError(
-        `Collection quantity must be an integer from 0 to ${String(MAX_COLLECTION_QUANTITY)}`
-      );
+  setCollectionQuantity(target: CollectionTarget, quantity: number): Promise<void> {
+    return this.setCollectionQuantities([{ target, quantity }]);
+  }
+
+  /**
+   * `setCollectionQuantity` for several targets in one transaction: all are
+   * stored and queued, or none. Every change is validated before anything is
+   * written.
+   */
+  async setCollectionQuantities(changes: readonly CollectionChange[]): Promise<void> {
+    for (const { target, quantity } of changes) {
+      if (!isCollectionQuantity(quantity)) {
+        throw new RangeError(
+          `Collection quantity must be an integer from 0 to ${String(MAX_COLLECTION_QUANTITY)}`
+        );
+      }
+      if (!isCollectionTarget(target)) {
+        throw new TypeError('Invalid collection target');
+      }
     }
-    if (!isCollectionTarget(target)) {
-      throw new TypeError('Invalid collection target');
+    if (changes.length === 0) {
+      return;
     }
-    const key = collectionEntryId(target);
     const clientTimestamp = new Date().toISOString();
 
     await this.withOutboxTransaction(['collection'], async () => {
-      if (quantity === 0) {
-        await this.engine.deleteCollectionEntry(key);
-        await this.queueOperation('collectionEntry', key, 'delete', null, clientTimestamp);
-        return;
+      for (const { target, quantity } of changes) {
+        const key = collectionEntryId(target);
+        if (quantity === 0) {
+          await this.engine.deleteCollectionEntry(key);
+          await this.queueOperation('collectionEntry', key, 'delete', null, clientTimestamp);
+        } else {
+          const entry = collectionEntry(target, quantity);
+          await this.engine.putCollectionEntry(entry);
+          await this.queueOperation('collectionEntry', key, 'upsert', entry, clientTimestamp);
+        }
       }
-      const entry = collectionEntry(target, quantity);
-      await this.engine.putCollectionEntry(entry);
-      await this.queueOperation('collectionEntry', key, 'upsert', entry, clientTimestamp);
     });
   }
 

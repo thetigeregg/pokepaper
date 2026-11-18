@@ -141,6 +141,53 @@ describe('LocalUserDataRepository', () => {
       expect(await engine.listOutboxOrderedByCreatedAt()).toEqual([]);
     });
 
+    it('writes several changes in one go, all queued for sync', async () => {
+      const syncNow = vi.fn(() => Promise.resolve());
+      const repository = await setUp({ syncNow });
+      await repository.setCollectionQuantity({ ...target, cardId: 'sv01-009' }, 2);
+
+      await repository.setCollectionQuantities([
+        { target, quantity: 1 },
+        { target: { ...target, variant: 'normal' }, quantity: 3 },
+        { target: { ...target, cardId: 'sv01-009' }, quantity: 0 },
+      ]);
+
+      expect(await repository.listCollection()).toEqual(
+        expect.arrayContaining([
+          { ...target, quantity: 1 },
+          { ...target, variant: 'normal', quantity: 3 },
+        ])
+      );
+      expect(await repository.listCollection()).toHaveLength(2);
+      expect((await engine.listOutboxOrderedByCreatedAt()).map((entry) => entry.operation)).toEqual(
+        ['upsert', 'upsert', 'upsert', 'delete']
+      );
+      expect(syncNow).toHaveBeenCalledTimes(2); // Once per write, not per change.
+    });
+
+    it('writes none of several changes when one is invalid', async () => {
+      const repository = await setUp({ syncNow: () => Promise.resolve() });
+
+      await expect(
+        repository.setCollectionQuantities([
+          { target, quantity: 1 },
+          { target: { ...target, language: 'e:n' }, quantity: 1 },
+        ])
+      ).rejects.toThrow(TypeError);
+
+      expect(await repository.listCollection()).toEqual([]);
+      expect(await engine.listOutboxOrderedByCreatedAt()).toEqual([]);
+    });
+
+    it('does nothing for no changes', async () => {
+      const syncNow = vi.fn(() => Promise.resolve());
+      const repository = await setUp({ syncNow });
+
+      await repository.setCollectionQuantities([]);
+
+      expect(syncNow).not.toHaveBeenCalled();
+    });
+
     it.each([[-1], [1.5], [1000], [Number.NaN]])(
       'rejects the quantity %s without writing anything',
       async (quantity) => {

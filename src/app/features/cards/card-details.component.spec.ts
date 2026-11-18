@@ -5,8 +5,8 @@ import {
   type CatalogCard,
   type CatalogCardText,
   type CatalogSet,
+  type CollectionChange,
   type CollectionEntry,
-  type CollectionTarget,
 } from '@pokepaper/shared';
 import { NEVER } from 'rxjs';
 import { vi } from 'vitest';
@@ -50,11 +50,13 @@ describe('CardDetailsComponent', () => {
   let stored: Map<string, CollectionEntry>;
   const repository = {
     listCollection: vi.fn(() => Promise.resolve([...stored.values()])),
-    setCollectionQuantity: vi.fn((target: CollectionTarget, quantity: number) => {
-      if (quantity > 0) {
-        stored.set(collectionEntryId(target), collectionEntry(target, quantity));
-      } else {
-        stored.delete(collectionEntryId(target));
+    setCollectionQuantities: vi.fn((changes: readonly CollectionChange[]) => {
+      for (const { target: what, quantity } of changes) {
+        if (quantity > 0) {
+          stored.set(collectionEntryId(what), collectionEntry(what, quantity));
+        } else {
+          stored.delete(collectionEntryId(what));
+        }
       }
       return Promise.resolve();
     }),
@@ -85,7 +87,7 @@ describe('CardDetailsComponent', () => {
 
   beforeEach(() => {
     stored = new Map();
-    repository.setCollectionQuantity.mockClear();
+    repository.setCollectionQuantities.mockClear();
     TestBed.configureTestingModule({
       providers: [
         { provide: LocalUserDataRepository, useValue: repository },
@@ -273,9 +275,9 @@ describe('CardDetailsComponent', () => {
         'Collection · German'
       );
       expect(rows(fixture)[1]?.quantity).toBe('1');
-      expect(repository.setCollectionQuantity.mock.calls.map(([, quantity]) => quantity)).toEqual([
-        1, 2, 1,
-      ]);
+      expect(
+        repository.setCollectionQuantities.mock.calls.map(([changes]) => changes[0]?.quantity)
+      ).toEqual([1, 2, 1]);
       expect([...stored.values()]).toEqual([entry({ variant: 'reverse', language: 'de' })]);
     });
 
@@ -345,7 +347,7 @@ describe('CardDetailsComponent', () => {
       await settle(fixture);
 
       expect(error).toHaveBeenCalledWith('collection.step_failed', expect.any(RangeError));
-      expect(repository.setCollectionQuantity).not.toHaveBeenCalled();
+      expect(repository.setCollectionQuantities).not.toHaveBeenCalled();
       error.mockRestore();
     });
 

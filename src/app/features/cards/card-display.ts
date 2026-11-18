@@ -4,6 +4,7 @@ import {
   type CatalogCard,
   type CatalogLanguage,
   type CatalogSet,
+  type CollectionTarget,
   type CollectionVariant,
 } from '@pokepaper/shared';
 
@@ -74,4 +75,37 @@ export const VARIANT_LABELS: Readonly<Record<CollectionVariant, string>> = {
 export function cardVariants(card: CatalogCard): CollectionVariant[] {
   const listed = COLLECTION_VARIANTS.filter((variant) => card.variants[variant]);
   return listed.length > 0 ? listed : ['normal'];
+}
+
+/** What a copy of `card` in `variant` and `language` is counted under. */
+export function collectionTarget(
+  card: CatalogCard,
+  variant: CollectionVariant,
+  language: CatalogLanguage
+): CollectionTarget {
+  return { region: card.region, cardId: card.id, setId: card.setId, variant, language };
+}
+
+/** A variant of a card with the copies owned, for a stepper or a toggle. */
+export interface VariantRow {
+  variant: CollectionVariant;
+  label: string;
+  quantity: number;
+}
+
+/**
+ * The variants to offer for a card with the copies owned of each: those it
+ * comes in (`cardVariants`), plus any other variant owned (TCGdex's flags
+ * have gaps), so every counted copy can be seen and changed.
+ */
+export function variantRows(
+  card: CatalogCard,
+  quantity: (variant: CollectionVariant) => number
+): VariantRow[] {
+  const listed = cardVariants(card);
+  return COLLECTION_VARIANTS.map((variant) => ({
+    variant,
+    label: VARIANT_LABELS[variant],
+    quantity: quantity(variant),
+  })).filter((row) => listed.includes(row.variant) || row.quantity > 0);
 }
