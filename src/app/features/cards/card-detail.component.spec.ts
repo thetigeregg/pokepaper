@@ -7,7 +7,8 @@ import { makeContractPack } from '../../core/data/storage-engine.contract';
 import { CatalogLanguageService } from '../../core/services/catalog-language.service';
 import { ImageCacheService } from '../../core/services/image-cache.service';
 import { VisibilityService } from '../../core/services/visibility.service';
-import { CardDetailComponent } from './card-detail.component';
+import { CardDetailComponent, LOAD_MORE_WITHIN } from './card-detail.component';
+import type { CatalogCard } from '@pokepaper/shared';
 
 const swiper = vi.hoisted(() => ({
   instances: [] as {
@@ -17,6 +18,8 @@ const swiper = vi.hoisted(() => ({
     updateSlidesClasses: () => void;
     updateAutoHeight: (speed: number) => void;
     destroy: () => void;
+    virtual: { appendSlide: (slides: unknown[]) => void };
+    slideTo: (index: number, speed: number, runCallbacks: boolean) => void;
   }[],
 }));
 
@@ -27,6 +30,8 @@ vi.mock('swiper', () => ({
     readonly updateSlidesClasses = vi.fn();
     readonly updateAutoHeight = vi.fn();
     readonly destroy = vi.fn();
+    readonly virtual = { appendSlide: vi.fn() };
+    readonly slideTo = vi.fn();
     constructor(
       _element: unknown,
       readonly options: Record<string, unknown>
@@ -144,9 +149,109 @@ describe('CardDetailComponent', () => {
     expect(pick).not.toHaveBeenCalled();
 
     detail.setProp = pack.set;
+    detail.cardsProp = cards;
     fixture.detectChanges();
     expect(detail.language()).toBe('fr');
     expect(root().querySelector('app-language-button')).not.toBeNull();
+  });
+
+  it('pages through cards from several sets, each with its own set', () => {
+    const other = makeContractPack('intl', 'sv02', ['sv02-001']);
+    other.set.languages = ['de'];
+    fixture = TestBed.createComponent(CardDetailComponent);
+    const detail = fixture.componentInstance;
+    detail.setsProp = new Map([
+      ['intl:sv01', pack.set],
+      ['intl:sv02', other.set],
+    ]);
+    detail.cardsProp = [cards[0], other.cards[0]];
+    fixture.detectChanges();
+
+    expect(detail.set()).toBe(pack.set);
+    options().on.slideChange({ activeIndex: 1 });
+    expect(detail.set()).toBe(other.set);
+    expect(detail.setFor(cards[0])).toBe(pack.set);
+  });
+
+  describe('loading more cards to page through', () => {
+    const many = makeContractPack(
+      'intl',
+      'sv01',
+      Array.from({ length: LOAD_MORE_WITHIN + 5 }, (_, n) => `sv01-${String(n + 1)}`)
+    );
+    const manyCards = [...many.cards].sort((a, b) => a.sortIndex - b.sortIndex);
+    const extra = makeContractPack('intl', 'sv01', ['sv01-x1', 'sv01-x2']).cards;
+
+    function open(startIndex: number, loadMore: () => Promise<CatalogCard[]>) {
+      fixture = TestBed.createComponent(CardDetailComponent);
+      const component = fixture.componentInstance;
+      component.setProp = many.set;
+      component.cardsProp = manyCards;
+      component.startIndex = startIndex;
+      component.loadMoreProp = loadMore;
+      fixture.detectChanges();
+      return component;
+    }
+
+    it('loads the next page near the end and appends it to the slides', async () => {
+      const loadMore = vi.fn(() => Promise.resolve([...manyCards, ...extra]));
+      const detail = open(0, loadMore);
+      expect(loadMore).not.toHaveBeenCalled(); // Far from the end.
+
+      options().on.slideChange({ activeIndex: manyCards.length - LOAD_MORE_WITHIN });
+      await vi.waitFor(() => {
+        expect(swiper.instances[0]?.virtual.appendSlide).toHaveBeenCalledWith(extra);
+      });
+      expect(detail.cards()).toHaveLength(manyCards.length + extra.length);
+    });
+
+    it('loads more straight away when it opens near the end, once at a time', async () => {
+      let release!: (cards: CatalogCard[]) => void;
+      const loadMore = vi.fn(
+        () =>
+          new Promise<CatalogCard[]>((resolve) => {
+            release = resolve;
+          })
+      );
+      open(manyCards.length - 1, loadMore);
+      options().on.slideChange({ activeIndex: manyCards.length - 1 }); // While it loads.
+      expect(loadMore).toHaveBeenCalledTimes(1);
+
+      release(manyCards); // Nothing new: the results are all loaded.
+      await new Promise((resolve) => setTimeout(resolve));
+      expect(swiper.instances[0]?.virtual.appendSlide).not.toHaveBeenCalled();
+    });
+
+    it('stays on its card when appending right after opening moves Swiper', async () => {
+      const detail = open(manyCards.length - 1, () => Promise.resolve([...manyCards, ...extra]));
+      const instance = swiper.instances.at(0);
+      if (!instance) {
+        throw new Error('no Swiper');
+      }
+      instance.activeIndex = manyCards.length - 1;
+      vi.mocked(instance.virtual.appendSlide).mockImplementation(() => {
+        instance.activeIndex = 0; // Swiper re-reads its position before the first layout.
+      });
+
+      await vi.waitFor(() => {
+        expect(instance.slideTo).toHaveBeenCalledWith(manyCards.length - 1, 0, false);
+      });
+      expect(detail.index()).toBe(manyCards.length - 1);
+    });
+
+    it('keeps paging what it has when loading more fails', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const detail = open(manyCards.length - 1, () => Promise.reject(new Error('disk')));
+
+      await vi.waitFor(() => {
+        expect(error).toHaveBeenCalledWith(
+          'catalog.card_detail_load_more_failed',
+          expect.any(Error)
+        );
+      });
+      expect(detail.cards()).toHaveLength(manyCards.length);
+      error.mockRestore();
+    });
   });
 
   it('destroys Swiper with the modal', () => {

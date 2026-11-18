@@ -2,6 +2,7 @@ import Dexie, { Table } from 'dexie';
 import { Injectable } from '@angular/core';
 import type { CatalogCard, CatalogSeries, UserSettings } from '@pokepaper/shared';
 import type {
+  CatalogSearchRow,
   DownloadedSet,
   ImageCacheRecord,
   ImagePin,
@@ -39,6 +40,7 @@ export class AppDb extends Dexie {
   catalogSeries!: Table<CatalogSeriesRow, string>;
   catalogSets!: Table<StoredCatalogSet, string>;
   catalogCards!: Table<CatalogCardRow, string>;
+  catalogCardSearch!: Table<CatalogSearchRow, string>;
   imagePins!: Table<ImagePin, [string, string]>;
   downloadedSets!: Table<DownloadedSet, string>;
 
@@ -64,6 +66,12 @@ export class AppDb extends Dexie {
       imageCache: 'key, lastAccessedAt',
       imagePins: '[setKey+imageKey], setKey, imageKey',
       downloadedSets: 'setKey',
+    });
+
+    // Card search rows. Matches SQLite schema version 4. Existing catalogs
+    // get their rows from CatalogSearchService's rebuild.
+    this.version(4).stores({
+      catalogCardSearch: 'key, region, setKey',
     });
   }
 }

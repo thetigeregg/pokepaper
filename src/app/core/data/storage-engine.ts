@@ -27,6 +27,7 @@ export type StorageScope =
   | 'catalogSeries'
   | 'catalogSets'
   | 'catalogCards'
+  | 'catalogCardSearch'
   | 'imagePins'
   | 'downloadedSets';
 
@@ -41,6 +42,27 @@ export interface StoredCatalogSet {
   region: CatalogRegion;
   hash: string;
   set: CatalogSet;
+}
+
+/**
+ * A card's search fields (docs/catalog.md → Search): written with its set by
+ * `replaceCatalogSet` and built by `catalogSearchRow()`, so both engines
+ * store identical rows. Slim enough to keep a whole catalog in memory.
+ */
+export interface CatalogSearchRow {
+  /** `region:id`, as the card's key. */
+  key: string;
+  region: CatalogRegion;
+  /** `region:setId`. */
+  setKey: string;
+  sortIndex: number;
+  /** The card's names in every language, normalized (`normalizeSearchText`), without repeats. */
+  names: string[];
+  category: string;
+  /** Trainer or Energy subtype (`Supporter`, `Special`, …). */
+  subtype: string | null;
+  rarity: string | null;
+  types: string[];
 }
 
 /** Counts for the catalog on this device. */
@@ -183,9 +205,12 @@ export interface StorageEngine {
   /** Makes the stored series exactly `series` (all regions). */
   replaceCatalogSeries(series: readonly CatalogSeries[]): Promise<void>;
   listCatalogSeries(): Promise<CatalogSeries[]>;
-  /** Stores a downloaded set: its row and its cards replace any earlier copy, atomically. */
+  /**
+   * Stores a downloaded set: its row, its cards and their search rows replace
+   * any earlier copy, atomically.
+   */
   replaceCatalogSet(pack: CatalogSetPack): Promise<void>;
-  /** Removes a set and its cards. */
+  /** Removes a set, its cards and their search rows. */
   deleteCatalogSet(region: CatalogRegion, setId: string): Promise<void>;
   /** All stored sets, or one region's. */
   listCatalogSets(region?: CatalogRegion): Promise<StoredCatalogSet[]>;
@@ -194,7 +219,13 @@ export interface StorageEngine {
   /** A set's cards in display order. */
   listCatalogCards(region: CatalogRegion, setId: string): Promise<CatalogCard[]>;
   getCatalogCard(region: CatalogRegion, cardId: string): Promise<CatalogCard | undefined>;
+  /** Cards by `region:id` key, in the order given; keys not stored are skipped. */
+  getCatalogCardsByKey(keys: readonly string[]): Promise<CatalogCard[]>;
   catalogStats(): Promise<CatalogStats>;
+  /** One catalog's search rows. */
+  listCatalogSearchRows(region: CatalogRegion): Promise<CatalogSearchRow[]>;
+  /** Rebuilds a stored set's search rows from its cards (after the row format changes). */
+  reindexCatalogSet(region: CatalogRegion, setId: string): Promise<void>;
 
   // Outbox
   getOutboxEntry(opId: string): Promise<OutboxEntry | undefined>;

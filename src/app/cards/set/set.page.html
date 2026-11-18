@@ -50,17 +50,13 @@
     <ion-row>
       @for (card of cards(); track card.id; let i = $index) {
         <ion-col size="4" sizeMd="3" sizeLg="2">
-          <button
-            class="card-button"
-            type="button"
-            (click)="openCard(i)"
-            [attr.aria-label]="name(card)"
-          >
-            <app-card-image [card]="card" [language]="language()" [setLine]="line(card)" />
-          </button>
-          <ion-text color="medium">
-            <p class="caption">{{ card.localId }} · {{ name(card) }}</p>
-          </ion-text>
+          <app-card-tile
+            [card]="card"
+            [language]="language()"
+            [name]="name(card)"
+            [setLine]="line(card)"
+            (opened)="openCard(i)"
+          />
         </ion-col>
       }
     </ion-row>

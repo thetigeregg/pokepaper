@@ -5,15 +5,17 @@ import { IonContent, IonHeader, IonTitle, IonToolbar, NavController } from '@ion
 import type { CatalogSet } from '@pokepaper/shared';
 import { filter, map } from 'rxjs';
 import { catalogKey } from '../../core/data/storage-engine';
+import { CatalogSearchService } from '../../core/services/catalog-search.service';
 import { LayoutService } from '../../core/services/layout.service';
+import { CardSearchbarComponent } from './card-searchbar.component';
 import { CatalogSegmentComponent } from './catalog-segment.component';
 import { SetsListComponent } from './sets-list.component';
 
 const SET_URL = /^\/tabs\/cards\/set\/([^/]+)\/([^/?#]+)/;
 
 /**
- * The Cards tab's desktop side pane (docs/ui.md → Cards): the catalog segment
- * and the sets list, inside the IonMenu that TabsPage's IonSplitPane shows
+ * The Cards tab's desktop side pane (docs/ui.md → Cards): the searchbar, the
+ * catalog segment and the sets list, inside the IonMenu that TabsPage's IonSplitPane shows
  * beside the tabs while the Cards tab is open on a wide screen.
  */
 @Component({
@@ -23,6 +25,9 @@ const SET_URL = /^\/tabs\/cards\/set\/([^/]+)\/([^/?#]+)/;
     <ion-header>
       <ion-toolbar>
         <ion-title>Cards</ion-title>
+      </ion-toolbar>
+      <ion-toolbar>
+        <app-card-searchbar />
       </ion-toolbar>
       <ion-toolbar>
         <app-catalog-segment />
@@ -39,6 +44,7 @@ const SET_URL = /^\/tabs\/cards\/set\/([^/]+)\/([^/?#]+)/;
     IonToolbar,
     IonTitle,
     IonContent,
+    CardSearchbarComponent,
     CatalogSegmentComponent,
     SetsListComponent,
   ],
@@ -47,6 +53,7 @@ const SET_URL = /^\/tabs\/cards\/set\/([^/]+)\/([^/?#]+)/;
 export class CardsMenuComponent {
   private readonly nav = inject(NavController);
   private readonly router = inject(Router);
+  private readonly search = inject(CatalogSearchService);
   readonly layout = inject(LayoutService);
 
   /** The set open beside the list, highlighted in it. */
@@ -59,6 +66,7 @@ export class CardsMenuComponent {
   );
 
   open(set: CatalogSet): void {
+    this.search.deactivate(); // The set replaces the search results (kept for the searchbar).
     // Beside the list, a set replaces the previous one instead of stacking.
     void this.nav.navigateRoot(['/tabs/cards/set', set.region, set.id], { animated: false });
   }

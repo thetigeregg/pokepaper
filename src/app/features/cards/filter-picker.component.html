@@ -1,0 +1,135 @@
+<ion-header>
+  <ion-toolbar>
+    <ion-title>{{ title() }}</ion-title>
+    <ion-buttons slot="end">
+      <ion-button (click)="done()" data-testid="filter-done">Done</ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+  @if (kind() === 'set') {
+    <ion-toolbar>
+      <ion-searchbar
+        placeholder="Search sets"
+        [debounce]="100"
+        (ionInput)="setQuery.set($event.detail.value ?? '')"
+        data-testid="set-search"
+      ></ion-searchbar>
+    </ion-toolbar>
+  }
+</ion-header>
+
+<!-- A sheet sizes to its list (auto height), which ion-content can't; a popover has a fixed height. -->
+@if (sheet()) {
+  <div class="sheet-scroll">
+    <ng-container [ngTemplateOutlet]="values" />
+  </div>
+} @else {
+  <ion-content>
+    <ng-container [ngTemplateOutlet]="values" />
+  </ion-content>
+}
+
+<ng-template #values>
+  @if (kind() === 'set') {
+    <ion-list>
+      @for (group of groups(); track group.value) {
+        <ion-item-group>
+          <ion-item-divider [sticky]="true">
+            <ion-checkbox
+              justify="start"
+              labelPlacement="end"
+              [checked]="groupChecked(group)"
+              [indeterminate]="groupPartly(group)"
+              (ionChange)="toggleGroup(group, $event.detail.checked)"
+              [attr.data-testid]="'filter-group-' + group.value"
+            >
+              {{ group.label }}
+            </ion-checkbox>
+          </ion-item-divider>
+          @for (option of group.options; track option.value) {
+            <ion-item lines="inset">
+              <ion-checkbox
+                justify="start"
+                labelPlacement="end"
+                [checked]="optionChecked(option, group)"
+                [disabled]="groupChecked(group)"
+                (ionChange)="toggleOption(option, $event.detail.checked)"
+                [attr.data-testid]="'filter-option-' + option.value"
+              >
+                <div class="media-row">
+                  @if (option.set; as set) {
+                    <ion-thumbnail>
+                      <app-set-logo [set]="set" [language]="language()" />
+                    </ion-thumbnail>
+                  }
+                  <div class="media-row-text">{{ option.label }}</div>
+                </div>
+              </ion-checkbox>
+              <ion-note slot="end">{{ option.count | number }}</ion-note>
+            </ion-item>
+          }
+        </ion-item-group>
+      } @empty {
+        <ion-item data-testid="filter-empty">No sets match</ion-item>
+      }
+    </ion-list>
+  } @else if (groups(); as groups) {
+    <ion-list>
+      @for (group of groups; track group.value) {
+        <ion-item lines="inset">
+          <ion-checkbox
+            justify="start"
+            labelPlacement="end"
+            [checked]="groupChecked(group)"
+            [indeterminate]="groupPartly(group)"
+            (ionChange)="toggleGroup(group, $event.detail.checked)"
+            [attr.data-testid]="'filter-group-' + group.value"
+          >
+            {{ group.label }}
+          </ion-checkbox>
+          <ion-note slot="end">{{ group.count | number }}</ion-note>
+        </ion-item>
+        @for (option of group.options; track option.value) {
+          <ion-item class="child-row" lines="inset">
+            <ion-checkbox
+              justify="start"
+              labelPlacement="end"
+              [checked]="optionChecked(option, group)"
+              [disabled]="groupChecked(group)"
+              (ionChange)="toggleOption(option, $event.detail.checked)"
+              [attr.data-testid]="'filter-option-' + option.value"
+            >
+              {{ option.label }}
+            </ion-checkbox>
+            <ion-note slot="end">{{ option.count | number }}</ion-note>
+          </ion-item>
+        }
+      } @empty {
+        <ion-item data-testid="filter-empty">No cards match this search</ion-item>
+      }
+    </ion-list>
+  } @else {
+    <ion-list>
+      @for (option of options(); track option.value) {
+        <ion-item lines="inset">
+          <ion-checkbox
+            justify="start"
+            labelPlacement="end"
+            [checked]="optionChecked(option)"
+            (ionChange)="toggleOption(option, $event.detail.checked)"
+            [attr.data-testid]="'filter-option-' + option.value"
+          >
+            <div class="media-row">
+              @if (option.energy; as energy) {
+                <app-energy-icon [type]="energy" />
+              }
+              <div class="media-row-text">{{ option.label }}</div>
+            </div>
+          </ion-checkbox>
+          <ion-note slot="end">{{ option.count | number }}</ion-note>
+        </ion-item>
+      } @empty {
+        <ion-item data-testid="filter-empty">No cards match this search</ion-item>
+      }
+    </ion-list>
+  }
+</ng-template>

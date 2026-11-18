@@ -8,9 +8,11 @@ import type {
   UserSettings,
 } from '@pokepaper/shared';
 import { AppDb, CatalogCardRow, CatalogSeriesRow, SettingsRow } from './app-db';
+import { catalogSearchRow } from './catalog-search-row';
 import {
   catalogKey,
   nestedScopeViolation,
+  CatalogSearchRow,
   CatalogStats,
   DownloadedSet,
   ImageCacheRecord,
@@ -42,6 +44,7 @@ const SCOPE_TABLE_NAMES: Record<StorageScope, string> = {
   catalogSeries: 'catalogSeries',
   catalogSets: 'catalogSets',
   catalogCards: 'catalogCards',
+  catalogCardSearch: 'catalogCardSearch',
   imagePins: 'imagePins',
   downloadedSets: 'downloadedSets',
 };
@@ -255,8 +258,12 @@ export class DexieStorageEngine implements StorageEngine {
 
   replaceCatalogSet(pack: CatalogSetPack): Promise<void> {
     const key = catalogKey(pack.set.region, pack.set.id);
-    return this.runInTransaction(['catalogSets', 'catalogCards'], async () => {
+    return this.runInTransaction(['catalogSets', 'catalogCards', 'catalogCardSearch'], async () => {
       await this.catalogCardsTable.where('setKey').equals(key).delete();
+      await this.catalogCardSearchTable.where('setKey').equals(key).delete();
+      await this.catalogCardSearchTable.bulkPut(
+        pack.cards.map((card) => catalogSearchRow(card, key))
+      );
       await this.catalogCardsTable.bulkPut(
         pack.cards.map((card) => ({
           key: catalogKey(card.region, card.id),
@@ -276,8 +283,9 @@ export class DexieStorageEngine implements StorageEngine {
 
   deleteCatalogSet(region: CatalogRegion, setId: string): Promise<void> {
     const key = catalogKey(region, setId);
-    return this.runInTransaction(['catalogSets', 'catalogCards'], async () => {
+    return this.runInTransaction(['catalogSets', 'catalogCards', 'catalogCardSearch'], async () => {
       await this.catalogCardsTable.where('setKey').equals(key).delete();
+      await this.catalogCardSearchTable.where('setKey').equals(key).delete();
       await this.catalogSetsTable.delete(key);
     });
   }
@@ -306,12 +314,32 @@ export class DexieStorageEngine implements StorageEngine {
     return (await this.catalogCardsTable.get(catalogKey(region, cardId)))?.card;
   }
 
+  async getCatalogCardsByKey(keys: readonly string[]): Promise<CatalogCard[]> {
+    const rows = await this.catalogCardsTable.bulkGet([...keys]);
+    return rows.flatMap((row) => (row ? [row.card] : []));
+  }
+
   async catalogStats(): Promise<CatalogStats> {
     const [sets, cards] = await Promise.all([
       this.catalogSetsTable.count(),
       this.catalogCardsTable.count(),
     ]);
     return { sets, cards };
+  }
+
+  listCatalogSearchRows(region: CatalogRegion): Promise<CatalogSearchRow[]> {
+    return this.catalogCardSearchTable.where('region').equals(region).toArray();
+  }
+
+  reindexCatalogSet(region: CatalogRegion, setId: string): Promise<void> {
+    const key = catalogKey(region, setId);
+    return this.runInTransaction(['catalogCards', 'catalogCardSearch'], async () => {
+      const cards = await this.catalogCardsTable.where('setKey').equals(key).toArray();
+      await this.catalogCardSearchTable.where('setKey').equals(key).delete();
+      await this.catalogCardSearchTable.bulkPut(
+        cards.map((row) => catalogSearchRow(row.card, key))
+      );
+    });
   }
 
   getOutboxEntry(opId: string): Promise<OutboxEntry | undefined> {
@@ -360,6 +388,10 @@ export class DexieStorageEngine implements StorageEngine {
 
   private get catalogCardsTable(): Table<CatalogCardRow, string> {
     return this.resolveTable('catalogCards', this.db.catalogCards);
+  }
+
+  private get catalogCardSearchTable(): Table<CatalogSearchRow, string> {
+    return this.resolveTable('catalogCardSearch', this.db.catalogCardSearch);
   }
 
   private get imagePinsTable(): Table<ImagePin, [string, string]> {
