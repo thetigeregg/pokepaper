@@ -45,6 +45,21 @@ const CATEGORY_ORDER = ['Pokemon', 'Trainer', 'Energy'];
 /** Only Trainer and Energy subtypes are offered (TCGdex has a few stray ones on Pokémon). */
 const SUBTYPE_CATEGORIES = new Set(['Trainer', 'Energy']);
 
+/**
+ * `counts` plus any picked value it lacks, at 0: picks always stay listed so
+ * they can be seen and cleared, even after the search leaves them no cards.
+ */
+export function withPicked(
+  counts: readonly FilterCount[],
+  picked: readonly string[]
+): FilterCount[] {
+  const listed = new Set(counts.map((entry) => entry.value));
+  return [
+    ...counts,
+    ...picked.filter((value) => !listed.has(value)).map((value) => ({ value, count: 0 })),
+  ];
+}
+
 export function categoryLabel(value: string): string {
   const [category = value, subtype] = value.split('/');
   if (subtype) {
@@ -55,7 +70,12 @@ export function categoryLabel(value: string): string {
 
 /** Categories (most common first after Pokémon, Trainer, Energy), each with its subtypes. */
 export function categoryGroups(counts: readonly FilterCount[]): FilterGroup[] {
-  const groups = counts
+  // A listed subtype keeps its category listed (at 0 if need be).
+  const parents = counts.flatMap(({ value }) => {
+    const [category = value] = value.split('/');
+    return value.includes('/') ? [category] : [];
+  });
+  return withPicked(counts, parents)
     .filter(({ value }) => !value.includes('/'))
     .map<FilterGroup>(({ value, count }) => ({
       value,
@@ -66,12 +86,13 @@ export function categoryGroups(counts: readonly FilterCount[]): FilterGroup[] {
             .filter((entry) => entry.value.startsWith(`${value}/`))
             .map((entry) => ({ ...entry, label: categoryLabel(entry.value) }))
         : [],
-    }));
-  const rank = (value: string) => {
-    const index = CATEGORY_ORDER.indexOf(value);
-    return index === -1 ? CATEGORY_ORDER.length : index;
-  };
-  return groups.sort((a, b) => rank(a.value) - rank(b.value));
+    }))
+    .sort((a, b) => categoryRank(a.value) - categoryRank(b.value));
+}
+
+function categoryRank(value: string): number {
+  const index = CATEGORY_ORDER.indexOf(value);
+  return index === -1 ? CATEGORY_ORDER.length : index;
 }
 
 /** Energy types in the TCG's order (unknown ones last). */
@@ -90,23 +111,36 @@ export function rarityOptions(counts: readonly FilterCount[]): FilterOption[] {
   return counts.map(({ value, count }) => ({ value, label: value, count }));
 }
 
-/** Series and their sets as in the sets list, keeping those whose name contains `query`. */
+/**
+ * Series and their sets as in the sets list, with card counts. Keeps sets
+ * with cards (by `counts`) or picked, and whose name or series name contains
+ * `query`; a picked series stays listed even with none left.
+ */
 export function setGroups(
   groups: readonly SeriesGroup[],
   language: CatalogLanguage,
-  query: string
+  query: string,
+  counts: ReadonlyMap<string, number>,
+  picked: { series: readonly string[]; sets: readonly string[] }
 ): FilterGroup[] {
   const needle = normalizeSearchText(query);
   return groups.flatMap((group) => {
     const seriesMatches = normalizeSearchText(group.name).includes(needle);
+    const seriesPicked = picked.series.includes(group.key);
     const options = group.sets
-      .map((set) => ({
-        value: `${set.region}:${set.id}`,
-        label: localized(set.names, language),
-        set,
-      }))
-      .filter((option) => seriesMatches || normalizeSearchText(option.label).includes(needle));
-    return options.length > 0 ? [{ value: group.key, label: group.name, options }] : [];
+      .map((set) => {
+        const value = `${set.region}:${set.id}`;
+        return { value, label: localized(set.names, language), set, count: counts.get(value) ?? 0 };
+      })
+      .filter(
+        (option) =>
+          (option.count > 0 || picked.sets.includes(option.value)) &&
+          (seriesMatches || normalizeSearchText(option.label).includes(needle))
+      );
+    const count = options.reduce((total, option) => total + option.count, 0);
+    return options.length > 0 || (seriesPicked && seriesMatches)
+      ? [{ value: group.key, label: group.name, count, options }]
+      : [];
   });
 }
 

@@ -53,6 +53,7 @@
                   <div class="media-row-text">{{ option.label }}</div>
                 </div>
               </ion-checkbox>
+              <ion-note slot="end">{{ option.count | number }}</ion-note>
             </ion-item>
           }
         </ion-item-group>
@@ -91,6 +92,8 @@
             <ion-note slot="end">{{ option.count | number }}</ion-note>
           </ion-item>
         }
+      } @empty {
+        <ion-item data-testid="filter-empty">No cards match this search</ion-item>
       }
     </ion-list>
   } @else {
@@ -113,6 +116,8 @@
           </ion-checkbox>
           <ion-note slot="end">{{ option.count | number }}</ion-note>
         </ion-item>
+      } @empty {
+        <ion-item data-testid="filter-empty">No cards match this search</ion-item>
       }
     </ion-list>
   }

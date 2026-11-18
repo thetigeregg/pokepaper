@@ -33,6 +33,10 @@ describe('FilterPickerComponent', () => {
         { value: 'Fire', count: 3 },
       ],
       rarities: [{ value: 'Common', count: 1200 }],
+      sets: new Map([
+        ['intl:sv01', 7],
+        ['intl:sv02', 2],
+      ]),
     }),
   };
   const sv01 = { ...makeContractPack('intl', 'sv01', []).set, names: { en: 'Scarlet & Violet' } };
@@ -150,6 +154,33 @@ describe('FilterPickerComponent', () => {
     picker.setQuery.set('nothing like it');
     fixture.detectChanges();
     expect(root().querySelector('[data-testid="filter-empty"]')).not.toBeNull();
+  });
+
+  it('keeps picked values the search has no cards for, at 0', () => {
+    filters.set({ ...NO_FILTERS, types: ['Grass'], categories: ['Energy/Special'] });
+
+    expect(
+      create('type')
+        .options()
+        .map((option) => [option.value, option.count])
+    ).toEqual([
+      ['Grass', 0],
+      ['Fire', 3],
+      ['Water', 5],
+    ]);
+    expect(
+      create('category')
+        .groups()
+        ?.map((group) => group.value)
+    ).toEqual(['Pokemon', 'Trainer', 'Energy']);
+  });
+
+  it('says when the search leaves a filter no values', () => {
+    search.counts.update((counts) => ({ ...counts, rarities: [] }));
+    create('rarity');
+
+    expect(root().querySelector('[data-testid="filter-empty"]')).not.toBeNull();
+    search.counts.update((counts) => ({ ...counts, rarities: [{ value: 'Common', count: 1200 }] }));
   });
 
   it('ignores whole-group picks for filters without groups', () => {

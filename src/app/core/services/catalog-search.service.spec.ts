@@ -218,6 +218,39 @@ describe('CatalogSearchService', () => {
       'Common',
       'Double rare',
     ]);
+    expect([...service.counts().sets]).toEqual([
+      ['intl:sv01', 3],
+      ['intl:sv02', 1],
+      ['intl:swsh1', 1],
+    ]);
+  });
+
+  it('counts only what the query and the other filters leave', async () => {
+    const service = await create();
+
+    service.setQuery('pi'); // Pineco and the three Pikachu.
+    expect(service.counts().types).toEqual([
+      { value: 'Lightning', count: 3 },
+      { value: 'Grass', count: 1 },
+    ]);
+    expect(service.counts().categories).toEqual([{ value: 'Pokemon', count: 4 }]);
+
+    // A filter's own picks don't narrow its counts; the others' do.
+    service.setFilters({ ...NO_FILTERS, types: ['Lightning'] });
+    expect(service.counts().types.map((entry) => entry.value)).toEqual(['Lightning', 'Grass']);
+    expect(service.counts().rarities).toEqual([
+      { value: 'Rare', count: 2 },
+      { value: 'Double rare', count: 1 },
+    ]);
+    expect([...service.counts().sets]).toEqual([
+      ['intl:sv01', 1],
+      ['intl:sv02', 1],
+      ['intl:swsh1', 1],
+    ]);
+
+    service.setFilters({ ...NO_FILTERS, types: ['Lightning'], sets: ['intl:sv02'] });
+    expect(service.counts().rarities).toEqual([{ value: 'Double rare', count: 1 }]);
+    expect([...service.counts().sets]).toHaveLength(3); // Set picks don't narrow set counts.
   });
 
   it('searches the other catalog after switching, dropping its set filters', async () => {

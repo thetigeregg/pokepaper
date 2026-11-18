@@ -38,6 +38,7 @@ import {
   rarityOptions,
   setGroups,
   typeOptions,
+  withPicked,
   type FilterGroup,
   type FilterKind,
   type FilterOption,
@@ -90,24 +91,41 @@ export class FilterPickerComponent implements OnInit {
   readonly setQuery = signal('');
   readonly language = this.browse.language;
 
-  /** Grouped options (categories, series), or null for a flat list. */
+  /**
+   * Grouped options (categories, series), or null for a flat list. Only
+   * values the search leaves cards for are offered, plus any already picked
+   * (see `CatalogSearchService.counts`).
+   */
   readonly groups = computed<FilterGroup[] | null>(() => {
+    const counts = this.search.counts();
+    const filters = this.search.filters();
     switch (this.kind()) {
       case 'category':
-        return categoryGroups(this.search.counts().categories);
+        return categoryGroups(withPicked(counts.categories, filters.categories));
       case 'set':
-        return setGroups(this.browse.groups(), this.browse.language(), this.setQuery());
+        return setGroups(
+          this.browse.groups(),
+          this.browse.language(),
+          this.setQuery(),
+          counts.sets,
+          {
+            series: filters.series,
+            sets: filters.sets,
+          }
+        );
       default:
         return null;
     }
   });
 
   readonly options = computed<FilterOption[]>(() => {
+    const counts = this.search.counts();
+    const filters = this.search.filters();
     switch (this.kind()) {
       case 'type':
-        return typeOptions(this.search.counts().types);
+        return typeOptions(withPicked(counts.types, filters.types));
       case 'rarity':
-        return rarityOptions(this.search.counts().rarities);
+        return rarityOptions(withPicked(counts.rarities, filters.rarities));
       default:
         return [];
     }

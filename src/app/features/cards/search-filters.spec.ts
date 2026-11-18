@@ -9,6 +9,7 @@ import {
   rarityOptions,
   setGroups,
   typeOptions,
+  withPicked,
   withoutKind,
 } from './search-filters';
 
@@ -75,18 +76,76 @@ describe('search filters', () => {
       { key: 'intl:swsh', name: 'Sword & Shield', sets: [swsh1] },
     ];
 
-    expect(setGroups(series, 'en', '').map((group) => group.options.length)).toEqual([2, 1]);
+    const all = new Map([
+      ['intl:sv01', 3],
+      ['intl:sv02', 2],
+      ['intl:swsh1', 1],
+    ]);
+    const none = { series: [], sets: [] };
+    const groups = (query: string) => setGroups(series, 'en', query, all, none);
+
+    expect(groups('').map((group) => [group.count, group.options.length])).toEqual([
+      [5, 2],
+      [1, 1],
+    ]);
     expect(
-      setGroups(series, 'en', 'paldéa').map((group) => [
-        group.value,
-        group.options.map((option) => option.value),
-      ])
+      groups('paldéa').map((group) => [group.value, group.options.map((option) => option.value)])
     ).toEqual([['intl:sv', ['intl:sv02']]]);
     // A matching series keeps all its sets.
-    expect(setGroups(series, 'en', 'sword')[0]?.options.map((option) => option.label)).toEqual([
-      'Sword & Shield',
+    expect(groups('sword')[0]?.options.map((option) => option.label)).toEqual(['Sword & Shield']);
+    expect(groups('scarlet')[0]?.options).toHaveLength(2);
+  });
+
+  it('leaves out sets the search has no cards in, unless picked', () => {
+    const sv01 = makeContractPack('intl', 'sv01', []).set;
+    const sv02 = makeContractPack('intl', 'sv02', []).set;
+    const swsh1 = makeContractPack('intl', 'swsh1', []).set;
+    const series = [
+      { key: 'intl:sv', name: 'Scarlet & Violet', sets: [sv02, sv01] },
+      { key: 'intl:swsh', name: 'Sword & Shield', sets: [swsh1] },
+    ];
+    const counts = new Map([['intl:sv01', 4]]);
+
+    const listed = (picked: { series: string[]; sets: string[] }, query = '') =>
+      setGroups(series, 'en', query, counts, picked).map((group) => [
+        group.value,
+        group.options.map((option) => [option.value, option.count]),
+      ]);
+
+    expect(listed({ series: [], sets: [] })).toEqual([['intl:sv', [['intl:sv01', 4]]]]);
+    expect(listed({ series: [], sets: ['intl:sv02'] })).toEqual([
+      [
+        'intl:sv',
+        [
+          ['intl:sv02', 0],
+          ['intl:sv01', 4],
+        ],
+      ],
     ]);
-    expect(setGroups(series, 'en', 'scarlet')[0]?.options).toHaveLength(2);
+    // A picked series with no cards left stays, so it can be cleared…
+    expect(listed({ series: ['intl:swsh'], sets: [] })).toEqual([
+      ['intl:sv', [['intl:sv01', 4]]],
+      ['intl:swsh', []],
+    ]);
+    // …unless the set search hides it.
+    expect(listed({ series: ['intl:swsh'], sets: [] }, 'scarlet')).toEqual([
+      ['intl:sv', [['intl:sv01', 4]]],
+    ]);
+  });
+
+  it('keeps picked values listed at 0', () => {
+    expect(withPicked([{ value: 'Fire', count: 3 }], ['Fire', 'Water'])).toEqual([
+      { value: 'Fire', count: 3 },
+      { value: 'Water', count: 0 },
+    ]);
+  });
+
+  it('keeps a category listed while one of its subtypes is', () => {
+    const groups = categoryGroups([{ value: 'Trainer/Item', count: 0 }]);
+
+    expect(groups.map((group) => [group.value, group.count, group.options.length])).toEqual([
+      ['Trainer', 0, 1],
+    ]);
   });
 
   it('labels chips with the filter, its first value and how many more', () => {

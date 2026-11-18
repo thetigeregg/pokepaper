@@ -124,18 +124,26 @@ export class CatalogSearchService {
     () => new Map(this.browse.groups().map((group) => [group.key, group.name]))
   );
 
-  readonly results = computed<SearchResults>(() => {
+  /** The current catalog's cards matching the query (all of them without one). */
+  private readonly queryMatches = computed<IndexedCard[]>(() => {
     const index = this.index();
-    if (!index || index.region !== this.region() || !this.searching()) {
-      return { cards: [], perSet: new Map() };
+    if (!index || index.region !== this.region()) {
+      return [];
     }
     const query = prepareQuery(this._query());
+    return query
+      ? index.cards.filter((card) => card.names.some((name) => nameMatches(name, query)))
+      : index.cards;
+  });
+
+  readonly results = computed<SearchResults>(() => {
+    if (!this.searching()) {
+      return { cards: [], perSet: new Map() };
+    }
     const filters = this._filters();
     const sets = this.sets();
-    const matches = index.cards.filter(
-      (card) =>
-        matchesFilters(card.row, filters, sets.get(card.row.setKey)?.seriesKey) &&
-        (!query || card.names.some((name) => nameMatches(name, query)))
+    const matches = this.queryMatches().filter((card) =>
+      matchesFilters(card.row, filters, sets.get(card.row.setKey)?.seriesKey)
     );
     const order = (setKey: string) => sets.get(setKey)?.order ?? Number.MAX_SAFE_INTEGER;
     matches.sort(
@@ -151,26 +159,45 @@ export class CatalogSearchService {
     return { cards: matches.map(({ row }) => ({ key: row.key, setKey: row.setKey })), perSet };
   });
 
-  /** Filter values in the current catalog, with card counts, most common first. */
+  /**
+   * How many cards each filter value would show, most common first: the
+   * cards matching the query and every *other* filter (values within one
+   * filter add cards, so a filter's own picks don't narrow its counts).
+   * Values with no cards are left out. Without a query or filters, these
+   * are the whole catalog's counts.
+   */
   readonly counts = computed(() => {
-    const cards = this.ready() ? (this.index()?.cards ?? []) : [];
-    const categories = new Map<string, number>();
-    const types = new Map<string, number>();
-    const rarities = new Map<string, number>();
-    const add = (map: Map<string, number>, value: string) =>
-      map.set(value, (map.get(value) ?? 0) + 1);
-    for (const { row } of cards) {
-      categoryValues(row).forEach((value) => add(categories, value));
-      row.types.forEach((type) => add(types, type));
-      if (row.rarity) {
-        add(rarities, row.rarity);
+    const cards = this.queryMatches();
+    const filters = this._filters();
+    const sets = this.sets();
+    const matching = (except: Partial<SearchFilters>) => {
+      const others = { ...filters, ...except };
+      return cards.filter(({ row }) =>
+        matchesFilters(row, others, sets.get(row.setKey)?.seriesKey)
+      );
+    };
+    const tally = (rows: IndexedCard[], values: (row: CatalogSearchRow) => readonly string[]) => {
+      const counts = new Map<string, number>();
+      for (const { row } of rows) {
+        for (const value of values(row)) {
+          counts.set(value, (counts.get(value) ?? 0) + 1);
+        }
       }
-    }
+      return counts;
+    };
     const sorted = (map: Map<string, number>): FilterCount[] =>
       [...map]
         .map(([value, count]) => ({ value, count }))
         .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
-    return { categories: sorted(categories), types: sorted(types), rarities: sorted(rarities) };
+    return {
+      categories: sorted(tally(matching({ categories: [] }), categoryValues)),
+      types: sorted(tally(matching({ types: [] }), (row) => row.types)),
+      rarities: sorted(
+        tally(matching({ rarities: [] }), (row) => (row.rarity ? [row.rarity] : []))
+      ),
+      /** By set key. */
+      sets: tally(matching({ series: [], sets: [] }), (row) => [row.setKey]),
+    };
   });
 
   private get engine(): StorageEngine {
