@@ -42,12 +42,14 @@ export interface HeaderAction {
         <ion-icon slot="icon-only" name="ellipsis-horizontal-circle-outline"></ion-icon>
       </ion-button>
       <ion-popover
+        cssClass="header-actions-menu"
+        [translucent]="true"
         [isOpen]="menuEvent() !== null"
         [event]="menuEvent()"
         (didDismiss)="menuClosed()"
       >
         <ng-template>
-          <ion-list lines="none">
+          <ion-list lines="full">
             @for (action of menu(); track action.id) {
               <ion-item
                 button
@@ -57,7 +59,7 @@ export interface HeaderAction {
                 [attr.data-testid]="action.id + '-action'"
               >
                 <ion-icon slot="start" [name]="action.icon" aria-hidden="true"></ion-icon>
-                <ion-label>{{ action.label }}</ion-label>
+                <ion-label class="ion-text-nowrap">{{ action.label }}</ion-label>
               </ion-item>
             }
           </ion-list>
