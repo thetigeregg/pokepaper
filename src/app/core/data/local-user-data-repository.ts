@@ -1,7 +1,10 @@
 import { Injectable, inject } from '@angular/core';
 import {
+  collectionEntry,
   collectionEntryId,
   DEFAULT_SETTINGS,
+  isCollectionQuantity,
+  isCollectionTarget,
   MAX_COLLECTION_QUANTITY,
   SETTINGS_ENTITY_ID,
   type CollectionEntry,
@@ -63,12 +66,16 @@ export class LocalUserDataRepository {
   /**
    * Sets how many copies of `target` the user owns (0 to
    * `MAX_COLLECTION_QUANTITY`). 0 deletes the entry, locally and on the server.
+   * Rejects targets the server would reject, so nothing unsyncable is stored.
    */
   async setCollectionQuantity(target: CollectionTarget, quantity: number): Promise<void> {
-    if (!Number.isInteger(quantity) || quantity < 0 || quantity > MAX_COLLECTION_QUANTITY) {
+    if (!isCollectionQuantity(quantity)) {
       throw new RangeError(
         `Collection quantity must be an integer from 0 to ${String(MAX_COLLECTION_QUANTITY)}`
       );
+    }
+    if (!isCollectionTarget(target)) {
+      throw new TypeError('Invalid collection target');
     }
     const key = collectionEntryId(target);
     const clientTimestamp = new Date().toISOString();
@@ -79,14 +86,7 @@ export class LocalUserDataRepository {
         await this.queueOperation('collectionEntry', key, 'delete', null, clientTimestamp);
         return;
       }
-      const entry: CollectionEntry = {
-        region: target.region,
-        cardId: target.cardId,
-        setId: target.setId,
-        variant: target.variant,
-        language: target.language,
-        quantity,
-      };
+      const entry = collectionEntry(target, quantity);
       await this.engine.putCollectionEntry(entry);
       await this.queueOperation('collectionEntry', key, 'upsert', entry, clientTimestamp);
     });

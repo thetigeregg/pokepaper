@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import {
+  collectionEntry,
   collectionEntryId,
   type CollectionEntry,
   type CollectionTarget,
@@ -29,7 +30,7 @@ describe('CollectionService', () => {
     listCollection: vi.fn(() => Promise.resolve([...stored.values()])),
     setCollectionQuantity: vi.fn((what: CollectionTarget, quantity: number) => {
       if (quantity > 0) {
-        stored.set(collectionEntryId(what), { ...what, quantity });
+        stored.set(collectionEntryId(what), collectionEntry(what, quantity));
       } else {
         stored.delete(collectionEntryId(what));
       }
@@ -150,6 +151,45 @@ describe('CollectionService', () => {
     expect(service.quantity(target())).toBe(0);
     expect(service.ownedInSet('intl', 'sv01', 'en')).toBe(0);
     expect(stored.size).toBe(0);
+  });
+
+  it.each([
+    ['an oversized quantity', target(), 1000],
+    ['a negative quantity', target(), -1],
+    ['an invalid target', target({ language: 'e:n' }), 1],
+  ])('rejects %s without showing or saving it', async (_label, what, quantity) => {
+    const service = await create();
+
+    await expect(service.setQuantity(what, quantity)).rejects.toThrow(RangeError);
+
+    expect(service.quantity(what)).toBe(0);
+    expect(repository.setCollectionQuantity).not.toHaveBeenCalled();
+  });
+
+  it('saves a 0 made before the collection has loaded', async () => {
+    seed({ ...target(), quantity: 2 });
+    let finishLoad: (entries: CollectionEntry[]) => void = () => undefined;
+    repository.listCollection.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishLoad = resolve;
+        })
+    );
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: LocalUserDataRepository, useValue: repository },
+        { provide: SyncService, useValue: { dataChanged$: dataChanged.asObservable() } },
+      ],
+    });
+    const service = TestBed.inject(CollectionService);
+
+    await service.setQuantity(target(), 0);
+    finishLoad([{ ...target(), quantity: 2 }]);
+
+    expect(repository.setCollectionQuantity).toHaveBeenCalledWith(target(), 0);
+    expect(stored.size).toBe(0);
+    expect(service.quantity(target())).toBe(0);
   });
 
   it('saves rapid changes in order', async () => {

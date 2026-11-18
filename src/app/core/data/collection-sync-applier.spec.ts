@@ -48,14 +48,26 @@ describe('CollectionSyncApplier', () => {
     expect(engine.deleteCollectionEntry).toHaveBeenCalledWith('intl:sv01-001:normal:en');
   });
 
-  it('skips an invalid upsert instead of storing it', async () => {
+  it('stores only the entry fields of a pulled payload', async () => {
+    const { engine, typed } = setUp();
+
+    await new CollectionSyncApplier().apply(typed, change({ payload: { ...entry, extra: 1 } }));
+
+    expect(engine.putCollectionEntry).toHaveBeenCalledWith(entry);
+  });
+
+  it.each([
+    ['an invalid payload', change({ payload: { ...entry, quantity: 0 } })],
+    ['a payload for another entry', change({ entityId: 'intl:sv01-001:normal:de' })],
+  ])('removes the local row instead of storing %s', async (_label, pulled) => {
     const { engine, typed } = setUp();
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    await new CollectionSyncApplier().apply(typed, change({ payload: { ...entry, quantity: 0 } }));
+    await new CollectionSyncApplier().apply(typed, pulled);
 
     expect(engine.putCollectionEntry).not.toHaveBeenCalled();
-    expect(error).toHaveBeenCalled();
+    expect(engine.deleteCollectionEntry).toHaveBeenCalledWith(pulled.entityId);
+    expect(error).toHaveBeenCalledWith('collection.unusable_pulled_entry', pulled.entityId);
     error.mockRestore();
   });
 });

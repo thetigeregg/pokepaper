@@ -1,8 +1,11 @@
 import {
+  collectionEntry,
   collectionEntryId,
   COLLECTION_VARIANTS,
   isCollectionEntry,
   isCollectionEntryId,
+  isCollectionQuantity,
+  isCollectionTarget,
   isCollectionVariant,
   MAX_COLLECTION_QUANTITY,
   type CollectionEntry,
@@ -79,5 +82,33 @@ describe('isCollectionVariant', () => {
     }
     expect(isCollectionVariant('stamped')).toBe(false);
     expect(isCollectionVariant(undefined)).toBe(false);
+  });
+});
+
+describe('collectionEntry', () => {
+  it('copies only the entry fields', () => {
+    const { quantity: _quantity, ...fields } = entry;
+    expect(collectionEntry({ ...fields, name: 'Pineco' } as typeof fields, 5)).toEqual({
+      ...entry,
+      quantity: 5,
+    });
+  });
+});
+
+describe('isCollectionQuantity', () => {
+  it('accepts whole numbers from 0 to the maximum', () => {
+    expect([0, 1, MAX_COLLECTION_QUANTITY].map(isCollectionQuantity)).toEqual([true, true, true]);
+    expect(
+      [-1, 1.5, MAX_COLLECTION_QUANTITY + 1, Number.NaN, '1'].map(isCollectionQuantity)
+    ).toEqual([false, false, false, false, false]);
+  });
+});
+
+describe('isCollectionTarget', () => {
+  it('checks the entry fields, ignoring the quantity', () => {
+    const { quantity: _quantity, ...fields } = entry;
+    expect(isCollectionTarget(fields)).toBe(true);
+    expect(isCollectionTarget({ ...fields, variant: 'a:b' })).toBe(false);
+    expect(isCollectionTarget(null)).toBe(false);
   });
 });

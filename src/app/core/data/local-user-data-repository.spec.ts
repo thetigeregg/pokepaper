@@ -128,6 +128,19 @@ describe('LocalUserDataRepository', () => {
       });
     });
 
+    it.each([
+      ['a colon in the variant', { ...target, variant: 'ho:lo' }],
+      ['an oversized language', { ...target, language: 'x'.repeat(17) }],
+      ['an empty set', { ...target, setId: '' }],
+    ])('rejects %s without writing anything, for deletes too', async (_label, invalid) => {
+      const repository = await setUp({ syncNow: () => Promise.resolve() });
+
+      await expect(repository.setCollectionQuantity(invalid, 1)).rejects.toThrow(TypeError);
+      await expect(repository.setCollectionQuantity(invalid, 0)).rejects.toThrow(TypeError);
+      expect(await repository.listCollection()).toEqual([]);
+      expect(await engine.listOutboxOrderedByCreatedAt()).toEqual([]);
+    });
+
     it.each([[-1], [1.5], [1000], [Number.NaN]])(
       'rejects the quantity %s without writing anything',
       async (quantity) => {

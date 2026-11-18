@@ -70,23 +70,44 @@ export function isCollectionEntryId(entityId: string): boolean {
   return isTag(region) && isTag(variant) && isTag(language) && isId(cardId);
 }
 
-/** Runtime shape check for collection entry payloads (used by the server to validate pushes). */
-export function isCollectionEntry(value: unknown): value is CollectionEntry {
+/** The entry for `target` with `quantity`, carrying only entry fields. */
+export function collectionEntry(target: CollectionTarget, quantity: number): CollectionEntry {
+  return {
+    region: target.region,
+    cardId: target.cardId,
+    setId: target.setId,
+    variant: target.variant,
+    language: target.language,
+    quantity,
+  };
+}
+
+/** Whether `quantity` can be set: a whole number from 0 (removes the entry) to `MAX_COLLECTION_QUANTITY`. */
+export function isCollectionQuantity(quantity: unknown): quantity is number {
+  return (
+    typeof quantity === 'number' &&
+    Number.isInteger(quantity) &&
+    quantity >= 0 &&
+    quantity <= MAX_COLLECTION_QUANTITY
+  );
+}
+
+/** Whether `value` has valid entry fields (everything but the quantity). */
+export function isCollectionTarget(value: unknown): value is CollectionTarget {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return false;
   }
-  const { region, cardId, setId, variant, language, quantity } = value as Record<string, unknown>;
-  return (
-    isTag(region) &&
-    isId(cardId) &&
-    isId(setId) &&
-    isTag(variant) &&
-    isTag(language) &&
-    typeof quantity === 'number' &&
-    Number.isInteger(quantity) &&
-    quantity >= 1 &&
-    quantity <= MAX_COLLECTION_QUANTITY
-  );
+  const { region, cardId, setId, variant, language } = value as Record<string, unknown>;
+  return isTag(region) && isId(cardId) && isId(setId) && isTag(variant) && isTag(language);
+}
+
+/** Runtime shape check for collection entry payloads (used by the server to validate pushes). */
+export function isCollectionEntry(value: unknown): value is CollectionEntry {
+  if (!isCollectionTarget(value)) {
+    return false;
+  }
+  const { quantity } = value as unknown as Record<string, unknown>;
+  return isCollectionQuantity(quantity) && quantity >= 1;
 }
 
 function isTag(value: unknown): value is string {
