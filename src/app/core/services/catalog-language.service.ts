@@ -77,11 +77,13 @@ export class CatalogLanguageService {
 
   /**
    * The language to show a set in: the catalog's remembered language if the
-   * set has it, else the set's first language.
+   * set has it, else the set's first language in display order.
    */
   forSet(region: CatalogRegion, setLanguages: readonly CatalogLanguage[]): CatalogLanguage {
     const remembered = this.languages()[region];
-    return setLanguages.includes(remembered) ? remembered : (setLanguages[0] ?? remembered);
+    return setLanguages.includes(remembered)
+      ? remembered
+      : (inDisplayOrder(setLanguages)[0] ?? remembered);
   }
 
   /**

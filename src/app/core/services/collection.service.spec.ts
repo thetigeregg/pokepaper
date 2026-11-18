@@ -73,6 +73,36 @@ describe('CollectionService', () => {
       expect(service.quantity(target({ variant: 'holo' }))).toBe(2);
     });
     expect(service.quantity(target())).toBe(0);
+    expect(service.loaded()).toBe(true);
+  });
+
+  it('isn’t loaded until storage has been read, nor after a failed read', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    repository.listCollection.mockImplementationOnce(() => Promise.reject(new Error('locked')));
+
+    const service = await create();
+    await vi.waitFor(() => {
+      expect(error).toHaveBeenCalledWith('collection.load_failed', expect.any(Error));
+    });
+
+    expect(service.loaded()).toBe(false);
+    error.mockRestore();
+  });
+
+  it('counts only variants and languages this build knows, keeping the others stored', async () => {
+    seed(
+      { ...target(), quantity: 1 },
+      { ...target({ variant: 'stamped' }), quantity: 5 },
+      { ...target({ language: 'ko' }), quantity: 7 }
+    );
+    const service = await create();
+
+    await vi.waitFor(() => {
+      expect(service.cardTotal('intl', 'sv01-001', 'en')).toBe(1);
+    });
+    expect(service.otherLanguages('intl', 'sv01-001', 'en')).toEqual([]);
+    expect(service.ownedInSet('intl', 'sv01', 'en')).toBe(1);
+    expect(service.quantity(target({ variant: 'stamped' }))).toBe(5);
   });
 
   it('totals a card per language across variants, keeping languages apart', async () => {
@@ -91,7 +121,7 @@ describe('CollectionService', () => {
     expect(service.cardTotal('asia', 'sv01-001', 'en')).toBe(0);
   });
 
-  it('lists copies in other languages, in the order given', async () => {
+  it('lists copies in other languages, in display order', async () => {
     seed(
       { ...target(), quantity: 1 },
       { ...target({ language: 'de' }), quantity: 4 },
@@ -100,9 +130,9 @@ describe('CollectionService', () => {
     const service = await create();
 
     await vi.waitFor(() => {
-      expect(service.otherLanguages('intl', 'sv01-001', 'en', ['en', 'fr', 'it', 'de'])).toEqual([
-        { language: 'fr', quantity: 1 },
+      expect(service.otherLanguages('intl', 'sv01-001', 'en')).toEqual([
         { language: 'de', quantity: 4 },
+        { language: 'fr', quantity: 1 },
       ]);
     });
   });

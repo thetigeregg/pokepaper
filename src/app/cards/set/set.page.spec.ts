@@ -22,6 +22,7 @@ import { SetPage } from './set.page';
 
 /** An empty collection, for specs that don't test collection tracking. */
 const EMPTY_COLLECTION: Partial<CollectionService> = {
+  loaded: signal(true),
   quantity: () => 0,
   cardTotal: () => 0,
   otherLanguages: () => [],

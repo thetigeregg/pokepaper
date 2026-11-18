@@ -19,6 +19,7 @@ import { RESULTS_PAGE_SIZE, SearchResultsComponent } from './search-results.comp
 
 /** An empty collection, for specs that don't test collection tracking. */
 const EMPTY_COLLECTION: Partial<CollectionService> = {
+  loaded: signal(true),
   quantity: () => 0,
   cardTotal: () => 0,
   otherLanguages: () => [],

@@ -92,6 +92,11 @@ export class CardDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private swiper: Swiper | null = null;
+  /** Re-measures the active slide when content changes its height (see `observeSlides`). */
+  private readonly resizeObserver =
+    typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(() => this.swiper?.updateAutoHeight(0));
 
   readonly index = signal(0);
   readonly window = signal<VirtualWindow>({ offset: 0, from: 0, slides: [] });
@@ -143,6 +148,7 @@ export class CardDetailComponent implements OnInit, AfterViewInit, OnDestroy {
             this.swiper?.updateSlides();
             this.swiper?.updateSlidesClasses();
             this.swiper?.updateAutoHeight(0);
+            this.observeSlides();
           });
         },
       },
@@ -189,7 +195,24 @@ export class CardDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.resizeObserver?.disconnect();
     this.swiper?.destroy(true, false);
+  }
+
+  /**
+   * Watches the rendered slides, so the modal resizes when a slide's content
+   * changes height after rendering (e.g. the collection loading or a sync
+   * adding the "Also 2 in German" row). Swiper's autoHeight only measures
+   * when slides change.
+   */
+  private observeSlides(): void {
+    if (!this.resizeObserver) {
+      return;
+    }
+    this.resizeObserver.disconnect();
+    for (const slide of this.host.nativeElement.querySelectorAll('.swiper-slide')) {
+      this.resizeObserver.observe(slide);
+    }
   }
 
   setFor(card: CatalogCard): CatalogSet | null {

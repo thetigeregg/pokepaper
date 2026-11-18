@@ -49,7 +49,7 @@ describe('CardDetailsComponent', () => {
   /** The collection's storage: the real CollectionService runs on top of it. */
   let stored: Map<string, CollectionEntry>;
   const repository = {
-    listCollection: () => Promise.resolve([...stored.values()]),
+    listCollection: vi.fn(() => Promise.resolve([...stored.values()])),
     setCollectionQuantity: vi.fn((target: CollectionTarget, quantity: number) => {
       if (quantity > 0) {
         stored.set(collectionEntryId(target), collectionEntry(target, quantity));
@@ -289,6 +289,64 @@ describe('CardDetailsComponent', () => {
       expect(
         element(fixture).querySelector('[data-testid="other-languages"]')?.textContent.trim()
       ).toBe('Also 2 in German · 1 in French');
+    });
+
+    it('keeps the steppers disabled until the collection has loaded', async () => {
+      stored.set('intl:sv01-004:normal:en', entry({ quantity: 5 }));
+      let finishLoad: () => void = () => undefined;
+      repository.listCollection.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishLoad = () => {
+              resolve([...stored.values()]);
+            };
+          })
+      );
+      const fixture = create(base);
+
+      expect(button(fixture, 'normal', 'add-copy')?.disabled).toBe(true);
+      expect(button(fixture, 'reverse', 'add-copy')?.disabled).toBe(true);
+
+      finishLoad();
+      await settle(fixture);
+
+      expect(rows(fixture)[0]?.quantity).toBe('5');
+      expect(button(fixture, 'normal', 'add-copy')?.disabled).toBe(false);
+    });
+
+    it('also lists variants owned that TCGdex doesn’t flag, so they can be changed', async () => {
+      stored.set('intl:sv01-004:holo:en', entry({ variant: 'holo', quantity: 1 }));
+      const fixture = create(base);
+      await settle(fixture);
+
+      expect(rows(fixture)).toEqual([
+        { variant: 'variant-normal', quantity: '0' },
+        { variant: 'variant-reverse', quantity: '0' },
+        { variant: 'variant-holo', quantity: '1' },
+      ]);
+    });
+
+    it('notes copies in languages the set no longer lists', async () => {
+      stored.set('intl:sv01-004:normal:it', entry({ language: 'it', quantity: 3 }));
+      const fixture = create(base);
+      await settle(fixture);
+
+      expect(
+        element(fixture).querySelector('[data-testid="other-languages"]')?.textContent.trim()
+      ).toBe('Also 3 in Italian');
+    });
+
+    it('logs a change that can’t be saved instead of failing silently', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const fixture = create({ ...base, id: 'x'.repeat(65) });
+      await settle(fixture);
+
+      fixture.componentInstance.step('normal', 1);
+      await settle(fixture);
+
+      expect(error).toHaveBeenCalledWith('collection.step_failed', expect.any(RangeError));
+      expect(repository.setCollectionQuantity).not.toHaveBeenCalled();
+      error.mockRestore();
     });
 
     it('has no other-languages note when only this language is owned', async () => {

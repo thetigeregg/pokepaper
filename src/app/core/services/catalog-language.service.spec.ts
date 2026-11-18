@@ -58,7 +58,7 @@ describe('CatalogLanguageService', () => {
     expect(repository.updateSettings).toHaveBeenCalledTimes(1);
   });
 
-  it('opens a set in the remembered language if it has it, else its first', async () => {
+  it('opens a set in the remembered language if it has it, else its first in display order', async () => {
     stored = { cardLanguage: 'en', catalogLanguages: { intl: 'de' } };
     const service = await create();
     await vi.waitFor(() => {
@@ -67,6 +67,8 @@ describe('CatalogLanguageService', () => {
 
     expect(service.forSet('intl', ['en', 'fr', 'de'])).toBe('de');
     expect(service.forSet('intl', ['fr'])).toBe('fr');
+    expect(service.forSet('intl', ['it', 'fr'])).toBe('fr'); // Display order, not catalog order.
+    expect(service.forSet('asia', ['zh-cn', 'zh-tw'])).toBe('zh-tw');
   });
 
   it('reloads when a sync changes settings', async () => {

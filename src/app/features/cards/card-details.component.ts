@@ -9,6 +9,7 @@ import {
   IonNote,
 } from '@ionic/angular';
 import {
+  COLLECTION_VARIANTS,
   MAX_COLLECTION_QUANTITY,
   type CatalogCard,
   type CatalogLanguage,
@@ -18,7 +19,7 @@ import {
 } from '@pokepaper/shared';
 import { addIcons } from 'ionicons';
 import { addCircleOutline, removeCircleOutline } from 'ionicons/icons';
-import { LANGUAGE_LABELS, inDisplayOrder } from '../../core/services/catalog-language.service';
+import { LANGUAGE_LABELS } from '../../core/services/catalog-language.service';
 import { CollectionService } from '../../core/services/collection.service';
 import {
   VARIANT_LABELS,
@@ -65,24 +66,30 @@ export class CardDetailsComponent {
   readonly language = input.required<CatalogLanguage>();
 
   readonly maxQuantity = MAX_COLLECTION_QUANTITY;
+  /** Steppers stay disabled until the collection has loaded (they'd count from 0). */
+  readonly ready = this.collection.loaded;
   readonly languageName = computed(() => LANGUAGE_LABELS[this.language()].name);
-  /** Copies owned in the current language, per variant the card comes in. */
-  readonly variants = computed(() =>
-    cardVariants(this.card()).map((variant) => ({
+  /**
+   * Copies owned in the current language per variant: those the card comes
+   * in, plus any other variant owned (TCGdex's flags have gaps), so every
+   * counted copy can be seen and changed.
+   */
+  readonly variants = computed(() => {
+    const listed = cardVariants(this.card());
+    return COLLECTION_VARIANTS.map((variant) => ({
       variant,
       label: VARIANT_LABELS[variant],
       quantity: this.collection.quantity(this.target(variant)),
-    }))
-  );
-  /** "2 in German · 1 in French": copies owned in the set's other languages. */
+    })).filter((row) => listed.includes(row.variant) || row.quantity > 0);
+  });
+  /** "2 in German · 1 in French": copies owned in the card's other languages. */
   readonly otherLanguages = computed(() => {
     const card = this.card();
     return this.collection
-      .otherLanguages(card.region, card.id, this.language(), inDisplayOrder(this.set().languages))
+      .otherLanguages(card.region, card.id, this.language())
       .map((other) => `${String(other.quantity)} in ${LANGUAGE_LABELS[other.language].name}`)
       .join(' · ');
   });
-
   readonly text = computed(() => cardText(this.card(), this.language()));
   readonly subtitle = computed(() => cardSubtitle(this.card()));
   readonly setLine = computed(() => setLine(this.set(), this.card()));
@@ -116,7 +123,9 @@ export class CardDetailsComponent {
       MAX_COLLECTION_QUANTITY,
       Math.max(0, this.collection.quantity(target) + delta)
     );
-    void this.collection.setQuantity(target, quantity);
+    this.collection.setQuantity(target, quantity).catch((error: unknown) => {
+      console.error('collection.step_failed', error);
+    });
   }
 
   private target(variant: CollectionVariant): CollectionTarget {
