@@ -161,13 +161,17 @@ export class CollectionService {
     ) {
       throw new RangeError('Invalid collection target or quantity');
     }
-    // Until loaded, every change is saved (the counts shown may still be 0).
+    // One change per entry (the last listed wins). Until loaded, every one is
+    // saved (the counts shown may still be 0).
+    const latest = [
+      ...new Map(changes.map((change) => [collectionEntryId(change.target), change])).values(),
+    ];
     const effective = this._loaded()
-      ? changes.filter(
+      ? latest.filter(
           ({ target, quantity }) =>
             (this.entries().get(collectionEntryId(target))?.quantity ?? 0) !== quantity
         )
-      : changes;
+      : latest;
     if (effective.length === 0) {
       return;
     }

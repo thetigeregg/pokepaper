@@ -71,10 +71,11 @@ export const VARIANT_LABELS: Readonly<Record<CollectionVariant, string>> = {
   wPromo: 'W promo',
 };
 
-/** The variants a card can be collected in: TCGdex's flags, else just `normal`. */
-export function cardVariants(card: CatalogCard): CollectionVariant[] {
+/** The variants a card can be collected in: TCGdex's flags, else just `normal` (never none). */
+export function cardVariants(card: CatalogCard): [CollectionVariant, ...CollectionVariant[]] {
   const listed = COLLECTION_VARIANTS.filter((variant) => card.variants[variant]);
-  return listed.length > 0 ? listed : ['normal'];
+  const [first, ...rest] = listed;
+  return listed.length > 0 ? [first, ...rest] : ['normal'];
 }
 
 /** What a copy of `card` in `variant` and `language` is counted under. */

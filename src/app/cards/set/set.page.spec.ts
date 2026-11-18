@@ -18,8 +18,8 @@ import {
 import { LayoutService } from '../../core/services/layout.service';
 import { VisibilityService } from '../../core/services/visibility.service';
 import { CardDetailComponent } from '../../features/cards/card-detail.component';
-import { PreferenceStorageService } from '../../core/storage/preference-storage.service';
-import { SET_VIEW_KEY, SetPage } from './set.page';
+import { CatalogBrowseService, type SetView } from '../../core/services/catalog-browse.service';
+import { SetPage } from './set.page';
 
 /** An empty collection, for specs that don't test collection tracking. */
 const EMPTY_COLLECTION: Partial<CollectionService> = {
@@ -68,11 +68,11 @@ describe('SetPage', () => {
     Promise.resolve({ present })
   );
   const createModal = vi.fn((_options: Record<string, unknown>) => Promise.resolve({ present }));
-  const preferences = new Map<string, string>();
-  const preferenceStorage = {
-    getItem: vi.fn((key: string) => Promise.resolve(preferences.get(key) ?? null)),
-    setItem: vi.fn((key: string, value: string) => {
-      preferences.set(key, value);
+  const setView = signal<SetView>('grid');
+  const browse = {
+    setView,
+    pickSetView: vi.fn((view: SetView) => {
+      setView.set(view);
       return Promise.resolve();
     }),
   };
@@ -100,7 +100,7 @@ describe('SetPage', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    preferences.clear();
+    setView.set('grid');
     language.set('de');
     wide.set(false);
     downloads.progress.set(new Map());
@@ -126,7 +126,7 @@ describe('SetPage', () => {
           useValue: { resolve: vi.fn(() => Promise.resolve(null)), release: vi.fn() },
         },
         { provide: VisibilityService, useValue: { whenVisible: () => () => undefined } },
-        { provide: PreferenceStorageService, useValue: preferenceStorage },
+        { provide: CatalogBrowseService, useValue: browse },
         { provide: AlertController, useValue: { create: vi.fn() } },
       ],
     });
@@ -143,28 +143,31 @@ describe('SetPage', () => {
       viewButton()?.click();
       await settle();
 
-      expect(page.view()).toBe('checklist');
-      expect(preferences.get(SET_VIEW_KEY)).toBe('checklist');
+      expect(browse.pickSetView).toHaveBeenLastCalledWith('checklist');
       expect(query('app-set-checklist')).not.toBeNull();
       expect(root().querySelectorAll('[data-testid^="checklist-sv01-"]')).toHaveLength(2);
       expect(query('app-card-tile')).toBeNull();
 
       viewButton()?.click();
       await settle();
-      expect(preferences.get(SET_VIEW_KEY)).toBe('grid');
+      expect(browse.pickSetView).toHaveBeenLastCalledWith('grid');
       expect(query('app-card-tile')).not.toBeNull();
     });
 
-    it('opens in the remembered view, ignoring unknown values', async () => {
-      preferences.set(SET_VIEW_KEY, 'checklist');
-      expect((await create()).view()).toBe('checklist');
+    it('opens straight into the remembered view, without showing the grid first', async () => {
+      setView.set('checklist');
+      fixture = TestBed.createComponent(SetPage);
+      fixture.componentRef.setInput('region', 'intl');
+      fixture.componentRef.setInput('setId', 'sv01');
+      fixture.detectChanges();
 
-      preferences.set(SET_VIEW_KEY, 'carousel');
-      expect((await create()).view()).toBe('grid');
+      expect(query('app-card-tile')).toBeNull();
+      await settle();
+      expect(query('app-set-checklist')).not.toBeNull();
     });
 
     it('opens a checklist card in the card modal', async () => {
-      preferences.set(SET_VIEW_KEY, 'checklist');
+      setView.set('checklist');
       await create();
 
       (
@@ -178,21 +181,6 @@ describe('SetPage', () => {
           componentProps: expect.objectContaining({ startIndex: 1 }) as unknown,
         })
       );
-    });
-
-    it('keeps working when the view preference can’t be read or saved', async () => {
-      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-      preferenceStorage.getItem.mockRejectedValueOnce(new Error('locked'));
-      preferenceStorage.setItem.mockRejectedValueOnce(new Error('locked'));
-      const page = await create();
-      expect(page.view()).toBe('grid');
-
-      await page.toggleView();
-
-      expect(page.view()).toBe('checklist');
-      expect(error).toHaveBeenCalledWith('catalog.set_view_load_failed', expect.any(Error));
-      expect(error).toHaveBeenCalledWith('catalog.set_view_save_failed', expect.any(Error));
-      error.mockRestore();
     });
   });
 

@@ -10,6 +10,9 @@ import { CatalogSyncService } from './catalog-sync.service';
 
 /** Preference: the catalog last shown on the Cards tab. */
 export const CATALOG_REGION_KEY = 'pokepaper.cards.region';
+/** Preference: how set pages show their cards, on this device. */
+export const SET_VIEW_KEY = 'pokepaper.cards.setView';
+export type SetView = 'grid' | 'checklist';
 
 /** A series and its sets, newest first, named in the catalog's current language. */
 export interface SeriesGroup {
@@ -41,6 +44,11 @@ export class CatalogBrowseService {
   /** Set once the user picks a catalog, so the stored one can't override it. */
   private regionPicked = false;
   readonly region = this._region.asReadonly();
+  private readonly _setView = signal<SetView>('grid');
+  /** Set once the user picks a view, so the stored one can't override it. */
+  private setViewPicked = false;
+  /** How set pages show their cards: a grid of scans or a checklist (remembered). */
+  readonly setView = this._setView.asReadonly();
   /** The language the current catalog's names are shown in. */
   readonly language = computed(() => this.catalogLanguage.languages()[this._region()]);
   /** Every language the current catalog's sets come in, in display order (the language button). */
@@ -87,6 +95,16 @@ export class CatalogBrowseService {
         this._region.set(stored);
       }
     });
+    void this.preferences.getItem(SET_VIEW_KEY).then(
+      (stored) => {
+        if (!this.setViewPicked && (stored === 'grid' || stored === 'checklist')) {
+          this._setView.set(stored);
+        }
+      },
+      (error: unknown) => {
+        console.error('catalog.set_view_load_failed', error);
+      }
+    );
     effect(() => {
       this._region();
       untracked(() => void this.safeReload());
@@ -100,6 +118,17 @@ export class CatalogBrowseService {
     this.regionPicked = true;
     this._region.set(region);
     await this.preferences.setItem(CATALOG_REGION_KEY, region);
+  }
+
+  /** Shows set pages as `view` from now on, remembered on this device. */
+  async pickSetView(view: SetView): Promise<void> {
+    this.setViewPicked = true;
+    this._setView.set(view);
+    try {
+      await this.preferences.setItem(SET_VIEW_KEY, view);
+    } catch (error: unknown) {
+      console.error('catalog.set_view_save_failed', error);
+    }
   }
 
   /** Shows the current catalog in `language`, remembered (and synced) like a pick in a set. */

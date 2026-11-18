@@ -28,6 +28,13 @@ import { SYNC_OUTBOX_WRITER, SyncOutboxWriter } from './sync-outbox-writer';
 @Injectable({ providedIn: 'root' })
 export class LocalUserDataRepository {
   private readonly storageEngineFactory = inject(StorageEngineFactory);
+  /**
+   * The last outbox `createdAt` issued (epoch ms). Each entry gets a later
+   * one, even within one millisecond, so the outbox order (and so which
+   * operation per entity is newest, docs/sync.md) never depends on how
+   * storage breaks ties.
+   */
+  private lastCreatedAt = 0;
   private readonly outboxWriter = inject<SyncOutboxWriter | null>(SYNC_OUTBOX_WRITER, {
     optional: true,
   });
@@ -76,7 +83,7 @@ export class LocalUserDataRepository {
   /**
    * `setCollectionQuantity` for several targets in one transaction: all are
    * stored and queued, or none. Every change is validated before anything is
-   * written.
+   * written; a target listed twice gets its last quantity.
    */
   async setCollectionQuantities(changes: readonly CollectionChange[]): Promise<void> {
     for (const { target, quantity } of changes) {
@@ -89,13 +96,17 @@ export class LocalUserDataRepository {
         throw new TypeError('Invalid collection target');
       }
     }
-    if (changes.length === 0) {
+    // One write per entry: the last change listed for it wins.
+    const latest = [
+      ...new Map(changes.map((change) => [collectionEntryId(change.target), change])).values(),
+    ];
+    if (latest.length === 0) {
       return;
     }
     const clientTimestamp = new Date().toISOString();
 
     await this.withOutboxTransaction(['collection'], async () => {
-      for (const { target, quantity } of changes) {
+      for (const { target, quantity } of latest) {
         const key = collectionEntryId(target);
         if (quantity === 0) {
           await this.engine.deleteCollectionEntry(key);
@@ -141,7 +152,7 @@ export class LocalUserDataRepository {
       operation,
       payload,
       clientTimestamp,
-      createdAt: new Date().toISOString(),
+      createdAt: this.nextCreatedAt(),
       attemptCount: 0,
       lastError: null,
     };
@@ -153,6 +164,12 @@ export class LocalUserDataRepository {
         // Observability hook failure shouldn't break the write.
       }
     });
+  }
+
+  /** Now, or 1 ms after the previous entry if that isn't later (see `lastCreatedAt`). */
+  private nextCreatedAt(): string {
+    this.lastCreatedAt = Math.max(Date.now(), this.lastCreatedAt + 1);
+    return new Date(this.lastCreatedAt).toISOString();
   }
 
   private requestSyncNow(): void {

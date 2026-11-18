@@ -255,6 +255,20 @@ describe('CollectionService', () => {
     expect(stored.size).toBe(3);
   });
 
+  it('keeps the last of several changes to one target', async () => {
+    const service = await create();
+
+    await service.setQuantities([
+      { target: target(), quantity: 2 },
+      { target: target(), quantity: 5 },
+    ]);
+
+    expect(repository.setCollectionQuantities.mock.calls[0]?.[0]).toEqual([
+      { target: target(), quantity: 5 },
+    ]);
+    expect(service.quantity(target())).toBe(5);
+  });
+
   it('rejects all of several changes when one is invalid, showing none', async () => {
     const service = await create();
 

@@ -199,12 +199,12 @@ export class SetChecklistComponent {
    * language, in its first variant (usually Normal), saved together.
    */
   async markAll(): Promise<void> {
-    const cards = this.missing();
+    const shown = this.missing();
     const language = this.language();
-    if (cards.length === 0) {
+    if (shown.length === 0) {
       return;
     }
-    const count = cards.length === 1 ? '1 card' : `${String(cards.length)} cards`;
+    const count = shown.length === 1 ? '1 card' : `${String(shown.length)} cards`;
     const alert = await this.alerts.create({
       header: 'Mark all owned?',
       message: `Adds one copy of the ${count} you don't own yet in ${LANGUAGE_LABELS[language].name}, in each card's first variant (usually Normal).`,
@@ -217,10 +217,13 @@ export class SetChecklistComponent {
     if ((await alert.onDidDismiss()).role !== 'confirm') {
       return;
     }
+    // Read again: a sync may have added copies while the alert was open, and
+    // those cards must keep them rather than be set to one.
+    const cards = this.language() === language ? this.missing() : [];
     try {
       await this.collection.setQuantities(
         cards.map((card) => ({
-          target: collectionTarget(card, cardVariants(card)[0] ?? 'normal', language),
+          target: collectionTarget(card, cardVariants(card)[0], language),
           quantity: 1,
         }))
       );

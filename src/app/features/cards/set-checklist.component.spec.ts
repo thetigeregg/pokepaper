@@ -196,6 +196,22 @@ describe('SetChecklistComponent', () => {
     ]);
   });
 
+  it('leaves cards that gained copies while the alert was open', async () => {
+    const checklist = create();
+    alert.onDidDismiss.mockImplementationOnce(() => {
+      owned.set({ 'intl:sv01-002:holo:en': 3 }); // A sync arrives meanwhile.
+      return Promise.resolve({ role: 'confirm' });
+    });
+
+    await checklist.markAll();
+
+    expect(alerts.create.mock.calls[0]?.[0].message).toContain('the 3 cards');
+    expect(collection.setQuantities.mock.calls[0]?.[0].map(({ target }) => target.cardId)).toEqual([
+      'sv01-001',
+      'sv01-003',
+    ]);
+  });
+
   it('marks nothing when cancelled, or when every card is owned', async () => {
     role = 'cancel';
     const checklist = create();

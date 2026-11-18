@@ -165,6 +165,44 @@ describe('LocalUserDataRepository', () => {
       expect(syncNow).toHaveBeenCalledTimes(2); // Once per write, not per change.
     });
 
+    it('orders outbox entries strictly, even within one millisecond', async () => {
+      vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-01-01T00:00:00.000Z') });
+      try {
+        const repository = await setUp({ syncNow: () => Promise.resolve() });
+
+        await repository.setCollectionQuantity(target, 2);
+        await repository.setCollectionQuantities([
+          { target: { ...target, cardId: 'sv01-002' }, quantity: 1 },
+          { target, quantity: 0 },
+        ]);
+
+        const entries = await engine.listOutboxOrderedByCreatedAt();
+        expect(entries.map((entry) => entry.createdAt)).toEqual([
+          '2026-01-01T00:00:00.000Z',
+          '2026-01-01T00:00:00.001Z',
+          '2026-01-01T00:00:00.002Z',
+        ]);
+        // The delete is newest for its entry, so it's the one sync pushes.
+        expect(entries.at(-1)).toMatchObject({ entityId, operation: 'delete' });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('writes a target listed twice once, with its last quantity', async () => {
+      const repository = await setUp({ syncNow: () => Promise.resolve() });
+
+      await repository.setCollectionQuantities([
+        { target, quantity: 3 },
+        { target, quantity: 0 },
+      ]);
+
+      expect(await repository.listCollection()).toEqual([]);
+      expect((await engine.listOutboxOrderedByCreatedAt()).map((entry) => entry.operation)).toEqual(
+        ['delete']
+      );
+    });
+
     it('writes none of several changes when one is invalid', async () => {
       const repository = await setUp({ syncNow: () => Promise.resolve() });
 
