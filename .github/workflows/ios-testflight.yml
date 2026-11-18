@@ -128,6 +128,18 @@ jobs:
           bundler-cache: true
           working-directory: ios
 
+      # The repo and its Actions logs are public. GitHub masks the secret's
+      # exact value, but not the bare hostname derived from it (the passkey
+      # domain the build logs), so mask that too before anything prints it.
+      - name: Mask the backend host
+        env:
+          IOS_BACKEND_ORIGIN_PROD: ${{ secrets.IOS_BACKEND_ORIGIN_PROD }}
+        run: |
+          host=$(node -e 'try { console.log(new URL(process.env.IOS_BACKEND_ORIGIN_PROD).hostname) } catch {}')
+          if [ -n "$host" ]; then
+            echo "::add-mask::$host"
+          fi
+
       - name: Validate iOS deploy configuration
         env:
           IOS_BACKEND_ORIGIN_PROD: ${{ secrets.IOS_BACKEND_ORIGIN_PROD }}
