@@ -49,3 +49,7 @@
 ## v0.6.0 - 2026-11-17
 
 - bca97cf feat(catalog): cache card images on the device, with offline sets (#20)
+
+## v0.7.0 - 2026-11-18
+
+- 8ed92c6 feat(catalog): browse sets and cards by catalog and language (#21)
