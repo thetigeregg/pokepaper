@@ -1,6 +1,6 @@
 {
   "name": "pokepaper",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "private": true,
   "description": "PokePaper: Pokémon TCG card browser, collection tracker, and deck builder",
   "scripts": {
@@ -20,6 +20,7 @@
     "start:server": "npm run dev --workspace server"
   },
   "devDependencies": {
+    "@analogjs/vite-plugin-angular": "^2.9.7",
     "@angular-devkit/build-angular": "^22.2.7",
     "@angular/cli": "^22.2.7",
     "@angular/compiler-cli": "^22.2.6",

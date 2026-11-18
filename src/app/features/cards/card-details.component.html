@@ -114,29 +114,31 @@
     <ion-list-header><ion-label>Details</ion-label></ion-list-header>
     <ion-item>
       <ion-label>Set</ion-label>
-      <ion-note slot="end">{{ setLine() }}</ion-note>
+      <ion-note slot="end" data-testid="detail-set">{{ setLine() }}</ion-note>
     </ion-item>
     @if (card().rarity) {
       <ion-item>
         <ion-label>Rarity</ion-label>
-        <ion-note slot="end">{{ card().rarity }}</ion-note>
+        <ion-note slot="end" data-testid="detail-rarity">{{ card().rarity }}</ion-note>
       </ion-item>
     }
     @if (card().illustrator) {
       <ion-item>
         <ion-label>Illustrator</ion-label>
-        <ion-note slot="end">{{ card().illustrator }}</ion-note>
+        <ion-note slot="end" data-testid="detail-illustrator">{{ card().illustrator }}</ion-note>
       </ion-item>
     }
     @if (card().regulationMark) {
       <ion-item>
         <ion-label>Regulation mark</ion-label>
-        <ion-note slot="end">{{ card().regulationMark }}</ion-note>
+        <ion-note slot="end" data-testid="detail-regulation-mark">
+          {{ card().regulationMark }}
+        </ion-note>
       </ion-item>
     }
     <ion-item>
       <ion-label>Legal in</ion-label>
-      <ion-note slot="end">{{ legal() || 'Not legal' }}</ion-note>
+      <ion-note slot="end" data-testid="detail-legal">{{ legal() || 'Not legal' }}</ion-note>
     </ion-item>
     @if (text()?.description; as description) {
       <ion-item>
