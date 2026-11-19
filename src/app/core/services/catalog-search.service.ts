@@ -1,28 +1,12 @@
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import type { CatalogRegion, CatalogSet } from '@pokepaper/shared';
-import { debounceTime } from 'rxjs';
-import { CATALOG_SEARCH_ROW_VERSION } from '../data/catalog-search-row';
-import { catalogKey, type CatalogSearchRow, type StorageEngine } from '../data/storage-engine';
-import { StorageEngineFactory } from '../data/storage-engine.factory';
-import { PreferenceStorageService } from '../storage/preference-storage.service';
-import {
-  nameMatches,
-  normalizeSearchText,
-  prepareName,
-  prepareQuery,
-  type PreparedName,
-} from '../utils/search-text.util';
+import type { CatalogSet } from '@pokepaper/shared';
+import { catalogKey, type CatalogSearchRow } from '../data/storage-engine';
+import { nameMatches, prepareQuery } from '../utils/search-text.util';
 import { CatalogBrowseService } from './catalog-browse.service';
 import { CatalogLanguageService } from './catalog-language.service';
-import { CatalogSyncService } from './catalog-sync.service';
+import { CatalogSearchIndexService, type IndexedCard } from './catalog-search-index.service';
 import { CollectionService } from './collection.service';
-
-/** Sync metadata: the `CATALOG_SEARCH_ROW_VERSION` the stored search rows were built with. */
-export const SEARCH_ROW_VERSION_KEY = 'catalogSearchRowVersion';
-/** Preference: recent searches, newest first (JSON array of strings). */
-export const RECENT_SEARCHES_KEY = 'pokepaper.cards.recentSearches';
-export const MAX_RECENT_SEARCHES = 10;
+import { RecentSearchesService } from './recent-searches.service';
 
 /**
  * Card filters (docs/catalog.md → Search). A card must match every filter
@@ -68,11 +52,6 @@ export interface FilterCount {
   count: number;
 }
 
-interface IndexedCard {
-  row: CatalogSearchRow;
-  names: PreparedName[];
-}
-
 export function hasFilters(filters: SearchFilters): boolean {
   return Object.values(filters).some((values: string[]) => values.length > 0);
 }
@@ -83,18 +62,24 @@ export function categoryValues(row: Pick<CatalogSearchRow, 'category' | 'subtype
 }
 
 /**
- * Card search for the Cards tab (docs/ui.md → Cards → Search): the query,
- * filters and whether search is showing, the current catalog's search rows
- * held in memory, and the results. Searching never touches storage, so it
- * keeps up with typing; the results page loads the matching cards.
+ * One screen's card search (docs/ui.md → Cards → Search): the query, filters
+ * and whether search is showing, and the results, over the current
+ * catalog's search rows (`CatalogSearchIndexService`). Searching never
+ * touches storage, so it keeps up with typing; the results page loads the
+ * matching cards.
+ *
+ * The Cards tab uses the root instance. Another search screen (a deck's Add
+ * cards) lists this class in its component `providers` for a search of its
+ * own, and the search components it hosts open their overlays with its
+ * injector so they use that search too. Recent searches are shared.
  */
 @Injectable({ providedIn: 'root' })
 export class CatalogSearchService {
-  private readonly storageEngineFactory = inject(StorageEngineFactory);
-  private readonly preferences = inject(PreferenceStorageService);
   private readonly browse = inject(CatalogBrowseService);
   private readonly catalogLanguage = inject(CatalogLanguageService);
   private readonly collection = inject(CollectionService);
+  private readonly searchIndex = inject(CatalogSearchIndexService);
+  private readonly recentSearches = inject(RecentSearchesService);
 
   readonly region = this.browse.region;
   /** The language the current catalog's names are shown in. */
@@ -108,15 +93,13 @@ export class CatalogSearchService {
   private readonly _active = signal(false);
   readonly active = this._active.asReadonly();
 
-  private readonly _recent = signal<string[]>([]);
-  readonly recent = this._recent.asReadonly();
+  /** Recent searches, newest first (shared by every search screen). */
+  readonly recent = this.recentSearches.recent;
 
-  private readonly index = signal<{ region: CatalogRegion; cards: IndexedCard[] } | null>(null);
   /** Whether the current catalog's search rows have loaded. */
-  readonly ready = computed(() => this.index()?.region === this.region());
+  readonly ready = this.searchIndex.ready;
   /** The current catalog's search rows failed to load (see `retry`). */
-  private readonly _failed = signal(false);
-  readonly failed = computed(() => this._failed() && !this.ready());
+  readonly failed = this.searchIndex.failed;
 
   /** There's a query or a filter, so results show rather than recent searches. */
   readonly searching = computed(
@@ -206,14 +189,11 @@ export class CatalogSearchService {
 
   /** The current catalog's cards matching the query (all of them without one). */
   private readonly queryMatches = computed<IndexedCard[]>(() => {
-    const index = this.index();
-    if (!index || index.region !== this.region()) {
-      return [];
-    }
+    const cards = this.searchIndex.cards();
     const query = prepareQuery(this._query());
     return query
-      ? index.cards.filter((card) => card.names.some((name) => nameMatches(name, query)))
-      : index.cards;
+      ? cards.filter((card) => card.names.some((name) => nameMatches(name, query)))
+      : cards;
   });
 
   readonly results = computed<SearchResults>(() => {
@@ -282,28 +262,14 @@ export class CatalogSearchService {
     };
   });
 
-  private get engine(): StorageEngine {
-    return this.storageEngineFactory.getEngine();
-  }
-
-  /** Bumped by each load, so an older one finishing late is dropped. */
-  private loads = 0;
-  private rebuilt: Promise<void> | null = null;
-  private recentLoaded: Promise<void> = Promise.resolve();
-
   constructor() {
-    this.recentLoaded = this.loadRecent();
     effect(() => {
-      const region = this.region();
+      this.region();
       untracked(() => {
         // Sets belong to one catalog; the other filters apply to both.
         this._filters.update((filters) => ({ ...filters, series: [], sets: [] }));
-        void this.load(region);
       });
     });
-    inject(CatalogSyncService)
-      .changed$.pipe(debounceTime(300), takeUntilDestroyed())
-      .subscribe(() => void this.load(this.region()));
   }
 
   setQuery(query: string): void {
@@ -320,7 +286,7 @@ export class CatalogSearchService {
 
   /** Loads the current catalog's search rows again after a failure. */
   retry(): void {
-    void this.load(this.region());
+    this.searchIndex.retry();
   }
 
   activate(): void {
@@ -344,93 +310,12 @@ export class CatalogSearchService {
   }
 
   /** Remembers the current query (trimmed) as the newest recent search. */
-  async rememberQuery(): Promise<void> {
-    const query = this._query().trim();
-    if (!prepareQuery(query)) {
-      return;
-    }
-    await this.recentLoaded; // Else the stored list would be overwritten.
-    const normalized = normalizeSearchText(query);
-    const recent = [
-      query,
-      ...this._recent().filter((entry) => normalizeSearchText(entry) !== normalized),
-    ].slice(0, MAX_RECENT_SEARCHES);
-    this._recent.set(recent);
-    await this.saveRecent(recent);
+  rememberQuery(): Promise<void> {
+    return this.recentSearches.remember(this._query());
   }
 
-  async clearRecent(): Promise<void> {
-    await this.recentLoaded; // Else it would load back afterwards.
-    this._recent.set([]);
-    await this.saveRecent([]);
-  }
-
-  private async load(region: CatalogRegion): Promise<void> {
-    const load = ++this.loads;
-    this._failed.set(false);
-    try {
-      this.rebuilt ??= this.rebuildIfStale();
-      await this.rebuilt;
-      const rows = await this.engine.listCatalogSearchRows(region);
-      if (load !== this.loads) {
-        return;
-      }
-      this.index.set({
-        region,
-        cards: rows.map((row) => ({ row, names: row.names.map(prepareName) })),
-      });
-    } catch (error: unknown) {
-      console.error('catalog.search_load_failed', error);
-      if (load === this.loads) {
-        this._failed.set(true);
-      }
-    }
-  }
-
-  /**
-   * Builds search rows for catalogs stored before they existed (or before
-   * `catalogSearchRow()` last changed). Sets downloaded from now on get
-   * theirs with the set.
-   */
-  private async rebuildIfStale(): Promise<void> {
-    const version = String(CATALOG_SEARCH_ROW_VERSION);
-    try {
-      if ((await this.engine.getSyncMeta(SEARCH_ROW_VERSION_KEY))?.value === version) {
-        return;
-      }
-      for (const stored of await this.engine.listCatalogSets()) {
-        await this.engine.reindexCatalogSet(stored.region, stored.set.id);
-      }
-      await this.engine.putSyncMeta({ key: SEARCH_ROW_VERSION_KEY, value: version });
-    } catch (error: unknown) {
-      this.rebuilt = null; // Try again on the next load.
-      throw error;
-    }
-  }
-
-  private async loadRecent(): Promise<void> {
-    try {
-      const stored: unknown = JSON.parse(
-        (await this.preferences.getItem(RECENT_SEARCHES_KEY)) ?? '[]'
-      );
-      if (Array.isArray(stored)) {
-        this._recent.set(
-          stored
-            .filter((entry): entry is string => typeof entry === 'string')
-            .slice(0, MAX_RECENT_SEARCHES)
-        );
-      }
-    } catch (error: unknown) {
-      console.error('catalog.recent_searches_load_failed', error);
-    }
-  }
-
-  private async saveRecent(recent: string[]): Promise<void> {
-    try {
-      await this.preferences.setItem(RECENT_SEARCHES_KEY, JSON.stringify(recent));
-    } catch (error: unknown) {
-      console.error('catalog.recent_searches_save_failed', error);
-    }
+  clearRecent(): Promise<void> {
+    return this.recentSearches.clear();
   }
 }
 

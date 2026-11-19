@@ -1,4 +1,4 @@
-import { signal } from '@angular/core';
+import { Injector, signal } from '@angular/core';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { ModalController, NavController, PopoverController } from '@ionic/angular';
@@ -45,6 +45,9 @@ describe('card searchbar and filter chips', () => {
   const present = vi.fn(() => Promise.resolve());
   const modals = { create: vi.fn(() => Promise.resolve({ present })) };
   const popovers = { create: vi.fn(() => Promise.resolve({ present })) };
+  /** The search an overlay opened by `create` would use (through its `injector`). */
+  const overlaySearch = (create: { mock: { calls: unknown[][] } }) =>
+    (create.mock.calls.at(-1)?.[0] as { injector: Injector }).injector.get(CatalogSearchService);
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -183,6 +186,7 @@ describe('card searchbar and filter chips', () => {
           cssClass: 'filter-popover',
         })
       );
+      expect(overlaySearch(popovers.create)).toBe(search);
     });
   });
 
@@ -234,7 +238,22 @@ describe('card searchbar and filter chips', () => {
           cssClass: 'auto-height-sheet',
         })
       );
+      expect(overlaySearch(modals.create)).toBe(search);
       expect(present).toHaveBeenCalled();
+    });
+
+    it("opens the sheet with its host's own search, when the host provides one", async () => {
+      const own = { ...search, activate: vi.fn() };
+      TestBed.overrideComponent(FiltersButtonComponent, {
+        add: { providers: [{ provide: CatalogSearchService, useValue: own }] },
+      });
+      const button = create();
+
+      await button.open();
+
+      expect(own.activate).toHaveBeenCalled();
+      expect(search.activate).not.toHaveBeenCalled();
+      expect(overlaySearch(modals.create)).toBe(own);
     });
   });
 
@@ -286,6 +305,7 @@ describe('card searchbar and filter chips', () => {
           cssClass: 'auto-height-sheet',
         })
       );
+      expect(overlaySearch(modals.create)).toBe(search);
 
       sheet.done();
       expect(dismiss).toHaveBeenCalled();

@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Injector, computed, inject } from '@angular/core';
 import { IonBadge, IonButton, IonIcon, ModalController } from '@ionic/angular';
 import { addIcons } from 'ionicons';
 import { optionsOutline } from 'ionicons/icons';
@@ -51,6 +51,8 @@ import { FILTER_KINDS, pickedValues } from './search-filters';
 export class FiltersButtonComponent {
   private readonly search = inject(CatalogSearchService);
   private readonly modals = inject(ModalController);
+  /** Opens overlays in this search's injector, so they use the same `CatalogSearchService`. */
+  private readonly injector = inject(Injector);
 
   constructor() {
     addIcons({ optionsOutline });
@@ -65,6 +67,7 @@ export class FiltersButtonComponent {
     this.search.activate();
     const modal = await this.modals.create({
       component: FiltersSheetComponent,
+      injector: this.injector,
       breakpoints: [0, 1],
       initialBreakpoint: 1,
       handle: true,
