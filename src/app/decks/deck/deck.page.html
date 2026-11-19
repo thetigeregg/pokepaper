@@ -52,27 +52,38 @@
           @for (row of section.rows; track row.key) {
             <ion-item lines="inset" [attr.data-testid]="'deck-card-' + row.key">
               <ion-label>
-                <div class="media-row">
-                  @if (row.card; as card) {
-                    <button
-                      type="button"
-                      class="thumb"
-                      (click)="openCard(row)"
-                      [attr.aria-label]="'Show ' + row.name"
-                      data-testid="open-thumb"
-                    >
+                @if (row.card; as card) {
+                  <!-- The scan, name and number open the card; the stepper stays apart. -->
+                  <div
+                    class="media-row open-card"
+                    role="button"
+                    tabindex="0"
+                    (click)="openCard(row)"
+                    (keydown.enter)="openCard(row)"
+                    (keydown.space)="$event.preventDefault(); openCard(row)"
+                    [attr.aria-label]="'Show ' + row.name"
+                    data-testid="open-card"
+                  >
+                    <div class="thumb">
                       <app-card-image
                         [card]="card"
                         [language]="row.language"
                         [setLine]="row.line"
                       />
-                    </button>
-                  }
-                  <div class="media-row-text">
-                    {{ row.name }}
-                    <p class="hint">{{ row.line }}</p>
+                    </div>
+                    <div class="media-row-text">
+                      {{ row.name }}
+                      <p class="hint">{{ row.line }}</p>
+                    </div>
                   </div>
-                </div>
+                } @else {
+                  <div class="media-row">
+                    <div class="media-row-text">
+                      {{ row.name }}
+                      <p class="hint">{{ row.line }}</p>
+                    </div>
+                  </div>
+                }
               </ion-label>
               <div slot="end" class="stepper">
                 <ion-button

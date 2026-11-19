@@ -156,7 +156,7 @@ describe('DeckPage', () => {
     expect(sectionTitles()).toEqual(['Other · 2', 'Not on this device · 1']);
     const missing = query('[data-testid="deck-card-intl:gone-1"]');
     expect(missing?.textContent).toContain('gone-1');
-    expect(missing?.querySelector('[data-testid="open-thumb"]')).toBeNull();
+    expect(missing?.querySelector('[data-testid="open-card"]')).toBeNull();
   });
 
   it('offers Add cards for an empty deck', async () => {
@@ -309,7 +309,7 @@ describe('DeckPage', () => {
     await create();
 
     (
-      query('[data-testid="deck-card-intl:sv01-166"] [data-testid="open-thumb"]') as HTMLElement
+      query('[data-testid="deck-card-intl:sv01-166"] [data-testid="open-card"]') as HTMLElement
     ).click();
     await settle();
 
@@ -324,6 +324,38 @@ describe('DeckPage', () => {
         breakpoints: [0, 1],
       })
     );
+  });
+
+  it('opens a card from anywhere on its scan, name and number, or by keyboard', async () => {
+    await create();
+    const area = query(
+      '[data-testid="deck-card-intl:sv01-001"] [data-testid="open-card"]'
+    ) as HTMLElement;
+    expect(area.getAttribute('role')).toBe('button');
+    expect(area.getAttribute('tabindex')).toBe('0');
+    expect(area.getAttribute('aria-label')).toBe('Show sv01-001');
+
+    (area.querySelector('.media-row-text') as HTMLElement).click();
+    area.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    const space = new KeyboardEvent('keydown', { key: ' ', cancelable: true });
+    area.dispatchEvent(space);
+    await settle();
+
+    expect(createModal).toHaveBeenCalledTimes(3);
+    expect(space.defaultPrevented).toBe(true); // Doesn't scroll the page.
+    expect(
+      (createModal.mock.lastCall?.[0] as { componentProps: { startIndex: number } }).componentProps
+        .startIndex
+    ).toBe(0);
+  });
+
+  it('opens nothing from the stepper', async () => {
+    await create();
+
+    (query('[data-testid="add-copy"]') as HTMLElement).click();
+    await settle();
+
+    expect(createModal).not.toHaveBeenCalled();
   });
 
   it('opens cards in a centered dialog on desktop', async () => {

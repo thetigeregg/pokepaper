@@ -115,14 +115,13 @@ function isCatalogRegion(value: string): value is CatalogRegion {
   templateUrl: 'deck.page.html',
   styles: [
     `
-      /* The card's scan, leading the row like the checklist's; it opens the card. */
-      .thumb {
-        flex-shrink: 0;
-        width: 52px;
-        padding: 0;
-        border: 0;
-        background: none;
+      /* The row's scan, name and number: one button (role) that opens the card. */
+      .open-card {
         cursor: pointer;
+      }
+      /* The card's scan, leading the row like the checklist's. */
+      .thumb {
+        width: 52px;
       }
       /* − count +, the count wide enough for two digits so the buttons don't move. */
       .stepper {
