@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Injector, computed, inject } from '@angular/core';
 import { IonButton, IonChip, IonIcon, IonLabel, PopoverController } from '@ionic/angular';
 import { addIcons } from 'ionicons';
 import { caretDown, closeCircle } from 'ionicons/icons';
@@ -78,6 +78,8 @@ import {
 export class SearchFiltersComponent {
   private readonly search = inject(CatalogSearchService);
   private readonly popovers = inject(PopoverController);
+  /** Opens overlays in this search's injector, so they use the same `CatalogSearchService`. */
+  private readonly injector = inject(Injector);
 
   constructor() {
     addIcons({ caretDown, closeCircle });
@@ -99,6 +101,7 @@ export class SearchFiltersComponent {
     const popover = await this.popovers.create({
       component: FilterPickerComponent,
       componentProps: { kindProp: kind },
+      injector: this.injector,
       event,
       cssClass: 'filter-popover',
     });

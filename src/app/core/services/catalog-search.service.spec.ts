@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto';
-import { signal } from '@angular/core';
+import { Injector, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import type { CatalogCard, CatalogSetPack } from '@pokepaper/shared';
 import { Subject } from 'rxjs';
@@ -12,17 +12,16 @@ import { StorageEngineFactory } from '../data/storage-engine.factory';
 import { PreferenceStorageService } from '../storage/preference-storage.service';
 import { CatalogBrowseService } from './catalog-browse.service';
 import { CatalogLanguageService } from './catalog-language.service';
+import { SEARCH_ROW_VERSION_KEY } from './catalog-search-index.service';
 import {
   CatalogSearchService,
-  MAX_RECENT_SEARCHES,
   NO_FILTERS,
-  RECENT_SEARCHES_KEY,
-  SEARCH_ROW_VERSION_KEY,
   categoryValues,
   hasFilters,
 } from './catalog-search.service';
 import { CatalogSyncService } from './catalog-sync.service';
 import { CollectionService } from './collection.service';
+import { MAX_RECENT_SEARCHES, RECENT_SEARCHES_KEY } from './recent-searches.service';
 
 vi.mock(
   '../data/storage-transaction-context',
@@ -179,6 +178,30 @@ describe('CatalogSearchService', () => {
     expect(keys(service)).toEqual(['intl:sv01-1']);
     service.setQuery('professors');
     expect(keys(service)).toEqual(['intl:sv01-3']);
+  });
+
+  it('gives another screen its own query and filters over one shared index', async () => {
+    const listRows = vi.spyOn(engine, 'listCatalogSearchRows');
+    const cards = await create();
+    // What a deck's Add cards does: its own instance through component providers.
+    const deck = Injector.create({
+      providers: [CatalogSearchService],
+      parent: TestBed.inject(Injector),
+    }).get(CatalogSearchService);
+
+    cards.setQuery('pika');
+    deck.setFilters({ ...NO_FILTERS, types: ['Grass'] });
+    deck.setQuery('pom');
+    await cards.rememberQuery();
+
+    expect(deck).not.toBe(cards);
+    expect(keys(cards)).toEqual(['intl:sv02-1', 'intl:sv01-2', 'intl:swsh1-1']);
+    expect(cards.filters()).toEqual(NO_FILTERS);
+    expect(keys(deck)).toEqual(['intl:sv01-1']);
+    expect(deck.ready()).toBe(true);
+    // One copy of the rows, loaded once; recent searches are shared.
+    expect(listRows).toHaveBeenCalledTimes(1);
+    expect(deck.recent()).toEqual(['pika']);
   });
 
   it('has no results until there is a query or a filter', async () => {
@@ -366,6 +389,48 @@ describe('CatalogSearchService', () => {
     expect(service.filters()).toEqual({ ...NO_FILTERS, types: ['Lightning'] });
     service.setQuery('ぴか'); // Hiragana finds katakana.
     expect(keys(service)).toEqual(['asia:SV2a-1']);
+  });
+
+  it.each(['succeeds', 'fails'])('drops a load that %s after a newer one', async (outcome) => {
+    const service = await create();
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const realList = engine.listCatalogSearchRows.bind(engine);
+    const intlRows = await realList('intl');
+    let finishSlowLoad: () => void = () => undefined;
+    const listRows = vi
+      .spyOn(engine, 'listCatalogSearchRows')
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve, reject) => {
+            finishSlowLoad = () => {
+              if (outcome === 'succeeds') {
+                resolve(intlRows);
+              } else {
+                reject(new Error('late'));
+              }
+            };
+          })
+      )
+      .mockImplementation(realList);
+
+    changed.next(); // The catalog updated: reload International (slowly).
+    await vi.waitFor(() => {
+      expect(listRows).toHaveBeenCalledTimes(1);
+    });
+    await TestBed.inject(CatalogBrowseService).setRegion('asia');
+    TestBed.tick();
+    service.setQuery('pika');
+    expect(keys(service)).toEqual([]); // International's rows don't answer for Asia.
+    await vi.waitFor(() => {
+      expect(service.ready()).toBe(true);
+    });
+    finishSlowLoad();
+    await new Promise((resolve) => setTimeout(resolve));
+
+    expect(service.failed()).toBe(false);
+    service.setQuery('ぴか');
+    expect(keys(service)).toEqual(['asia:SV2a-1']);
+    error.mockRestore();
   });
 
   it('reloads when the catalog changes', async () => {

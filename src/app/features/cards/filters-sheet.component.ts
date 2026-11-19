@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Injector, computed, inject } from '@angular/core';
 import {
   IonButton,
   IonButtons,
@@ -80,6 +80,8 @@ import {
 export class FiltersSheetComponent {
   private readonly search = inject(CatalogSearchService);
   private readonly modals = inject(ModalController);
+  /** Opens overlays in this search's injector, so they use the same `CatalogSearchService`. */
+  private readonly injector = inject(Injector);
 
   readonly anyActive = computed(() => hasFilters(this.search.filters()));
 
@@ -98,6 +100,7 @@ export class FiltersSheetComponent {
     const sheet = await this.modals.create({
       component: FilterPickerComponent,
       componentProps: { kindProp: kind, sheetProp: true },
+      injector: this.injector,
       breakpoints: [0, 1],
       initialBreakpoint: 1,
       handle: true,
