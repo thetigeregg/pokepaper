@@ -8,7 +8,7 @@ import { makeContractCard, makeContractPack } from '../../core/data/storage-engi
 import { StorageEngineFactory } from '../../core/data/storage-engine.factory';
 import { CatalogLanguageService } from '../../core/services/catalog-language.service';
 import { CatalogSyncService } from '../../core/services/catalog-sync.service';
-import { DeckChecksService } from '../../core/services/deck-checks.service';
+import { DeckChecksService } from '../../features/decks/deck-checks.service';
 import { DeckService } from '../../core/services/deck.service';
 import type { DeckCheck, NameLimit } from '../../features/decks/deck-rules';
 import { ImageCacheService } from '../../core/services/image-cache.service';
@@ -291,6 +291,20 @@ describe('DeckPage', () => {
     expect(current()?.cards[0]?.count).toBe(1);
     decks.setCardCount.mockReset();
     decks.setCardCount.mockResolvedValue(undefined);
+  });
+
+  it('reports a step that fails before saving (the limit check)', async () => {
+    const error = new Error('broken');
+    checks.copyLimit.mockRejectedValueOnce(error);
+    const page = await create();
+
+    await page.step(page.sections()[0].rows[0], 1);
+
+    expect(decks.setCardCount).not.toHaveBeenCalled();
+    expect(dialogs.showSaveError).toHaveBeenCalledWith(error);
+    // Later steps still run.
+    await page.step(page.sections()[0].rows[0], 1);
+    expect(decks.setCardCount).toHaveBeenCalledTimes(1);
   });
 
   it('adds nothing once the deck holds 4 with the name, saying so', async () => {

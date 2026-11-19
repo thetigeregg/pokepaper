@@ -140,6 +140,11 @@ describe('DeckDialogsService', () => {
       })
     );
 
+    await dialogs.showCopyLimit({ name: 'Giratina ◇', limit: 1 });
+    expect(toasts.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({ message: 'A deck holds at most 1 card named Giratina ◇.' })
+    );
+
     await dialogs.showCopyLimit({ name: 'Fire Energy', limit: 99 });
     expect(toasts.create).toHaveBeenLastCalledWith(
       expect.objectContaining({ message: 'A deck holds at most 99 copies of a printing.' })

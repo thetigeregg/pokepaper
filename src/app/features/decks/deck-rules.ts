@@ -1,7 +1,9 @@
 import {
+  CATALOG_LANGUAGES,
   MAX_DECK_CARD_COUNT,
   deckCardKey,
   type CatalogCard,
+  type CatalogLanguage,
   type Deck,
   type DeckFormat,
 } from '@pokepaper/shared';
@@ -151,7 +153,23 @@ export function isPrismStar(card: CatalogCard): boolean {
 
 /** The card's English name as printed (or its first name, for a card without English text). */
 export function englishName(card: CatalogCard): string {
-  return tidy(card.text.en?.name ?? Object.values(card.text).at(0)?.name ?? card.id);
+  return tidy(primaryText(card)?.name ?? card.id);
+}
+
+/**
+ * The card's English text, else its text in the first catalog language it
+ * has (fixed order, so printings agree). Japan & Asia printings have no
+ * English text, so their names can't be matched with international ones:
+ * the copy limit counts each catalog's names apart (docs/decks.md).
+ */
+function primaryText(card: CatalogCard): CatalogCard['text'][CatalogLanguage] {
+  for (const language of CATALOG_LANGUAGES) {
+    const text = card.text[language];
+    if (text) {
+      return text;
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -162,7 +180,8 @@ export function englishName(card: CatalogCard): string {
 export function ruleName(card: CatalogCard): string {
   return englishName(card)
     .replace(/\s+LV\.\s*(X|\d+)$/i, '')
-    .replace(/\s*δ.*$/, '')
+    .replace(/δ(\s*\(Delta Species\))?/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
@@ -173,7 +192,7 @@ export function ruleName(card: CatalogCard): string {
  * reprints get different fingerprints (docs/decks.md).
  */
 export function rulesFingerprint(card: CatalogCard): string {
-  const text = card.text.en ?? Object.values(card.text).at(0);
+  const text = primaryText(card);
   return JSON.stringify([
     englishName(card),
     card.category,
@@ -257,7 +276,7 @@ export interface DeckIssue {
 export interface NameLimit {
   name: string;
   total: number;
-  /** `MAX_COPIES_PER_NAME`, or `MAX_DECK_CARD_COUNT` per printing for basic Energy. */
+  /** `MAX_COPIES_PER_NAME` (1 for a Prism Star card), or `MAX_DECK_CARD_COUNT` per printing for basic Energy. */
   limit: number;
 }
 
@@ -270,16 +289,28 @@ export interface DeckCheck {
   limits: ReadonlyMap<string, NameLimit>;
 }
 
-/** Copies of `name` the deck holds (cards on this device). */
-export function nameTotal(
+/**
+ * How many copies of `card` the deck may hold, and holds now: 4 with its
+ * name across printings (1 for a Prism Star card), or 99 of the printing
+ * for basic Energy. `cards` are the deck's catalog cards by slot key; cards
+ * not on this device don't count.
+ */
+export function nameLimit(
   deck: Pick<Deck, 'cards'>,
-  cards: ReadonlyMap<string, CheckedCard>,
-  name: string
-): number {
-  return deck.cards.reduce((total, slot) => {
-    const checked = cards.get(deckCardKey(slot));
-    return checked && ruleName(checked.card) === name ? total + slot.count : total;
+  cards: ReadonlyMap<string, CatalogCard>,
+  card: CatalogCard
+): NameLimit {
+  const name = ruleName(card);
+  if (isBasicEnergy(card)) {
+    const key = catalogKey(card.region, card.id);
+    const total = deck.cards.find((slot) => deckCardKey(slot) === key)?.count ?? 0;
+    return { name, total, limit: MAX_DECK_CARD_COUNT };
+  }
+  const total = deck.cards.reduce((sum, slot) => {
+    const other = cards.get(deckCardKey(slot));
+    return other && ruleName(other) === name ? sum + slot.count : sum;
   }, 0);
+  return { name, total, limit: isPrismStar(card) ? 1 : MAX_COPIES_PER_NAME };
 }
 
 /** Checks `deck` against its format's rules (docs/decks.md → Format rules). */
@@ -357,10 +388,10 @@ export function checkDeck(deck: Deck, cards: ReadonlyMap<string, CheckedCard>): 
   }
 
   for (const [name, entry] of byName) {
-    for (const key of entry.keys) {
-      limits.set(key, { name, total: entry.total, limit: MAX_COPIES_PER_NAME });
-    }
     const allowed = entry.prism ? 1 : MAX_COPIES_PER_NAME;
+    for (const key of entry.keys) {
+      limits.set(key, { name, total: entry.total, limit: allowed });
+    }
     if (entry.total > allowed) {
       issues.push({
         id: `copies:${name}`,

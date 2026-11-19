@@ -9,7 +9,7 @@ import { CatalogLanguageService } from '../../core/services/catalog-language.ser
 import { CatalogSearchIndexService } from '../../core/services/catalog-search-index.service';
 import { CatalogSearchService } from '../../core/services/catalog-search.service';
 import { CollectionService } from '../../core/services/collection.service';
-import { DeckChecksService } from '../../core/services/deck-checks.service';
+import { DeckChecksService } from '../../features/decks/deck-checks.service';
 import { DeckFullError, DeckService } from '../../core/services/deck.service';
 import type { DeckCheck, NameLimit } from '../../features/decks/deck-rules';
 import { LayoutService } from '../../core/services/layout.service';
@@ -209,6 +209,17 @@ describe('AddCardsComponent', () => {
       expect(current().cards[0]?.count).toBe(4);
       expect(dialogs.showCopyLimit).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it('reports a tap that fails before saving (the limit check)', async () => {
+    const error = new Error('broken');
+    checks.copyLimit.mockRejectedValueOnce(error);
+    const modal = create();
+
+    await modal.add(pikachu);
+
+    expect(decks.setCardCount).not.toHaveBeenCalled();
+    expect(dialogs.showSaveError).toHaveBeenCalledWith(error);
   });
 
   it('says why a card wasn’t added', async () => {

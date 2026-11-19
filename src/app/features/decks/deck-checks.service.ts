@@ -1,32 +1,24 @@
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import {
-  MAX_DECK_CARD_COUNT,
-  deckCardKey,
-  type CatalogCard,
-  type CatalogRegion,
-} from '@pokepaper/shared';
+import { deckCardKey, type CatalogCard, type CatalogRegion } from '@pokepaper/shared';
 import { debounceTime } from 'rxjs';
-import { catalogKey, type StorageEngine } from '../data/storage-engine';
-import { StorageEngineFactory } from '../data/storage-engine.factory';
+import { catalogKey, type StorageEngine } from '../../core/data/storage-engine';
+import { StorageEngineFactory } from '../../core/data/storage-engine.factory';
 import {
   checkDeck,
   englishName,
-  isBasicEnergy,
-  nameTotal,
+  nameLimit,
   printingLegal,
   POCKET_SERIES,
-  ruleName,
   rulesFingerprint,
-  MAX_COPIES_PER_NAME,
   type CheckedCard,
   type CheckedFormat,
   type DeckCheck,
   type NameLimit,
-} from '../../features/decks/deck-rules';
-import { normalizeSearchText } from '../utils/search-text.util';
-import { CatalogSyncService } from './catalog-sync.service';
-import { DeckService } from './deck.service';
+} from './deck-rules';
+import { normalizeSearchText } from '../../core/utils/search-text.util';
+import { CatalogSyncService } from '../../core/services/catalog-sync.service';
+import { DeckService } from '../../core/services/deck.service';
 
 const CHECKED_FORMATS: readonly CheckedFormat[] = ['standard', 'expanded'];
 
@@ -44,6 +36,14 @@ export class DeckChecksService {
   /** Cards looked up so far, by deck slot key; a key looked up but absent isn't on this device. */
   private readonly cards = signal<ReadonlyMap<string, CheckedCard>>(new Map());
   private readonly looked = signal<ReadonlySet<string>>(new Set());
+  /**
+   * The results from before the last catalog update, shown until the new
+   * lookups land, so checks (and the + limits) don't vanish meanwhile.
+   */
+  private readonly previous = signal<{
+    cards: ReadonlyMap<string, CheckedCard>;
+    looked: ReadonlySet<string>;
+  } | null>(null);
   /** Lookups in progress, by key, so `ensure` can wait for them. */
   private readonly pending = new Map<string, Promise<void>>();
   /** Set series by set key (`region:setId`), for Expanded's series rule. */
@@ -56,10 +56,14 @@ export class DeckChecksService {
   private readonly checks = computed(() => {
     const cards = this.cards();
     const looked = this.looked();
+    const previous = this.previous();
     const checks = new Map<string, DeckCheck>();
     for (const deck of this.decks.decks()) {
-      if (deck.cards.every((slot) => looked.has(deckCardKey(slot)))) {
+      const keys = deck.cards.map(deckCardKey);
+      if (keys.every((key) => looked.has(key))) {
         checks.set(deck.id, checkDeck(deck, cards));
+      } else if (previous && keys.every((key) => previous.looked.has(key))) {
+        checks.set(deck.id, checkDeck(deck, previous.cards));
       }
     }
     return checks;
@@ -83,22 +87,18 @@ export class DeckChecksService {
   }
 
   /**
-   * How many copies of `card`'s name the deck may hold, and holds now: 4 per
-   * name across printings, or `MAX_DECK_CARD_COUNT` per printing for basic
-   * Energy. Waits for the deck's cards to be looked up.
+   * How many copies of `card` the deck may hold, and holds now (`nameLimit`).
+   * Reads the deck's cards from the catalog itself: names are all it needs,
+   * so it doesn't wait for legality (reprint searches) or catalog updates.
    */
   async copyLimit(deckId: string, card: CatalogCard): Promise<NameLimit> {
-    const deck = this.decks.deck(deckId);
-    const slots = deck?.cards ?? [];
-    const key = catalogKey(card.region, card.id);
-    if (isBasicEnergy(card)) {
-      const total = slots.find((slot) => deckCardKey(slot) === key)?.count ?? 0;
-      return { name: ruleName(card), total, limit: MAX_DECK_CARD_COUNT };
-    }
-    await this.ensure(slots.map(deckCardKey));
-    const name = ruleName(card);
-    const total = deck ? nameTotal(deck, this.cards(), name) : 0;
-    return { name, total, limit: MAX_COPIES_PER_NAME };
+    const deck = this.decks.deck(deckId) ?? { cards: [] };
+    const found = await this.engine.getCatalogCardsByKey(deck.cards.map(deckCardKey));
+    return nameLimit(
+      deck,
+      new Map(found.map((entry) => [catalogKey(entry.region, entry.id), entry])),
+      card
+    );
   }
 
   /** Looks up the cards of `keys` not looked up yet; resolves when all are. */
@@ -200,30 +200,50 @@ export class DeckChecksService {
         }
         return map;
       });
-      names.catch(() => this.names.delete(region));
-      this.names.set(region, names);
+      const built = names;
+      // Forget a failed build (only this one: a catalog update may have replaced it).
+      built.catch(() => {
+        if (this.names.get(region) === built) {
+          this.names.delete(region);
+        }
+      });
+      this.names.set(region, built);
     }
     return names;
   }
 
   private async serieOf(card: CatalogCard): Promise<string | null> {
     const key = catalogKey(card.region, card.setId);
-    if (!this.series.has(key)) {
-      const stored = await this.engine.getCatalogSet(card.region, card.setId);
-      this.series.set(key, stored?.set.serieId ?? null);
+    if (this.series.has(key)) {
+      return this.series.get(key) ?? null;
     }
-    return this.series.get(key) ?? null;
+    const generation = this.generation;
+    const stored = await this.engine.getCatalogSet(card.region, card.setId);
+    const serie = stored?.set.serieId ?? null;
+    if (generation === this.generation) {
+      this.series.set(key, serie); // Not from before a catalog update.
+    }
+    return serie;
   }
 
-  /** The catalog changed: look every card up again. */
+  /** The catalog changed: look every card up again, showing the old results until then. */
   private reset(): void {
     this.generation++;
     this.series.clear();
     this.names.clear();
     this.pending.clear();
+    if (this.looked().size > 0) {
+      this.previous.set({ cards: this.cards(), looked: this.looked() });
+    }
     this.looked.set(new Set());
     this.cards.set(new Map());
-    void this.ensure(this.decks.decks().flatMap((deck) => deck.cards.map(deckCardKey)));
+    const refresh = this.ensure(this.decks.decks().flatMap((deck) => deck.cards.map(deckCardKey)));
+    const generation = this.generation;
+    void refresh.then(() => {
+      if (generation === this.generation) {
+        this.previous.set(null);
+      }
+    });
   }
 
   private get engine(): StorageEngine {

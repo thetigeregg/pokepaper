@@ -3,12 +3,12 @@ import { TestBed } from '@angular/core/testing';
 import type { CatalogCard, CatalogRegion, Deck } from '@pokepaper/shared';
 import { Subject } from 'rxjs';
 import { vi } from 'vitest';
-import { makeContractCard, makeContractPack } from '../data/storage-engine.contract';
-import { StorageEngineFactory } from '../data/storage-engine.factory';
-import type { CatalogSearchRow } from '../data/storage-engine';
-import { CatalogSyncService } from './catalog-sync.service';
+import { makeContractCard, makeContractPack } from '../../core/data/storage-engine.contract';
+import { StorageEngineFactory } from '../../core/data/storage-engine.factory';
+import type { CatalogSearchRow } from '../../core/data/storage-engine';
+import { CatalogSyncService } from '../../core/services/catalog-sync.service';
 import { DeckChecksService } from './deck-checks.service';
-import { DeckService } from './deck.service';
+import { DeckService } from '../../core/services/deck.service';
 
 /** A card's English text (the contract card always has it). */
 function englishText(entry: CatalogCard): NonNullable<CatalogCard['text']['en']> {
@@ -255,6 +255,52 @@ describe('DeckChecksService', () => {
       limit: 99,
     });
     await expect(service.copyLimit('missing', pikachu)).resolves.toMatchObject({ total: 0 });
+  });
+
+  it('gives the copy limit without waiting for legality (reprint searches)', async () => {
+    engine.listCatalogSearchRows.mockReturnValueOnce(new Promise(() => undefined));
+    list.set([deckOf('a', [[oldBall, 2]])]);
+    const service = create();
+
+    await expect(service.copyLimit('a', newBall)).resolves.toEqual({
+      name: 'Ultra Ball',
+      total: 2,
+      limit: 4,
+    });
+    expect(service.check('a')).toBeUndefined(); // Still searching for reprints.
+  });
+
+  it('keeps showing checks while a catalog update looks the cards up again', async () => {
+    list.set([
+      deckOf('a', [
+        [pikachu, 4],
+        [oddBall, 1],
+        [energy, 55],
+      ]),
+    ]);
+    const service = create();
+    await vi.waitFor(() => {
+      expect(issueIds(service, 'a')).toEqual(['legal']);
+    });
+    let finish: (cards: CatalogCard[]) => void = () => undefined;
+    engine.getCatalogCardsByKey.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+
+    vi.useFakeTimers();
+    changed.next();
+    vi.advanceTimersByTime(300);
+    vi.useRealTimers();
+    await Promise.resolve();
+
+    expect(issueIds(service, 'a')).toEqual(['legal']); // The previous results, meanwhile.
+    finish([pikachu, energy]); // The ball is gone from the updated catalog.
+    await vi.waitFor(() => {
+      expect(issueIds(service, 'a')).toEqual(['unknown']);
+    });
   });
 
   it('leaves a deck unchecked when lookups fail, and tries again when decks change', async () => {

@@ -3,7 +3,7 @@ import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { NavController } from '@ionic/angular';
 import type { Deck } from '@pokepaper/shared';
 import { vi } from 'vitest';
-import { DeckChecksService } from '../core/services/deck-checks.service';
+import { DeckChecksService } from '../features/decks/deck-checks.service';
 import { DeckService } from '../core/services/deck.service';
 import type { DeckCheck } from '../features/decks/deck-rules';
 import { DeckDialogsService } from '../features/decks/deck-dialogs.service';

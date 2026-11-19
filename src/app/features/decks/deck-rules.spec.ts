@@ -8,7 +8,7 @@ import {
   isBasicEnergy,
   isPrismStar,
   isRadiant,
-  nameTotal,
+  nameLimit,
   printingLegal,
   ruleName,
   rulesFingerprint,
@@ -63,6 +63,29 @@ describe('names', () => {
     expect(ruleName(card('sv-1', 'Miraidon ex'))).toBe('Miraidon ex');
     expect(ruleName(card('sm-1', 'Alolan Meowth'))).toBe('Alolan Meowth');
     expect(ruleName(card('pl-1', 'Luxray GL LV.X'))).toBe('Luxray GL');
+  });
+
+  it('removes only the δ itself, wherever it is, keeping what follows', () => {
+    expect(ruleName(card('ex-2', 'δ Rainbow Energy'))).toBe('Rainbow Energy');
+    expect(ruleName(card('ex-3', 'Flygon δ ex'))).toBe('Flygon ex');
+    expect(ruleName(card('ex-4', 'Latias δ (Delta Species)'))).toBe('Latias');
+  });
+
+  it('names a card without English text by the first catalog language it has', () => {
+    const base = englishText(card('a', 'b'));
+    const asian = (text: CatalogCard['text']): CatalogCard => ({
+      ...card('SV1-1', 'x'),
+      region: 'asia',
+      text,
+    });
+    const chineseFirst = asian({
+      'zh-tw': { ...base, name: '皮卡丘' },
+      ja: { ...base, name: 'ピカチュウ' },
+    });
+    const japaneseOnly = asian({ ja: { ...base, name: 'ピカチュウ' } });
+
+    expect(ruleName(chineseFirst)).toBe('ピカチュウ');
+    expect(ruleName(chineseFirst)).toBe(ruleName(japaneseOnly));
   });
 });
 
@@ -301,6 +324,11 @@ describe('checkDeck', () => {
       [energy, 54],
     ]);
 
+    expect(checkDeck(deck, cards).limits.get('intl:sm7-1')).toEqual({
+      name: 'Giratina ◇',
+      total: 2,
+      limit: 1,
+    });
     expect(checkDeck(deck, cards).issues.map((issue) => issue.text)).toEqual([
       '2 cards named Giratina ◇ (1 allowed)',
       '2 ACE SPEC cards (1 allowed)',
@@ -402,23 +430,36 @@ describe('checkDeck', () => {
   });
 });
 
-describe('nameTotal', () => {
-  it('sums the copies of a name across printings on this device', () => {
-    const a = card('sv01-1', 'Iono', { category: 'Trainer' });
-    const b = card('sv02-1', 'Iono', { category: 'Trainer' });
-    const deck = {
-      cards: [
-        { region: 'intl', cardId: 'sv01-1', count: 2 },
-        { region: 'intl', cardId: 'sv02-1', count: 1 },
-        { region: 'intl', cardId: 'gone', count: 3 },
-      ],
-    };
-    const cards = new Map<string, CheckedCard>([
-      ['intl:sv01-1', { card: a, serie: 'sv', legal: { standard: true, expanded: true } }],
-      ['intl:sv02-1', { card: b, serie: 'sv', legal: { standard: true, expanded: true } }],
-    ]);
+describe('nameLimit', () => {
+  const iono = card('sv01-1', 'Iono', { category: 'Trainer' });
+  const iono2 = card('sv02-1', 'Iono', { category: 'Trainer' });
+  const giratina = card('sm7-1', 'Giratina ◇');
+  const fire = basicEnergy('sve-2');
+  const deck = {
+    cards: [
+      { region: 'intl', cardId: 'sv01-1', count: 2 },
+      { region: 'intl', cardId: 'sv02-1', count: 1 },
+      { region: 'intl', cardId: 'sm7-1', count: 1 },
+      { region: 'intl', cardId: 'sve-2', count: 20 },
+      { region: 'intl', cardId: 'gone', count: 3 },
+    ],
+  };
+  const cards = new Map<string, CatalogCard>(
+    [iono, iono2, giratina, fire].map((entry) => [`intl:${entry.id}`, entry])
+  );
 
-    expect(nameTotal(deck, cards, 'Iono')).toBe(3);
-    expect(nameTotal(deck, cards, 'Arven')).toBe(0);
+  it('sums a name across printings on this device, 4 allowed', () => {
+    expect(nameLimit(deck, cards, iono2)).toEqual({ name: 'Iono', total: 3, limit: 4 });
+    expect(nameLimit(deck, cards, card('sv03-1', 'Arven'))).toEqual({
+      name: 'Arven',
+      total: 0,
+      limit: 4,
+    });
+  });
+
+  it('allows 1 of a Prism Star card, and 99 of a basic Energy printing', () => {
+    expect(nameLimit(deck, cards, giratina)).toEqual({ name: 'Giratina ◇', total: 1, limit: 1 });
+    expect(nameLimit(deck, cards, fire)).toEqual({ name: 'Fire Energy', total: 20, limit: 99 });
+    expect(nameLimit(deck, cards, basicEnergy('sve-3'))).toMatchObject({ total: 0, limit: 99 });
   });
 });

@@ -7,7 +7,7 @@ import {
   type Deck,
 } from '@pokepaper/shared';
 import { DeckChangeDroppedError, DeckFullError } from '../../core/services/deck.service';
-import { MAX_COPIES_PER_NAME, type NameLimit } from './deck-rules';
+import type { NameLimit } from './deck-rules';
 
 /**
  * The deck screens' dialogs (docs/ui.md → Decks): stock Ionic alerts for
@@ -60,13 +60,14 @@ export class DeckDialogsService {
 
   /**
    * Says the deck already holds as many copies as it may: 4 cards with the
-   * name, or (basic Energy) `MAX_DECK_CARD_COUNT` of the printing.
+   * name (1 for a Prism Star card), or (basic Energy) `MAX_DECK_CARD_COUNT`
+   * of the printing.
    */
   showCopyLimit(limit: Pick<NameLimit, 'name' | 'limit'>): Promise<void> {
     return this.showToast(
-      limit.limit === MAX_COPIES_PER_NAME
-        ? `A deck holds at most ${String(MAX_COPIES_PER_NAME)} cards named ${limit.name}.`
-        : `A deck holds at most ${String(MAX_DECK_CARD_COUNT)} copies of a printing.`,
+      limit.limit === MAX_DECK_CARD_COUNT
+        ? `A deck holds at most ${String(MAX_DECK_CARD_COUNT)} copies of a printing.`
+        : `A deck holds at most ${String(limit.limit)} ${limit.limit === 1 ? 'card' : 'cards'} named ${limit.name}.`,
       'warning'
     );
   }

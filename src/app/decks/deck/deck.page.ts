@@ -57,7 +57,7 @@ import { catalogKey, type StorageEngine } from '../../core/data/storage-engine';
 import { StorageEngineFactory } from '../../core/data/storage-engine.factory';
 import { CatalogLanguageService } from '../../core/services/catalog-language.service';
 import { CatalogSyncService } from '../../core/services/catalog-sync.service';
-import { DeckChecksService } from '../../core/services/deck-checks.service';
+import { DeckChecksService } from '../../features/decks/deck-checks.service';
 import { DeckService } from '../../core/services/deck.service';
 import { LayoutService } from '../../core/services/layout.service';
 import { CardDetailComponent } from '../../features/cards/card-detail.component';
@@ -208,7 +208,6 @@ export class DeckPage {
     const deck = this.deck();
     return deck ? deckCardTotal(deck) : 0;
   });
-  readonly maxCount = MAX_DECK_CARD_COUNT;
   /** The deck checked against its format, once its cards have been looked up. */
   readonly check = computed(() => this.checks.check(this.id()));
   readonly rulesTitle = computed(() => `${DECK_FORMAT_LABELS[this.format()]} rules`);
@@ -341,7 +340,6 @@ export class DeckPage {
       .subscribe(() => void this.loadCards());
   }
 
-  /** Sets the copies of a card in the deck (0 removes it). */
   /** The notes for a card's row: the rules it breaks. */
   notes(row: DeckRow): readonly string[] {
     return this.check()?.cardNotes.get(row.key) ?? [];
@@ -368,9 +366,10 @@ export class DeckPage {
       () => undefined,
       () => undefined
     );
-    const step = await applied;
     try {
-      await step?.saving;
+      await (
+        await applied
+      )?.saving;
     } catch (error: unknown) {
       await this.dialogs.showSaveError(error);
     }

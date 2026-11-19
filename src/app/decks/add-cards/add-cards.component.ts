@@ -12,7 +12,7 @@ import {
 import { deckCardKey, type CatalogCard } from '@pokepaper/shared';
 import { catalogKey } from '../../core/data/storage-engine';
 import { CatalogSearchService } from '../../core/services/catalog-search.service';
-import { DeckChecksService } from '../../core/services/deck-checks.service';
+import { DeckChecksService } from '../../features/decks/deck-checks.service';
 import { DeckService } from '../../core/services/deck.service';
 import { LayoutService } from '../../core/services/layout.service';
 import { CatalogSegmentComponent } from '../../features/cards/catalog-segment.component';
@@ -136,9 +136,10 @@ export class AddCardsComponent {
       () => undefined,
       () => undefined
     );
-    const add = await applied;
     try {
-      await add?.saving;
+      await (
+        await applied
+      )?.saving;
     } catch (error: unknown) {
       await this.dialogs.showSaveError(error);
     }

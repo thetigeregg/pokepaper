@@ -39,7 +39,7 @@ These apply to Standard, Expanded and Unlimited alike (handbook §4, rulebook De
 - **Expanded:** regulation marks **D to J**, plus the Black & White, XY and Sun & Moon series expansions, the McDonald's Collections 2011–2021, the Black & White, XY and Sun & Moon trainer kits, Detective Pikachu, and Black Star promos BW01+, XY01+ and SM158+ (handbook §4.1.1).
 - **New sets** become legal on the second Friday after their US release (§4.1.2). The catalog doesn't know release schedules, so a set is treated as legal once its mark is.
 - **Reprints** (§4.1.3): any printing of a card is legal if a legal printing has an identical name and functionally identical text. So a G-mark Ultra Ball is Standard-legal because I-mark reprints exist.
-- **Banned:** nothing in Standard. Expanded bans 27 specific printings (the list names set and number; only two of the Lost Thunder Unown, for example).
+- **Banned:** nothing in Standard. Expanded bans 26 cards, listed by printing (set and number): 27 entries, since two Lost Thunder Unown are listed separately and no other Unown is banned. That's 48 printings in the catalog (Reset Stamp 206a/236 isn't in it).
 - **Languages** (§2.1, §2.3): Japanese cards count as marked, because their backs differ from every other language, so they aren't tournament-legal. Europe allows English, French, German, Italian, Portuguese and Spanish.
 
 ### Unlimited
@@ -55,7 +55,9 @@ Any card released in the US, with no bans (handbook §4.2). The deck rules above
 - **SM Black Star promos below SM158** aren't Expanded-legal (§4.1.1), though TCGdex flags them legal.
 - **TCG Pocket cards** (the digital game, TCGdex series `tcgp`) are never legal and never count as reprints; a deck holding one gets a "digital only" warning in every format.
 - **ACE SPEC and Radiant cards** are recognized by TCGdex's rarity ("ACE SPEC Rare", "Radiant Rare"). Black & White-era ACE SPEC cards are labeled plain "Rare" by TCGdex, so they're listed explicitly: Computer Search, Crystal Edge, Crystal Wall, Gold Potion (Boundaries Crossed), Dowsing Machine, Scramble Switch, Victory Piece (Plasma Storm), Life Dew, Rock Guard (Plasma Freeze), G Booster, G Scope, Master Ball, Scoop Up Cyclone (Plasma Blast). That list isn't from an official document (the rulebook names none, and Bulbapedia refused the fetch); it matches where ACE SPEC cards sit in each set, after the Uncommons and before the Ultra Rares. Prism Star cards are recognized by the ◇ in their name.
-- **Names** are compared as TCGdex writes them, with ’ and ' treated alike.
+- **Names** are compared as TCGdex writes them, with ’ and ' treated alike, and δ (with or without "(Delta Species)") removed wherever it appears ("δ Rainbow Energy" counts as "Rainbow Energy").
+- **Japan & Asia printings have no English names** in the catalog, so they're counted by their own name (Japanese first, then Chinese) and can't be matched with international printings of the same card: 4 English and 4 Japanese Pikachu aren't flagged. In Standard and Expanded they're warned about anyway; in Unlimited this is a known gap.
+- **Prism Star cards** are capped at 1 copy when adding, like the 4-copy limit.
 - **Japan & Asia catalog printings** get a "not tournament-legal" warning in Standard and Expanded decks, not in Unlimited.
 - **The 4-copy limit is enforced** when adding (Add cards and the deck page's +), with a message ("A deck holds at most 4 cards named Iono."). A deck that already breaks it (e.g. synced from an older build) shows a warning. Everything else is a warning.
 - **Checks** run on the device (`DeckChecksService`): it reads the catalog cards of every deck's printings, works out their legality (searching for reprints only when a printing's own mark or set isn't legal, by English name through the search rows), and checks each deck (`checkDeck` in `deck-rules.ts`) as it changes. A deck's check appears once all its cards have been looked up; a catalog update looks them up again.

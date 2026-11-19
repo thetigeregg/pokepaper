@@ -15,7 +15,7 @@ import {
 import type { Deck } from '@pokepaper/shared';
 import { addIcons } from 'ionicons';
 import { addOutline, warningOutline } from 'ionicons/icons';
-import { DeckChecksService } from '../core/services/deck-checks.service';
+import { DeckChecksService } from '../features/decks/deck-checks.service';
 import { DeckService } from '../core/services/deck.service';
 import { DeckDialogsService } from '../features/decks/deck-dialogs.service';
 import { deckSummary } from '../features/decks/deck-display';
