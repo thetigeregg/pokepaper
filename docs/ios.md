@@ -2,7 +2,7 @@
 
 PokePaper ships as a native iOS app through [Capacitor](https://capacitorjs.com/) 8. The same Angular build runs in the app's web view, with on-device SQLite storage (`SqliteStorageEngine`) in place of IndexedDB.
 
-Status: the native shell, both Xcode targets, native passkey sign-in and TestFlight delivery are in place. Over-the-air web updates are in progress: the app side is done, publishing bundles comes next ([OTA updates](#ota-updates)).
+Status: the native shell, both Xcode targets, native passkey sign-in, TestFlight delivery and over-the-air web updates are in place ([OTA updates](#ota-updates)).
 
 ## Targets
 
@@ -75,11 +75,12 @@ To sign in on a device, build App PROD (`npm run sync:ios:prod`) with your team 
 
 After each release, the `iOS TestFlight` workflow (`.github/workflows/ios-testflight.yml`) builds App PROD on a macOS runner with Fastlane (`ios/fastlane/`) and uploads it to TestFlight. Install builds with Apple's TestFlight app.
 
-- **When:** after `Release & Publish` succeeds on `main`, but only if that run produced a release tag and the release changed the app. `scripts/ios-testflight-should-deploy.mjs` compares the release with the previous tag.
-  - **Counts:** `src/`, `shared/`, `public/`, `ios/`, the Capacitor and Angular config, dependency changes, and the iOS scripts.
-  - **Doesn't count:** server, edge, docs, CI, and version-only bumps of the manifests or the Xcode project.
-  - **Why web changes count:** there are no over-the-air updates, so web changes need a new build too. go-gather skips them because it ships them over the air.
+- **When:** after `Release & Publish` succeeds on `main`, but only if that run produced a release tag and the release changed **native** code. `scripts/ios-release-gate.mjs` compares the release with the previous tag.
+  - **Native:** `ios/`, `capacitor.config.ts`, the OTA public key, the iOS build scripts, this workflow, and dependency changes to native plugins (`@capacitor/*`, `@capawesome/*`, `@capgo/*`, `capacitor-*`), read from the lockfile's package versions.
+  - **Web** (`src/`, `shared/`, `public/`, the Angular config, other dependencies) ships as an OTA bundle instead ([OTA updates](#ota-updates)).
+  - **Neither:** server, edge, docs, CI, and version-only bumps of the manifests or the Xcode project.
   - **Manual runs:** `workflow_dispatch` always builds, which is useful for signing retries.
+- **Recorded for OTA:** after an upload, the workflow stores the build number and commit in the repo variables `IOS_OTA_NATIVE_BUILD_NUMBER` and `IOS_OTA_NATIVE_SHA`, using the release GitHub App, which needs **Variables: write**. OTA bundles are built for that build.
 - **Version:** the build's version is the release's `package.json` version. Its build number is one more than the latest in TestFlight (`sync-ios-version.mjs --build-number`).
 - **Signing:** [fastlane match](https://docs.fastlane.tools/actions/match/) installs the App Store certificate and profile from the team's shared, encrypted match repo (`ios/fastlane/Matchfile`). That's the same repo go-gather uses: one Apple Distribution certificate per team, and one profile per app. CI uses match read-only, so it never creates signing assets.
 - **Xcode:** the workflow pins Xcode 27.2 on GitHub's `xcode-27` runner. Uploads need the iOS 26 SDK today, and the iOS 27 SDK from April 2027 (App Store Connect warns about it with ITMS-90725). Keep the pin at least at the SDK Apple requires.
@@ -112,9 +113,25 @@ Web-only changes can reach the installed app without a new TestFlight build, thr
 - **Staging:** a bundle built for this exact native build, and not already active or staged, is downloaded. The plugin verifies its RSA-SHA256 signature against `config/ios-live-update-public.pem`, set in `capacitor.config.ts`. The bundle is then staged as the next bundle, and the app shows **Update Ready: "A new version (x.y.z) is ready. Reload now to apply it?"**. **Reload** applies it immediately. **Later** applies it on the next cold start.
 - **Rollback:** the very first thing the app does at startup is call `LiveUpdate.ready()` (`LiveUpdateService.start()`, before slower work such as storage migrations). A newly applied bundle that doesn't get that far within 10 seconds (`readyTimeout`) is rolled back to the previous one and blocked (`autoBlockRolledBackBundles`), so it's never staged again; the next published bundle replaces it. Old bundles are deleted once a new one is confirmed (`autoDeleteBundles`).
 - **No manifest:** a 404 means no update for this build. That's the normal state until a bundle is published.
-- **Signing key:** the private key that signs bundles lives in `~/.config/pokepaper/ios/live-update-private.pem` (and, for CI, a secret). It never enters the repository. Changing the key pair means shipping the new public key in a TestFlight build first.
+- **Signing key:** the private key that signs bundles lives in `~/.config/pokepaper/ios/live-update-private.pem` locally, and in the `IOS_LIVE_UPDATE_PRIVATE_KEY` secret (`production` environment) for CI. It never enters the repository. Changing the key pair means shipping the new public key in a TestFlight build first.
 
-Publishing bundles (built into the `edge` image, served by Caddy, and gated by the release workflow) lands in a follow-up.
+### Publishing bundles
+
+- **When:** a release gets a bundle when `scripts/ios-release-gate.mjs` finds web changes and no native ones, _and_ nothing native has changed since `IOS_OTA_NATIVE_SHA`. A bundle runs on the installed build's native code, so it mustn't depend on newer plugins. That also covers a TestFlight build that's still running or failed. Native releases ship through TestFlight instead.
+- **Where:** `release-publish.yml` rebuilds the `edge` image with `BUILD_IOS_OTA=true`. Its `ota` stage (`edge/Dockerfile`) runs `scripts/build-ios-live-update-artifacts.mjs`:
+  - It writes the `ios-prod` environment and runs `ng build --configuration ios-prod`.
+  - It zips the output (`index.html` at the root) and signs the zip with the private key, which arrives as a BuildKit secret.
+  - It writes `ota/ios/<build>/manifest.json` and `v<version>-b<build>.zip`. Only the current build's directory is kept.
+- **Serving:** Caddy serves `/ota/*` from the image. The manifest gets `no-store` and the zips `immutable`. A missing file returns 404, never the SPA's `index.html`.
+- **Carry-forward:** every other edge build copies the previous image's `/srv-ota` forward (`OTA_PREVIOUS_IMAGE`, the current `pokepaper-edge:main`), so a release without web changes keeps serving the last bundle. A bad bundle can't be pulled by a server-only release; publish a new one, or a new TestFlight build.
+- **Deploy:** bundles go live when the NAS pulls the new `pokepaper-edge` image, like any web release.
+- **Logs:** CI masks the backend host, since the repository and its Actions logs are public.
+- **Local dry run:**
+  ```bash
+  docker buildx build -f edge/Dockerfile --build-arg BUILD_IOS_OTA=true --build-arg IOS_OTA_NATIVE_BUILD_NUMBER=<n> \
+    --secret id=IOS_LIVE_UPDATE_PRIVATE_KEY,src=$HOME/.config/pokepaper/ios/live-update-private.pem \
+    --secret id=IOS_BACKEND_ORIGIN_PROD,src=<file containing the origin> .
+  ```
 
 ## How the build fits together
 

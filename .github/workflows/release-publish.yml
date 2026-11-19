@@ -112,6 +112,9 @@ jobs:
     outputs:
       server: ${{ steps.server.outputs.should_publish }}
       edge: ${{ steps.edge.outputs.should_publish }}
+      ota: ${{ steps.ota.outputs.ota }}
+      ota_paths: ${{ steps.ota.outputs.ota_paths }}
+      ota_skipped_reason: ${{ steps.ota.outputs.ota_skipped_reason }}
     env:
       TAG: ${{ needs.release.outputs.tag }}
       FORCE_PUBLISH: ${{ inputs.force_publish == true }}
@@ -136,6 +139,16 @@ jobs:
           if [ "$FORCE_PUBLISH" = "true" ]; then args+=(--force); fi
           node scripts/image-should-publish.mjs "${args[@]}"
 
+      # iOS OTA bundle (docs/ios.md -> OTA updates): built into the edge
+      # image when this release changes only web code and nothing native
+      # changed since the installed TestFlight build (recorded by
+      # ios-testflight.yml).
+      - name: Evaluate iOS OTA bundle
+        id: ota
+        env:
+          NATIVE_SHA: ${{ vars.IOS_OTA_NATIVE_SHA }}
+        run: node scripts/ios-release-gate.mjs --head "$TAG" --native-sha "$NATIVE_SHA" --github-output "$GITHUB_OUTPUT"
+
   publish:
     name: Publish ${{ matrix.image }} image
     needs: [release, detect_changes]
@@ -150,7 +163,9 @@ jobs:
         image: [server, edge]
     env:
       IMAGE: ghcr.io/${{ github.repository_owner }}/pokepaper-${{ matrix.image }}
-      CHANGED: ${{ matrix.image == 'server' && needs.detect_changes.outputs.server || needs.detect_changes.outputs.edge }}
+      # A new OTA bundle always means rebuilding edge (it carries the bundle).
+      CHANGED: ${{ matrix.image == 'server' && needs.detect_changes.outputs.server || (needs.detect_changes.outputs.edge == 'true' || needs.detect_changes.outputs.ota == 'true') }}
+      BUILD_OTA: ${{ matrix.image == 'edge' && needs.detect_changes.outputs.ota == 'true' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -180,8 +195,40 @@ jobs:
             type=raw,value=${{ needs.release.outputs.major }}
             type=sha,format=short
 
-      - name: Build and push (inputs changed)
-        if: env.CHANGED == 'true'
+      # Public repo, public logs: GitHub masks the origin secret's exact
+      # value, but not its bare hostname (which OTA build output could show).
+      - name: Mask the backend host
+        if: env.BUILD_OTA == 'true'
+        env:
+          IOS_BACKEND_ORIGIN_PROD: ${{ secrets.IOS_BACKEND_ORIGIN_PROD }}
+        run: |
+          host=$(node -e 'try { console.log(new URL(process.env.IOS_BACKEND_ORIGIN_PROD).hostname) } catch {}')
+          if [ -n "$host" ]; then
+            echo "::add-mask::$host"
+          fi
+
+      # Fails before the image build if the signing secret is missing or
+      # isn't an RSA private key. The key goes to a temp file for BuildKit.
+      - name: Prepare the OTA signing key
+        if: env.BUILD_OTA == 'true'
+        env:
+          IOS_LIVE_UPDATE_PRIVATE_KEY: ${{ secrets.IOS_LIVE_UPDATE_PRIVATE_KEY }}
+          IOS_OTA_NATIVE_BUILD_NUMBER: ${{ vars.IOS_OTA_NATIVE_BUILD_NUMBER }}
+        run: |
+          set -euo pipefail
+          if [ -z "$IOS_OTA_NATIVE_BUILD_NUMBER" ]; then
+            echo "::error::IOS_OTA_NATIVE_BUILD_NUMBER is not set (ios-testflight.yml records it)" >&2
+            exit 1
+          fi
+          (umask 077; printf '%s\n' "$IOS_LIVE_UPDATE_PRIVATE_KEY" > "$RUNNER_TEMP/ios-live-update-key.pem")
+          node -e '
+            const { createPrivateKey } = require("node:crypto");
+            const key = createPrivateKey(require("node:fs").readFileSync(process.argv[1], "utf8"));
+            if (key.asymmetricKeyType !== "rsa") throw new Error("IOS_LIVE_UPDATE_PRIVATE_KEY is not an RSA private key");
+          ' "$RUNNER_TEMP/ios-live-update-key.pem"
+
+      - name: Build and push (with a new iOS OTA bundle)
+        if: env.CHANGED == 'true' && env.BUILD_OTA == 'true'
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -190,8 +237,55 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BUILD_IOS_OTA=true
+            IOS_OTA_NATIVE_BUILD_NUMBER=${{ vars.IOS_OTA_NATIVE_BUILD_NUMBER }}
+          secrets: |
+            IOS_BACKEND_ORIGIN_PROD=${{ secrets.IOS_BACKEND_ORIGIN_PROD }}
+          secret-files: |
+            IOS_LIVE_UPDATE_PRIVATE_KEY=${{ runner.temp }}/ios-live-update-key.pem
           cache-from: type=gha,scope=pokepaper-${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=pokepaper-${{ matrix.image }}
+
+      # Without a new bundle, edge carries the current image's bundles
+      # forward (OTA_PREVIOUS_IMAGE), so they stay published.
+      - name: Build and push (inputs changed)
+        if: env.CHANGED == 'true' && env.BUILD_OTA != 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.image }}/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: ${{ matrix.image == 'edge' && format('OTA_PREVIOUS_IMAGE={0}:main', env.IMAGE) || '' }}
+          cache-from: type=gha,scope=pokepaper-${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=pokepaper-${{ matrix.image }}
+
+      - name: Remove the OTA signing key
+        if: always() && env.BUILD_OTA == 'true'
+        run: rm -f "$RUNNER_TEMP/ios-live-update-key.pem"
+
+      - name: Write OTA summary
+        if: matrix.image == 'edge'
+        env:
+          OTA: ${{ needs.detect_changes.outputs.ota }}
+          OTA_PATHS: ${{ needs.detect_changes.outputs.ota_paths }}
+          OTA_SKIPPED_REASON: ${{ needs.detect_changes.outputs.ota_skipped_reason }}
+          NATIVE_BUILD: ${{ vars.IOS_OTA_NATIVE_BUILD_NUMBER }}
+        run: |
+          {
+            if [ "$OTA" = "true" ]; then
+              echo "## iOS OTA bundle published"
+              echo
+              echo "Built for TestFlight build ${NATIVE_BUILD}, from: ${OTA_PATHS}"
+            else
+              echo "## No new iOS OTA bundle"
+              echo
+              echo "${OTA_SKIPPED_REASON:-Not evaluated.} Existing bundles carried forward."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # Unchanged image: no rebuild, but every release still gets every
       # version tag on both images (so pinning SERVER_IMAGE/EDGE_IMAGE to a

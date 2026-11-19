@@ -1,9 +1,10 @@
 name: iOS TestFlight
 
 # Builds App PROD and uploads it to TestFlight after a release that changed
-# the app (docs/ios.md -> TestFlight). Ported from go-gather's workflow,
-# without its Firebase and OTA steps. PokePaper has no over-the-air updates,
-# so web changes ship through TestFlight too (scripts/ios-testflight-should-deploy.mjs).
+# native code (docs/ios.md -> TestFlight). Ported from go-gather's workflow,
+# without its Firebase step. Web-only changes ship as OTA bundles instead
+# (release-publish.yml); scripts/ios-release-gate.mjs routes each release.
+# After an upload, it records the build as the one OTA bundles target.
 
 on:
   workflow_run:
@@ -33,8 +34,8 @@ jobs:
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     outputs:
-      should_deploy: ${{ steps.check.outputs.should_deploy }}
-      matched_paths: ${{ steps.check.outputs.matched_paths }}
+      should_deploy: ${{ steps.check.outputs.testflight }}
+      matched_paths: ${{ steps.check.outputs.testflight_paths }}
       release_tag: ${{ steps.check.outputs.release_tag }}
 
     steps:
@@ -52,7 +53,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            { echo "should_deploy=true"; echo "matched_paths=workflow_dispatch"; echo "release_tag="; } >> "$GITHUB_OUTPUT"
+            { echo "testflight=true"; echo "testflight_paths=workflow_dispatch"; echo "release_tag="; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -67,11 +68,11 @@ jobs:
             || ! git merge-base --is-ancestor "$HEAD_SHA" "$CURRENT" \
             || [ "$(git rev-list -n 1 "$CURRENT")" = "$HEAD_SHA" ]; then
             echo "This run released nothing new (newest tag: ${CURRENT:-none}); nothing to deploy."
-            { echo "should_deploy=false"; echo "matched_paths="; echo "release_tag="; } >> "$GITHUB_OUTPUT"
+            { echo "testflight=false"; echo "testflight_paths="; echo "release_tag="; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          node scripts/ios-testflight-should-deploy.mjs --head "$CURRENT" --github-output "$GITHUB_OUTPUT"
+          node scripts/ios-release-gate.mjs --head "$CURRENT" --github-output "$GITHUB_OUTPUT"
           echo "release_tag=$CURRENT" >> "$GITHUB_OUTPUT"
 
   skip_summary:
@@ -86,7 +87,7 @@ jobs:
           {
             echo "## iOS TestFlight skipped"
             echo
-            echo "This release doesn't change the iOS app (server, edge, docs, or CI only), or nothing was released."
+            echo "This release doesn't change native code (web-only changes ship as OTA bundles), or nothing was released."
             echo
             echo "Use **workflow_dispatch** on iOS TestFlight to force a build when needed (for example signing retries)."
           } >> "$GITHUB_STEP_SUMMARY"
@@ -194,6 +195,30 @@ jobs:
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
           MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
         run: bundle exec fastlane deploy_testflight
+
+      # OTA bundles must match the installed native code, so the release
+      # workflow builds them for this build only, and only while nothing
+      # native has changed since this commit (scripts/ios-release-gate.mjs).
+      # Repo variables need the release GitHub App (Variables: write).
+      - name: Create GitHub App token
+        id: app_token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.AUTOCOMMIT_CLIENT_ID }}
+          private-key: ${{ secrets.AUTOCOMMIT_APP_PRIVATE_KEY }}
+
+      - name: Record this build for OTA updates
+        env:
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          BUILD_NUMBER: ${{ steps.testflight_upload.outputs.ios_native_build_number }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BUILD_NUMBER" ]; then
+            echo "::error::deploy_testflight didn't report a build number" >&2
+            exit 1
+          fi
+          gh variable set IOS_OTA_NATIVE_BUILD_NUMBER --body "$BUILD_NUMBER"
+          gh variable set IOS_OTA_NATIVE_SHA --body "$(git rev-parse HEAD)"
 
       - name: Write upload summary
         env:

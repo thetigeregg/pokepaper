@@ -46,6 +46,12 @@ export const IMAGE_RULES = {
       'ionic.config.json',
       'ngsw-config.json',
       '.browserslistrc',
+      // The OTA stage (docs/ios.md -> OTA updates) runs these.
+      'scripts/ios-live-update-common.mjs',
+      'scripts/build-ios-live-update-artifacts.mjs',
+      'scripts/write-environment-ios.mjs',
+      'scripts/lan-host.mjs',
+      'scripts/sync-ios-version.mjs',
     ]),
   },
 };
