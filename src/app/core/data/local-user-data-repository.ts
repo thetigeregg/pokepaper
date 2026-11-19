@@ -131,13 +131,17 @@ export class LocalUserDataRepository {
    * Stores `value` whole, replacing any saved deck with its ID, and queues it
    * for sync. Rejects a deck the server would reject, so nothing unsyncable
    * is stored. Only deck fields are kept.
+   *
+   * The sync timestamp is never earlier than the deck's `updatedAt`: the
+   * server keeps the write with the latest timestamp, and `updatedAt` only
+   * moves forward even if the clock goes back (`DeckService`).
    */
   async saveDeck(value: Deck): Promise<void> {
     if (!isDeck(value)) {
       throw new TypeError('Invalid deck');
     }
     const saved = deck(value);
-    const clientTimestamp = new Date().toISOString();
+    const clientTimestamp = notBefore(saved.updatedAt);
 
     await this.withOutboxTransaction(['decks'], async () => {
       await this.engine.putDeck(saved);
@@ -145,12 +149,16 @@ export class LocalUserDataRepository {
     });
   }
 
-  /** Deletes a deck, locally and on the server. */
-  async deleteDeck(id: string): Promise<void> {
+  /**
+   * Deletes a deck, locally and on the server. `lastUpdatedAt` is the deck's
+   * `updatedAt` as last saved: the delete's sync timestamp is never earlier,
+   * so it wins over that save on the server (see `saveDeck`).
+   */
+  async deleteDeck(id: string, lastUpdatedAt?: string): Promise<void> {
     if (!isDeckId(id)) {
       throw new TypeError('Invalid deck ID');
     }
-    const clientTimestamp = new Date().toISOString();
+    const clientTimestamp = notBefore(lastUpdatedAt);
 
     await this.withOutboxTransaction(['decks'], async () => {
       await this.engine.deleteDeck(id);
@@ -221,4 +229,10 @@ export class LocalUserDataRepository {
       // Best-effort: sync errors are handled inside SyncService.
     }
   }
+}
+
+/** Now as an ISO timestamp, or `timestamp` if that's later (a clock that went back). */
+function notBefore(timestamp: string | undefined): string {
+  const now = new Date().toISOString();
+  return timestamp !== undefined && Date.parse(timestamp) > Date.parse(now) ? timestamp : now;
 }

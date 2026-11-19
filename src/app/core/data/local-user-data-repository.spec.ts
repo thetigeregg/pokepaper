@@ -306,6 +306,47 @@ describe('LocalUserDataRepository', () => {
       expect(await engine.listOutboxOrderedByCreatedAt()).toEqual([]);
     });
 
+    describe('sync timestamps', () => {
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it('use the clock when it is past the deck’s updatedAt', async () => {
+        const repository = await setUp({ syncNow: () => Promise.resolve() });
+        vi.useFakeTimers({ now: new Date('2026-03-01T00:00:00.000Z'), toFake: ['Date'] });
+
+        await repository.saveDeck(saved);
+        await repository.deleteDeck('deck-1', saved.updatedAt);
+
+        expect(
+          (await engine.listOutboxOrderedByCreatedAt()).map((entry) => entry.clientTimestamp)
+        ).toEqual(['2026-03-01T00:00:00.000Z', '2026-03-01T00:00:00.000Z']);
+      });
+
+      it('never go before the deck’s updatedAt when the clock went back', async () => {
+        const repository = await setUp({ syncNow: () => Promise.resolve() });
+        vi.useFakeTimers({ now: new Date('2025-06-01T00:00:00.000Z'), toFake: ['Date'] });
+
+        await repository.saveDeck(saved);
+        await repository.deleteDeck('deck-1', saved.updatedAt);
+
+        expect(
+          (await engine.listOutboxOrderedByCreatedAt()).map((entry) => entry.clientTimestamp)
+        ).toEqual([saved.updatedAt, saved.updatedAt]);
+      });
+
+      it('use the clock for a delete without a last updatedAt', async () => {
+        const repository = await setUp({ syncNow: () => Promise.resolve() });
+        vi.useFakeTimers({ now: new Date('2025-06-01T00:00:00.000Z'), toFake: ['Date'] });
+
+        await repository.deleteDeck('deck-1');
+
+        expect((await engine.listOutboxOrderedByCreatedAt())[0]?.clientTimestamp).toBe(
+          '2025-06-01T00:00:00.000Z'
+        );
+      });
+    });
+
     it('rejects deleting an invalid ID', async () => {
       const repository = await setUp({ syncNow: () => Promise.resolve() });
 

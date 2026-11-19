@@ -26,7 +26,7 @@ export interface SqliteConnection {
 }
 
 export const SQLITE_DB_NAME = 'pokepaper';
-export const SQLITE_SCHEMA_VERSION = 5;
+export const SQLITE_SCHEMA_VERSION = 6;
 
 /**
  * Native schema migrations, applied by the Capacitor plugin on open. Append a

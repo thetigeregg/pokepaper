@@ -1,9 +1,9 @@
 import { TestBed } from '@angular/core/testing';
-import type { Deck, SyncEntityType } from '@pokepaper/shared';
+import { MAX_DECK_SLOTS, type Deck, type SyncEntityType } from '@pokepaper/shared';
 import { Subject } from 'rxjs';
 import { vi } from 'vitest';
 import { LocalUserDataRepository } from '../data/local-user-data-repository';
-import { DeckService } from './deck.service';
+import { DeckChangeDroppedError, DeckService } from './deck.service';
 import { SyncService } from './sync.service';
 
 function makeDeck(overrides: Partial<Deck> = {}): Deck {
@@ -198,7 +198,7 @@ describe('DeckService', () => {
     seed(makeDeck());
     const service = await create();
 
-    expect(() => service.setCardCount('deck-1', card, count)).toThrow(errorType);
+    await expect(service.setCardCount('deck-1', card, count)).rejects.toThrow(errorType);
 
     expect(service.deck('deck-1')).toEqual(makeDeck());
     expect(repository.saveDeck).not.toHaveBeenCalled();
@@ -207,8 +207,9 @@ describe('DeckService', () => {
   it('rejects changes to a deck it doesn’t know', async () => {
     const service = await create();
 
-    expect(() => service.update('missing', { name: 'x' })).toThrow(RangeError);
-    expect(() => service.setCardCount('missing', charizard, 1)).toThrow(RangeError);
+    // Rejections, never synchronous throws, so `.catch()` handles them.
+    await expect(service.update('missing', { name: 'x' })).rejects.toThrow(RangeError);
+    await expect(service.setCardCount('missing', charizard, 1)).rejects.toThrow(RangeError);
     await expect(service.remove('missing')).rejects.toThrow(RangeError);
   });
 
@@ -219,7 +220,8 @@ describe('DeckService', () => {
     await service.remove('deck-1');
 
     expect(service.decks().map((deck) => deck.id)).toEqual(['deck-2']);
-    expect(repository.deleteDeck).toHaveBeenCalledWith('deck-1');
+    // With its last save's updatedAt, so the delete wins over it on the server.
+    expect(repository.deleteDeck).toHaveBeenCalledWith('deck-1', '2026-01-01T00:00:00.000Z');
   });
 
   it('saves rapid changes in order', async () => {
@@ -240,6 +242,74 @@ describe('DeckService', () => {
         { ...pidgeot, count: 1 },
       ],
     });
+  });
+
+  it('rejects adding a printing to a full deck, naming why', async () => {
+    const cards = Array.from({ length: MAX_DECK_SLOTS }, (_, i) => ({
+      region: 'intl',
+      cardId: `c-${String(i)}`,
+      count: 1,
+    }));
+    seed(makeDeck({ cards }));
+    const service = await create();
+
+    await expect(service.setCardCount('deck-1', pidgeot, 1)).rejects.toThrow(
+      `A deck holds at most ${String(MAX_DECK_SLOTS)} different printings`
+    );
+    // Changing a printing already in it still works.
+    await service.setCardCount('deck-1', { region: 'intl', cardId: 'c-0' }, 2);
+    expect(service.deck('deck-1')?.cards[0]?.count).toBe(2);
+  });
+
+  it('drops changes queued behind a failed save, since they carry it', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    seed(makeDeck());
+    const service = await create();
+    repository.saveDeck.mockRejectedValueOnce(new Error('disk full'));
+
+    const first = service.setCardCount('deck-1', charizard, 4);
+    const second = service.setCardCount('deck-1', pidgeot, 2);
+
+    await expect(first).rejects.toThrow('disk full');
+    await expect(second).rejects.toThrow(DeckChangeDroppedError);
+    expect(repository.saveDeck).toHaveBeenCalledTimes(1);
+    expect(stored.get('deck-1')).toEqual(makeDeck());
+    expect(service.deck('deck-1')).toEqual(makeDeck());
+    error.mockRestore();
+  });
+
+  it('saves a change made after a failed save, from the saved deck', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    seed(makeDeck());
+    const service = await create();
+    repository.saveDeck.mockRejectedValueOnce(new Error('disk full'));
+
+    await expect(service.setCardCount('deck-1', charizard, 4)).rejects.toThrow('disk full');
+    await service.setCardCount('deck-1', pidgeot, 2);
+
+    expect(stored.get('deck-1')?.cards).toEqual([
+      { ...charizard, count: 3 },
+      { ...pidgeot, count: 2 },
+    ]);
+    error.mockRestore();
+  });
+
+  it('shows the saved decks again when saving fails, even if reloading fails too', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    seed(makeDeck({ id: 'deck-2', name: 'Other' }));
+    seed(makeDeck());
+    const service = await create();
+    await service.update('deck-2', { name: 'Other, saved' });
+    repository.saveDeck.mockRejectedValueOnce(new Error('disk full'));
+    repository.listDecks.mockRejectedValueOnce(new Error('storage gone'));
+
+    await expect(service.update('deck-1', { name: 'Zard' })).rejects.toThrow('disk full');
+
+    expect(service.deck('deck-1')?.name).toBe('Charizard ex');
+    // Changes saved before the failure stay.
+    expect(service.deck('deck-2')?.name).toBe('Other, saved');
+    expect(error).toHaveBeenCalledWith('deck.load_failed', expect.any(Error));
+    error.mockRestore();
   });
 
   it('shows the saved decks again and rejects when saving fails', async () => {
