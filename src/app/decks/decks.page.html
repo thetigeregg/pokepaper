@@ -32,8 +32,17 @@
             [attr.data-testid]="'deck-' + deck.id"
           >
             <ion-label>
-              {{ deck.name }}
-              <p class="hint">{{ summary(deck) }}</p>
+              <div class="media-row">
+                @if (cover(deck); as card) {
+                  <div class="cover" data-testid="deck-cover">
+                    <app-card-image [card]="card" [language]="coverLanguage(card)" setLine="" />
+                  </div>
+                }
+                <div class="media-row-text">
+                  {{ deck.name }}
+                  <p class="hint">{{ summary(deck) }}</p>
+                </div>
+              </div>
             </ion-label>
             @if (issues(deck) > 0) {
               <ion-icon

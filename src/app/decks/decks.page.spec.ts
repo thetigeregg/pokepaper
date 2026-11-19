@@ -1,7 +1,11 @@
 import { computed, signal } from '@angular/core';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { NavController } from '@ionic/angular';
-import type { Deck } from '@pokepaper/shared';
+import type { CatalogCard, Deck } from '@pokepaper/shared';
+import { makeContractCard } from '../core/data/storage-engine.contract';
+import { CatalogLanguageService } from '../core/services/catalog-language.service';
+import { ImageCacheService } from '../core/services/image-cache.service';
+import { VisibilityService } from '../core/services/visibility.service';
 import { vi } from 'vitest';
 import { DeckChecksService } from '../features/decks/deck-checks.service';
 import { DeckService } from '../core/services/deck.service';
@@ -34,9 +38,11 @@ describe('DecksPage', () => {
   const nav = { navigateForward: vi.fn() };
   const checked = signal<Record<string, DeckCheck>>({});
   const owned = signal<Record<string, DeckOwned>>({});
+  const covers = signal<Record<string, CatalogCard>>({});
   const checks = {
     check: (id: string): DeckCheck | undefined => checked()[id],
     ownedOf: (id: string): DeckOwned | undefined => owned()[id],
+    coverOf: (id: string): CatalogCard | undefined => covers()[id],
   };
   let fixture: ComponentFixture<DecksPage>;
 
@@ -54,6 +60,7 @@ describe('DecksPage', () => {
     list.set([]);
     checked.set({});
     owned.set({});
+    covers.set({});
     decks.loaded.set(true);
     TestBed.configureTestingModule({
       providers: [
@@ -61,6 +68,12 @@ describe('DecksPage', () => {
         { provide: DeckDialogsService, useValue: dialogs },
         { provide: DeckChecksService, useValue: checks },
         { provide: NavController, useValue: nav },
+        { provide: CatalogLanguageService, useValue: { forSet: () => 'en' } },
+        {
+          provide: ImageCacheService,
+          useValue: { resolve: vi.fn(() => Promise.resolve(null)), release: vi.fn() },
+        },
+        { provide: VisibilityService, useValue: { whenVisible: () => () => undefined } },
       ],
     });
   });
@@ -126,6 +139,18 @@ describe('DecksPage', () => {
       'Standard · 0 cards · 18 missing · 1 issue'
     );
     expect(query('[data-testid="deck-b"] .hint')?.textContent.trim()).toBe('Standard · 0 cards');
+  });
+
+  it('leads a row with the deck’s cover, and nothing without one', () => {
+    list.set([deck('a', 'Charizard ex'), deck('b', 'Trainers only')]);
+    covers.set({ a: makeContractCard('intl', 'sv03', 'sv03-125', 0) });
+    create();
+
+    expect(
+      query('[data-testid="deck-a"] [data-testid="deck-cover"] app-card-image')
+    ).not.toBeNull();
+    expect(query('[data-testid="deck-b"] [data-testid="deck-cover"]')).toBeNull();
+    expect(query('[data-testid="deck-b"]')?.textContent).toContain('Trainers only');
   });
 
   it('offers a New deck row when there are none', () => {

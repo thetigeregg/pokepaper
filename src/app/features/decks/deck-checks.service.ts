@@ -108,6 +108,33 @@ export class DeckChecksService {
     return owned;
   });
 
+  /**
+   * Each deck's cover: its chosen printing while it's still in the deck,
+   * else its first Pokémon (in deck order), from the cards looked up so far.
+   */
+  private readonly covers = computed(() => {
+    const cards = this.cards();
+    const previous = this.previous()?.cards;
+    const card = (key: string) => (cards.get(key) ?? previous?.get(key))?.card;
+    const covers = new Map<string, CatalogCard>();
+    for (const deck of this.decks.decks()) {
+      const keys = deck.cards.map(deckCardKey);
+      const chosen = deck.cover ? deckCardKey(deck.cover) : null;
+      const cover =
+        (chosen && keys.includes(chosen) ? card(chosen) : undefined) ??
+        keys.map(card).find((entry) => entry?.category === 'Pokemon');
+      if (cover) {
+        covers.set(deck.id, cover);
+      }
+    }
+    return covers;
+  });
+
+  /** The card shown for the deck in the Decks list, if any. */
+  coverOf(deckId: string): CatalogCard | undefined {
+    return this.covers().get(deckId);
+  }
+
   /** What the collection covers of the deck, once known. */
   ownedOf(deckId: string): DeckOwned | undefined {
     return this.owned().get(deckId);

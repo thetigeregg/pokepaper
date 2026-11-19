@@ -127,6 +127,18 @@ describe('DeckService', () => {
     expect(repository.saveDeck).not.toHaveBeenCalled();
   });
 
+  it('chooses a cover, and goes back to the default', async () => {
+    seed(makeDeck());
+    const service = await create();
+
+    await service.setCover('deck-1', { region: 'intl', cardId: 'sv03-125' });
+    expect(stored.get('deck-1')?.cover).toEqual({ region: 'intl', cardId: 'sv03-125' });
+
+    await service.setCover('deck-1', null);
+    expect(stored.get('deck-1')).not.toHaveProperty('cover');
+    expect(stored.get('deck-1')?.updatedAt > '2026-01-01T00:00:00.000Z').toBe(true);
+  });
+
   it('renames a deck and changes its format, moving its updatedAt forward', async () => {
     seed(makeDeck());
     const service = await create();

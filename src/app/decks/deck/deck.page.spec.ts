@@ -18,7 +18,8 @@ import { VisibilityService } from '../../core/services/visibility.service';
 import { CardDetailComponent } from '../../features/cards/card-detail.component';
 import { DeckDialogsService } from '../../features/decks/deck-dialogs.service';
 import { AddCardsComponent } from '../add-cards/add-cards.component';
-import { DeckPage } from './deck.page';
+import { DeckCoverPickerComponent } from './deck-cover-picker.component';
+import { DeckPage, type DeckRow } from './deck.page';
 
 const sv01: CatalogSet = {
   ...makeContractPack('intl', 'sv01', []).set,
@@ -73,6 +74,7 @@ describe('DeckPage', () => {
     loaded: signal(true),
     deck: vi.fn((id: string) => (current()?.id === id ? current() : undefined)),
     setCardCount: vi.fn(() => Promise.resolve()),
+    setCover: vi.fn(() => Promise.resolve()),
     update: vi.fn(() => Promise.resolve()),
     remove: vi.fn(() => Promise.resolve()),
   };
@@ -83,7 +85,11 @@ describe('DeckPage', () => {
     showCopyLimit: vi.fn((_limit: NameLimit) => Promise.resolve()),
   };
   const present = vi.fn(() => Promise.resolve());
-  const createModal = vi.fn((_options: Record<string, unknown>) => Promise.resolve({ present }));
+  /** What the next modal resolves with when dismissed (the cover picker). */
+  let dismissal: { data?: unknown; role?: string } = {};
+  const createModal = vi.fn((_options: Record<string, unknown>) =>
+    Promise.resolve({ present, onWillDismiss: () => Promise.resolve(dismissal) })
+  );
   /** What the collection covers, as the service's signal would give it. */
   const ownedNow = signal<DeckOwned | undefined>(undefined);
   const checks = {
@@ -704,16 +710,85 @@ describe('DeckPage', () => {
 
   it('runs Rename and Delete from the header actions, disabled without a deck', async () => {
     const page = await create();
-    const [rename, remove] = page.actions();
+    const action = (id: string) => page.actions().find((entry) => entry.id === id);
+    expect(page.actions().map((entry) => entry.id)).toEqual(['rename', 'cover', 'delete']);
 
-    rename.run();
-    remove.run();
+    action('rename')?.run();
+    action('delete')?.run();
     await settle();
 
     expect(dialogs.askRename).toHaveBeenCalled();
     expect(dialogs.confirmDelete).toHaveBeenCalled();
     current.set(undefined);
     expect(page.actions().every((action) => action.disabled)).toBe(true);
+  });
+
+  describe('choosing a cover', () => {
+    afterEach(() => {
+      dismissal = {};
+    });
+
+    it('offers the deck’s cards and the default, with the current choice', async () => {
+      current.set({ ...makeDeck(), cover: { region: 'intl', cardId: 'sv01-166' } });
+      dismissal = { role: 'cancel' };
+      const page = await create();
+
+      await page.chooseCover();
+
+      const options = createModal.mock.lastCall?.[0] as {
+        component: unknown;
+        componentProps: { rowsProp: DeckRow[]; currentProp: string | null };
+        breakpoints?: number[];
+      };
+      expect(options.component).toBe(DeckCoverPickerComponent);
+      expect(options.componentProps.rowsProp.map((row) => row.key)).toEqual([
+        'intl:sv01-001',
+        'intl:sv01-166',
+        'intl:sv01-258',
+      ]);
+      expect(options.componentProps.currentProp).toBe('intl:sv01-166');
+      expect(options.breakpoints).toEqual([0, 0.75, 1]);
+      expect(decks.setCover).not.toHaveBeenCalled(); // Canceled.
+    });
+
+    it('saves the printing picked, or the default', async () => {
+      const page = await create();
+
+      dismissal = { role: 'select', data: { key: 'intl:sv01-258' } };
+      await page.chooseCover();
+      expect(decks.setCover).toHaveBeenLastCalledWith('deck-1', {
+        region: 'intl',
+        cardId: 'sv01-258',
+        count: 9,
+      });
+
+      dismissal = { role: 'select', data: { key: null } };
+      await page.chooseCover();
+      expect(decks.setCover).toHaveBeenLastCalledWith('deck-1', null);
+    });
+
+    it('shows the default as current when the chosen card has left the deck', async () => {
+      current.set({ ...makeDeck(), cover: { region: 'intl', cardId: 'gone' } });
+      dismissal = { role: 'cancel' };
+      const page = await create();
+
+      await page.chooseCover();
+
+      const options = createModal.mock.lastCall?.[0] as {
+        componentProps: { currentProp: string | null };
+      };
+      expect(options.componentProps.currentProp).toBeNull();
+    });
+
+    it('says so when the cover can’t be saved', async () => {
+      decks.setCover.mockRejectedValueOnce(new Error('disk full'));
+      dismissal = { role: 'select', data: { key: null } };
+      const page = await create();
+
+      await page.chooseCover();
+
+      expect(dialogs.showSaveError).toHaveBeenCalled();
+    });
   });
 
   it('does nothing for a deck that isn’t here', async () => {

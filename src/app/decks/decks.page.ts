@@ -12,7 +12,9 @@ import {
   IonToolbar,
   NavController,
 } from '@ionic/angular';
-import type { Deck } from '@pokepaper/shared';
+import type { CatalogCard, CatalogLanguage, Deck } from '@pokepaper/shared';
+import { CatalogLanguageService } from '../core/services/catalog-language.service';
+import { CardImageComponent } from '../features/cards/card-image.component';
 import { addIcons } from 'ionicons';
 import { addOutline, warningOutline } from 'ionicons/icons';
 import { DeckChecksService } from '../features/decks/deck-checks.service';
@@ -28,6 +30,14 @@ import { deckSummary } from '../features/decks/deck-display';
 @Component({
   selector: 'app-decks',
   templateUrl: 'decks.page.html',
+  styles: [
+    `
+      /* The deck's cover scan, leading the row like the sets list's logos. */
+      .cover {
+        width: 40px;
+      }
+    `,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     IonHeader,
@@ -40,12 +50,14 @@ import { deckSummary } from '../features/decks/deck-display';
     IonList,
     IonItem,
     IonLabel,
+    CardImageComponent,
   ],
 })
 export class DecksPage {
   readonly decks = inject(DeckService);
   private readonly dialogs = inject(DeckDialogsService);
   private readonly checks = inject(DeckChecksService);
+  private readonly catalogLanguage = inject(CatalogLanguageService);
   private readonly nav = inject(NavController);
 
   /** A new deck is being named or saved. */
@@ -70,6 +82,16 @@ export class DecksPage {
       parts.push(`${String(count)} ${count === 1 ? 'issue' : 'issues'}`);
     }
     return parts.join(' · ');
+  }
+
+  /** The card shown for the deck: its chosen cover, else its first Pokémon. */
+  cover(deck: Deck): CatalogCard | undefined {
+    return this.checks.coverOf(deck.id);
+  }
+
+  /** The language a cover is shown in: its catalog's remembered one (else another with a scan). */
+  coverLanguage(card: CatalogCard): CatalogLanguage {
+    return this.catalogLanguage.forSet(card.region, []);
   }
 
   /** Rules the deck breaks (0 until it has been checked). */

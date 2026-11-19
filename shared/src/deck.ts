@@ -39,6 +39,24 @@ export interface Deck {
   /** UTC ISO timestamps, as `Date.prototype.toISOString()` writes them. */
   createdAt: string;
   updatedAt: string;
+  /**
+   * The printing shown for the deck in the Decks list, when one was chosen.
+   * Without one (or once it's no longer in the deck), the first Pokémon is.
+   */
+  cover?: DeckCover;
+}
+
+/** A deck's chosen cover: one of its printings. */
+export interface DeckCover {
+  region: string;
+  cardId: string;
+}
+
+export function isDeckCover(value: unknown): value is DeckCover {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return isTag(value['region']) && isId(value['cardId']);
 }
 
 export const MAX_DECK_NAME_LENGTH = 100;
@@ -97,8 +115,9 @@ export function isDeck(value: unknown): value is Deck {
   if (!isRecord(value)) {
     return false;
   }
-  const { id, name, format, cards, createdAt, updatedAt } = value;
+  const { id, name, format, cards, createdAt, updatedAt, cover } = value;
   if (
+    (cover !== undefined && !isDeckCover(cover)) ||
     !isDeckId(id) ||
     !isDeckName(name) ||
     !isTag(format) ||
@@ -122,6 +141,7 @@ export function deck(value: Deck): Deck {
     cards: value.cards.map(({ region, cardId, count }) => ({ region, cardId, count })),
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
+    ...(value.cover ? { cover: { region: value.cover.region, cardId: value.cover.cardId } } : {}),
   };
 }
 

@@ -5,6 +5,7 @@ import {
   isDeck,
   isDeckCard,
   isDeckCardCount,
+  isDeckCover,
   isDeckFormat,
   isDeckId,
   isDeckName,
@@ -157,6 +158,29 @@ describe('isDeck', () => {
     ['null', null],
   ])('rejects %s', (_label, value) => {
     expect(isDeck(value)).toBe(false);
+  });
+});
+
+describe('deck covers', () => {
+  it('accepts a deck with or without a valid cover', () => {
+    expect(isDeck({ ...valid, cover: { region: 'intl', cardId: 'sv03-125' } })).toBe(true);
+    expect(isDeck(valid)).toBe(true);
+  });
+
+  it.each([
+    ['null', null],
+    ['a region with a colon', { region: 'a:b', cardId: 'x' }],
+    ['an empty card ID', { region: 'intl', cardId: '' }],
+    ['a string', 'intl:sv03-125'],
+  ])('rejects a cover that is %s', (_label, cover) => {
+    expect(isDeck({ ...valid, cover })).toBe(false);
+    expect(isDeckCover(cover)).toBe(false);
+  });
+
+  it('copies a cover’s fields, and adds none when there isn’t one', () => {
+    const covered = { ...valid, cover: { region: 'intl', cardId: 'sv03-125', extra: 1 } };
+    expect(deck(covered).cover).toEqual({ region: 'intl', cardId: 'sv03-125' });
+    expect(deck(valid)).not.toHaveProperty('cover');
   });
 });
 
