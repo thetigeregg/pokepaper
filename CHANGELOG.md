@@ -113,3 +113,7 @@
 ## v0.17.0 - 2026-11-19
 
 - 2445c2d feat(ios): check for and apply signed OTA web updates (#36)
+
+## v0.17.1 - 2026-11-19
+
+- 49105e8 ci(ios): publish signed OTA bundles in the edge image (#37)
