@@ -14,6 +14,7 @@ import {
   type VariantRow,
 } from './card-display';
 import { CardImageComponent } from './card-image.component';
+import { RarityIconComponent } from './rarity-icon.component';
 
 interface ChecklistRow {
   card: CatalogCard;
@@ -43,12 +44,16 @@ interface ChecklistRow {
         background: none;
         cursor: pointer;
       }
+      /* The rarity (symbol and name), set apart from the name and the toggles. */
+      .rarity {
+        margin: 6px 0 0;
+      }
       /* One toggle per variant, side by side under the name and rarity. */
       .variants {
         display: flex;
         flex-wrap: wrap;
         gap: 10px 8px;
-        margin-top: 6px;
+        margin-top: 10px;
       }
 
       .variants ion-button {
@@ -93,7 +98,14 @@ interface ChecklistRow {
               <div class="media-row-text">
                 {{ row.card.localId }} · {{ row.name }}
                 @if (row.card.rarity) {
-                  <p>{{ row.card.rarity }}</p>
+                  <p class="rarity" data-testid="checklist-rarity">
+                    <app-rarity-icon
+                      [rarity]="row.card.rarity"
+                      [region]="set().region"
+                      [seriesId]="set().serieId"
+                    />
+                    {{ row.card.rarity }}
+                  </p>
                 }
                 <div class="variants">
                   @for (variant of row.variants; track variant.variant) {
@@ -130,7 +142,15 @@ interface ChecklistRow {
       }
     </ion-list>
   `,
-  imports: [IonList, IonItem, IonLabel, IonButton, IonIcon, CardImageComponent],
+  imports: [
+    IonList,
+    IonItem,
+    IonLabel,
+    IonButton,
+    IonIcon,
+    CardImageComponent,
+    RarityIconComponent,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SetChecklistComponent {

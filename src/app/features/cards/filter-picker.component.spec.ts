@@ -1,6 +1,7 @@
 import { signal } from '@angular/core';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { ModalController, PopoverController } from '@ionic/angular';
+import type { CatalogRegion } from '@pokepaper/shared';
 import { vi } from 'vitest';
 import { makeContractPack } from '../../core/data/storage-engine.contract';
 import { CatalogBrowseService } from '../../core/services/catalog-browse.service';
@@ -47,6 +48,7 @@ describe('FilterPickerComponent', () => {
   const sv02 = { ...makeContractPack('intl', 'sv02', []).set, names: { en: 'Paldea Evolved' } };
   const browse = {
     language: signal('en'),
+    region: signal<CatalogRegion>('intl'),
     groups: signal([{ key: 'intl:sv', name: 'Scarlet & Violet', sets: [sv02, sv01] }]),
   };
   const modals = { dismiss: vi.fn(() => Promise.resolve(true)) };
@@ -71,6 +73,7 @@ describe('FilterPickerComponent', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     filters.set(NO_FILTERS);
+    browse.region.set('intl');
     TestBed.configureTestingModule({
       providers: [
         { provide: CatalogSearchService, useValue: search },
@@ -185,6 +188,18 @@ describe('FilterPickerComponent', () => {
 
     expect(root().querySelector('[data-testid="filter-empty"]')).not.toBeNull();
     search.counts.update((counts) => ({ ...counts, rarities: [{ value: 'Common', count: 1200 }] }));
+  });
+
+  it("shows each rarity's symbol for the searched catalog", () => {
+    const icon = () =>
+      root().querySelector('[data-testid="filter-option-Common"] [data-testid="rarity-icon"]');
+
+    create('rarity');
+    expect(icon()?.getAttribute('src')).toBe('assets/rarity/common.png');
+
+    browse.region.set('asia');
+    fixture.detectChanges();
+    expect(icon()?.getAttribute('src')).toBe('assets/rarity/jp/c.png');
   });
 
   it('ignores whole-group picks for filters without groups', () => {

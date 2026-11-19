@@ -113,6 +113,9 @@ describe('SetChecklistComponent', () => {
     const text = first?.querySelector('.media-row-text');
     expect(text?.textContent).toContain('001 · sv01-001');
     expect(text?.querySelector('p')?.textContent.trim()).toBe('Common');
+    expect(text?.querySelector('p [data-testid="rarity-icon"]')?.getAttribute('src')).toBe(
+      'assets/rarity/common.png'
+    );
     expect(text?.querySelectorAll('.variants [data-testid^="toggle-"]')).toHaveLength(2);
     const reverse = chip('sv01-001', 'reverse');
     expect(reverse?.fill).toBe('solid');
