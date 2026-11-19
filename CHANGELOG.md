@@ -129,3 +129,7 @@
 ## v0.18.0 - 2026-11-19
 
 - 99040aa feat(cards): show rarity symbols in checklist, details and filter (#40)
+
+## v0.19.0 - 2026-11-19
+
+- c6af80c feat(decks): store and sync decks (#41)
