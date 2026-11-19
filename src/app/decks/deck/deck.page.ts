@@ -46,15 +46,18 @@ import { addIcons } from 'ionicons';
 import {
   addCircleOutline,
   addOutline,
+  checkmarkCircleOutline,
   createOutline,
   removeCircleOutline,
   trashOutline,
+  warningOutline,
 } from 'ionicons/icons';
 import { debounceTime } from 'rxjs';
 import { catalogKey, type StorageEngine } from '../../core/data/storage-engine';
 import { StorageEngineFactory } from '../../core/data/storage-engine.factory';
 import { CatalogLanguageService } from '../../core/services/catalog-language.service';
 import { CatalogSyncService } from '../../core/services/catalog-sync.service';
+import { DeckChecksService } from '../../core/services/deck-checks.service';
 import { DeckService } from '../../core/services/deck.service';
 import { LayoutService } from '../../core/services/layout.service';
 import { CardDetailComponent } from '../../features/cards/card-detail.component';
@@ -131,6 +134,16 @@ function isCatalogRegion(value: string): value is CatalogRegion {
         display: flex;
         align-items: center;
       }
+      /* A rule the card breaks, under its set and number. */
+      .rule-note {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .rule-note ion-icon,
+      .rule ion-icon {
+        flex-shrink: 0;
+      }
       .count {
         min-width: 2.5ch;
         font-variant-numeric: tabular-nums;
@@ -170,6 +183,7 @@ function isCatalogRegion(value: string): value is CatalogRegion {
 })
 export class DeckPage {
   private readonly decks = inject(DeckService);
+  private readonly checks = inject(DeckChecksService);
   private readonly dialogs = inject(DeckDialogsService);
   private readonly storageEngineFactory = inject(StorageEngineFactory);
   private readonly catalogLanguage = inject(CatalogLanguageService);
@@ -195,6 +209,9 @@ export class DeckPage {
     return deck ? deckCardTotal(deck) : 0;
   });
   readonly maxCount = MAX_DECK_CARD_COUNT;
+  /** The deck checked against its format, once its cards have been looked up. */
+  readonly check = computed(() => this.checks.check(this.id()));
+  readonly rulesTitle = computed(() => `${DECK_FORMAT_LABELS[this.format()]} rules`);
 
   /**
    * The deck's cards and their sets, from the catalog on this device, and
@@ -282,7 +299,15 @@ export class DeckPage {
   }
 
   constructor() {
-    addIcons({ addOutline, addCircleOutline, removeCircleOutline, createOutline, trashOutline });
+    addIcons({
+      addOutline,
+      addCircleOutline,
+      removeCircleOutline,
+      createOutline,
+      trashOutline,
+      warningOutline,
+      checkmarkCircleOutline,
+    });
     effect(() => {
       this.cardKeysJoined();
       untracked(() => void this.loadCards());
@@ -294,7 +319,28 @@ export class DeckPage {
   }
 
   /** Sets the copies of a card in the deck (0 removes it). */
+  /** The notes for a card's row: the rules it breaks. */
+  notes(row: DeckRow): readonly string[] {
+    return this.check()?.cardNotes.get(row.key) ?? [];
+  }
+
+  /**
+   * Whether the deck holds as many copies of the card as it may: 4 with its
+   * name (across printings), or 99 of a printing.
+   */
+  atLimit(row: DeckRow): boolean {
+    const limit = this.check()?.limits.get(row.key);
+    return row.slot.count >= MAX_DECK_CARD_COUNT || (!!limit && limit.total >= limit.limit);
+  }
+
   async setCount(row: DeckRow, count: number): Promise<void> {
+    if (count > row.slot.count && row.card) {
+      const limit = await this.checks.copyLimit(this.id(), row.card);
+      if (limit.total >= limit.limit) {
+        await this.dialogs.showCopyLimit(limit);
+        return;
+      }
+    }
     try {
       await this.decks.setCardCount(this.id(), row.slot, count);
     } catch (error: unknown) {

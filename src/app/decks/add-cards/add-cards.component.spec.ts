@@ -1,7 +1,7 @@
 import { signal } from '@angular/core';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { ModalController, type IonSearchbar } from '@ionic/angular';
-import type { Deck } from '@pokepaper/shared';
+import type { CatalogCard, Deck } from '@pokepaper/shared';
 import { vi } from 'vitest';
 import { makeContractCard } from '../../core/data/storage-engine.contract';
 import { CatalogBrowseService } from '../../core/services/catalog-browse.service';
@@ -9,7 +9,9 @@ import { CatalogLanguageService } from '../../core/services/catalog-language.ser
 import { CatalogSearchIndexService } from '../../core/services/catalog-search-index.service';
 import { CatalogSearchService } from '../../core/services/catalog-search.service';
 import { CollectionService } from '../../core/services/collection.service';
+import { DeckChecksService } from '../../core/services/deck-checks.service';
 import { DeckFullError, DeckService } from '../../core/services/deck.service';
+import type { DeckCheck, NameLimit } from '../../features/decks/deck-rules';
 import { LayoutService } from '../../core/services/layout.service';
 import { RecentSearchesService } from '../../core/services/recent-searches.service';
 import { DeckDialogsService } from '../../features/decks/deck-dialogs.service';
@@ -31,6 +33,12 @@ describe('AddCardsComponent', () => {
     loaded: signal(true),
     deck: vi.fn((id: string) => (id === current().id ? current() : undefined)),
     setCardCount: vi.fn(() => Promise.resolve()),
+  };
+  const checks = {
+    check: vi.fn((_id: string): DeckCheck | undefined => undefined),
+    copyLimit: vi.fn((_id: string, _card: CatalogCard): Promise<NameLimit> =>
+      Promise.resolve({ name: 'x', total: 0, limit: 4 })
+    ),
   };
   const dialogs = {
     showSaveError: vi.fn(() => Promise.resolve()),
@@ -57,6 +65,7 @@ describe('AddCardsComponent', () => {
       providers: [
         { provide: DeckService, useValue: decks },
         { provide: DeckDialogsService, useValue: dialogs },
+        { provide: DeckChecksService, useValue: checks },
         { provide: ModalController, useValue: modals },
         { provide: LayoutService, useValue: { wide } },
         {
@@ -114,16 +123,18 @@ describe('AddCardsComponent', () => {
     );
   });
 
-  it('adds through the picker the results use', () => {
+  it('adds through the picker the results use', async () => {
     const modal = create();
 
     modal.picker.pick(pikachu);
 
-    expect(decks.setCardCount).toHaveBeenCalledWith(
-      'deck-1',
-      { region: 'intl', cardId: 'sv01-063' },
-      1
-    );
+    await vi.waitFor(() => {
+      expect(decks.setCardCount).toHaveBeenCalledWith(
+        'deck-1',
+        { region: 'intl', cardId: 'sv01-063' },
+        1
+      );
+    });
   });
 
   it('closes when its deck is deleted (on another device)', () => {
@@ -138,21 +149,16 @@ describe('AddCardsComponent', () => {
     current.set(saved);
   });
 
-  it('adds nothing past the most copies a slot holds, saying so', async () => {
-    current.update((deck) => ({
-      ...deck,
-      cards: [{ region: 'intl', cardId: 'sv01-001', count: 99 }],
-    }));
+  it('adds nothing once the deck holds as many as it may, saying so', async () => {
+    const limit = { name: 'sv01-001', total: 4, limit: 4 };
+    checks.copyLimit.mockResolvedValueOnce(limit);
     const modal = create();
 
     await modal.add(pineco);
 
+    expect(checks.copyLimit).toHaveBeenCalledWith('deck-1', pineco);
     expect(decks.setCardCount).not.toHaveBeenCalled();
-    expect(dialogs.showCopyLimit).toHaveBeenCalled();
-    current.update((deck) => ({
-      ...deck,
-      cards: [{ region: 'intl', cardId: 'sv01-001', count: 2 }],
-    }));
+    expect(dialogs.showCopyLimit).toHaveBeenCalledWith(limit);
   });
 
   it('says why a card wasn’t added', async () => {

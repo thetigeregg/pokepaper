@@ -43,6 +43,37 @@
         </ion-item>
       </ion-list>
 
+      @if (check(); as check) {
+        <ion-list-header>
+          <ion-label>{{ rulesTitle() }}</ion-label>
+        </ion-list-header>
+        <ion-list data-testid="deck-rules">
+          @for (issue of check.issues; track issue.id) {
+            <ion-item lines="inset" class="rule" [attr.data-testid]="'rule-' + issue.id">
+              <ion-label class="ion-text-wrap">
+                <div class="media-row">
+                  <ion-icon name="warning-outline" color="warning" aria-hidden="true"></ion-icon>
+                  <div class="media-row-text">{{ issue.text }}</div>
+                </div>
+              </ion-label>
+            </ion-item>
+          } @empty {
+            <ion-item class="rule" data-testid="rules-ok">
+              <ion-label>
+                <div class="media-row">
+                  <ion-icon
+                    name="checkmark-circle-outline"
+                    color="success"
+                    aria-hidden="true"
+                  ></ion-icon>
+                  <div class="media-row-text">Follows {{ rulesTitle() }}</div>
+                </div>
+              </ion-label>
+            </ion-item>
+          }
+        </ion-list>
+      }
+
       @if (readFailed()) {
         <ion-list>
           <ion-item data-testid="cards-read-failed">
@@ -88,6 +119,16 @@
                     <div class="media-row-text">
                       {{ row.name }}
                       <p class="hint">{{ row.line }}</p>
+                      @for (note of notes(row); track note) {
+                        <p class="hint rule-note" data-testid="rule-note">
+                          <ion-icon
+                            name="warning-outline"
+                            color="warning"
+                            aria-hidden="true"
+                          ></ion-icon>
+                          {{ note }}
+                        </p>
+                      }
                     </div>
                   </div>
                 } @else {
@@ -95,6 +136,16 @@
                     <div class="media-row-text">
                       {{ row.name }}
                       <p class="hint">{{ row.line }}</p>
+                      @for (note of notes(row); track note) {
+                        <p class="hint rule-note" data-testid="rule-note">
+                          <ion-icon
+                            name="warning-outline"
+                            color="warning"
+                            aria-hidden="true"
+                          ></ion-icon>
+                          {{ note }}
+                        </p>
+                      }
                     </div>
                   </div>
                 }
@@ -113,7 +164,7 @@
                 </span>
                 <ion-button
                   fill="clear"
-                  [disabled]="row.slot.count >= maxCount"
+                  [disabled]="atLimit(row)"
                   (click)="setCount(row, row.slot.count + 1)"
                   [attr.aria-label]="'Add a copy of ' + row.name"
                   data-testid="add-copy"

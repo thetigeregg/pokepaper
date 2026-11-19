@@ -129,14 +129,20 @@ describe('DeckDialogsService', () => {
     expect(toasts.create).not.toHaveBeenCalled();
   });
 
-  it('says when a printing has as many copies as a deck holds', async () => {
-    await create().showCopyLimit();
+  it('says when the deck holds as many cards with a name, or of a printing, as it may', async () => {
+    const dialogs = create();
 
-    expect(toasts.create).toHaveBeenCalledWith(
+    await dialogs.showCopyLimit({ name: 'Iono', limit: 4 });
+    expect(toasts.create).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        message: 'A deck holds at most 99 copies of a printing.',
-        color: 'danger',
+        message: 'A deck holds at most 4 cards named Iono.',
+        color: 'warning',
       })
+    );
+
+    await dialogs.showCopyLimit({ name: 'Fire Energy', limit: 99 });
+    expect(toasts.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({ message: 'A deck holds at most 99 copies of a printing.' })
     );
   });
 });

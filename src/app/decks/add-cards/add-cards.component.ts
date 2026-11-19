@@ -9,9 +9,10 @@ import {
   IonToolbar,
   ModalController,
 } from '@ionic/angular';
-import { MAX_DECK_CARD_COUNT, deckCardKey, type CatalogCard } from '@pokepaper/shared';
+import { deckCardKey, type CatalogCard } from '@pokepaper/shared';
 import { catalogKey } from '../../core/data/storage-engine';
 import { CatalogSearchService } from '../../core/services/catalog-search.service';
+import { DeckChecksService } from '../../core/services/deck-checks.service';
 import { DeckService } from '../../core/services/deck.service';
 import { LayoutService } from '../../core/services/layout.service';
 import { CatalogSegmentComponent } from '../../features/cards/catalog-segment.component';
@@ -89,6 +90,7 @@ export class AddCardsComponent {
   readonly layout = inject(LayoutService);
   private readonly decks = inject(DeckService);
   private readonly dialogs = inject(DeckDialogsService);
+  private readonly checks = inject(DeckChecksService);
   private readonly modals = inject(ModalController);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
@@ -118,13 +120,17 @@ export class AddCardsComponent {
     );
   }
 
-  /** Adds a copy of `card` (none past `MAX_DECK_CARD_COUNT`, saying so). */
+  /**
+   * Adds a copy of `card`, unless the deck holds as many as it may (4 with
+   * its name, or 99 of a basic Energy printing; docs/decks.md), saying so.
+   */
   async add(card: CatalogCard): Promise<void> {
-    const count = this.count(card);
-    if (count >= MAX_DECK_CARD_COUNT) {
-      await this.dialogs.showCopyLimit();
+    const limit = await this.checks.copyLimit(this.deckIdProp, card);
+    if (limit.total >= limit.limit) {
+      await this.dialogs.showCopyLimit(limit);
       return;
     }
+    const count = this.count(card);
     try {
       await this.decks.setCardCount(
         this.deckIdProp,
