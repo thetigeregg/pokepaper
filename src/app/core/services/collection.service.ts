@@ -122,6 +122,18 @@ export class CollectionService {
     return this.cardLanguages().get(cardKey)?.get(language) ?? 0;
   }
 
+  /**
+   * All copies of a card, in every language and variant, by catalog key
+   * (decks count any language: docs/decks.md → Owned vs. needed).
+   */
+  copiesOfCard(cardKey: string): number {
+    let total = 0;
+    for (const quantity of this.cardLanguages().get(cardKey)?.values() ?? []) {
+      total += quantity;
+    }
+    return total;
+  }
+
   /** A card's copies in every language but `language`, in display order. */
   otherLanguages(
     region: CatalogRegion,

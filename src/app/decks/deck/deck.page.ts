@@ -6,6 +6,7 @@ import {
   effect,
   inject,
   input,
+  linkedSignal,
   signal,
   untracked,
 } from '@angular/core';
@@ -26,6 +27,7 @@ import {
   IonSelectOption,
   IonText,
   IonTitle,
+  IonToggle,
   IonToolbar,
   ModalController,
   NavController,
@@ -58,6 +60,7 @@ import { StorageEngineFactory } from '../../core/data/storage-engine.factory';
 import { CatalogLanguageService } from '../../core/services/catalog-language.service';
 import { CatalogSyncService } from '../../core/services/catalog-sync.service';
 import { DeckChecksService } from '../../features/decks/deck-checks.service';
+import type { DeckOwned } from '../../features/decks/deck-owned';
 import { DeckService } from '../../core/services/deck.service';
 import { LayoutService } from '../../core/services/layout.service';
 import { CardDetailComponent } from '../../features/cards/card-detail.component';
@@ -144,6 +147,15 @@ function isCatalogRegion(value: string): value is CatalogRegion {
       .rule ion-icon {
         flex-shrink: 0;
       }
+      /* Owned vs. needed under the card's set and number. */
+      .owned-line {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .owned-line.short {
+        color: var(--ion-color-danger);
+      }
       .count {
         min-width: 2.5ch;
         font-variant-numeric: tabular-nums;
@@ -176,6 +188,7 @@ function isCatalogRegion(value: string): value is CatalogRegion {
     IonSelect,
     IonSelectOption,
     IonText,
+    IonToggle,
     CardImageComponent,
     HeaderActionsComponent,
   ],
@@ -210,6 +223,47 @@ export class DeckPage {
   });
   /** The deck checked against its format, once its cards have been looked up. */
   readonly check = computed(() => this.checks.check(this.id()));
+  /** What the collection covers of the deck, once known (docs/decks.md → Owned vs. needed). */
+  /**
+   * The last known result: while a card just added is looked up, the
+   * service has none, and the page keeps showing the previous one.
+   */
+  readonly owned = linkedSignal<DeckOwned | undefined, DeckOwned | undefined>({
+    source: () => this.checks.ownedOf(this.id()),
+    computation: (next, previous) => next ?? previous?.value,
+  });
+  /** Copies still needed, or that can't be checked (not on this device). */
+  readonly toFind = computed(() => {
+    const owned = this.owned();
+    return owned ? owned.missing + owned.unknown : 0;
+  });
+  /** Show only the cards still needed (a shopping list). */
+  readonly missingOnly = signal(false);
+  /**
+   * Rows shown in missing-only mode besides those still short: the ones
+   * short when it was turned on, so a row doesn't vanish mid-tap.
+   */
+  private readonly listed = signal<ReadonlySet<string>>(new Set());
+  /**
+   * The sections shown: every card, or (missing only) the cards still
+   * needed or not on this device, counted by copies still needed.
+   */
+  readonly shownSections = computed<DeckSection[]>(() => {
+    const owned = this.owned();
+    if (!this.missingOnly() || !owned) {
+      return this.sections();
+    }
+    const listed = this.listed();
+    const toFind = (row: DeckRow) => {
+      const slot = owned.slots.get(row.key);
+      return slot ? slot.missing : row.slot.count; // Not on this device: can't tell.
+    };
+    return this.sections().flatMap((section) => {
+      const rows = section.rows.filter((row) => toFind(row) > 0 || listed.has(row.key));
+      const count = rows.reduce((total, row) => total + toFind(row), 0);
+      return rows.length > 0 ? [{ ...section, rows, count }] : [];
+    });
+  });
   readonly rulesTitle = computed(() => `${DECK_FORMAT_LABELS[this.format()]} rules`);
 
   /**
@@ -338,6 +392,38 @@ export class DeckPage {
     inject(CatalogSyncService)
       .changed$.pipe(debounceTime(300), takeUntilDestroyed(inject(DestroyRef)))
       .subscribe(() => void this.loadCards());
+  }
+
+  /**
+   * The row's owned line: "Own 2 of 3" when short, "Owned" when covered,
+   * noting copies from other printings. Null until known.
+   */
+  ownedLine(row: DeckRow): { text: string; short: boolean } | null {
+    const slot = this.owned()?.slots.get(row.key);
+    if (!slot) {
+      return null;
+    }
+    const base =
+      slot.missing > 0 ? `Own ${String(slot.owned)} of ${String(row.slot.count)}` : 'Owned';
+    const other = slot.fromOther > 0 ? ` · ${String(slot.fromOther)} from another printing` : '';
+    return { text: base + other, short: slot.missing > 0 };
+  }
+
+  /** Turns missing-only on or off, listing what's still needed as it turns on. */
+  showMissingOnly(on: boolean): void {
+    const owned = this.owned();
+    this.listed.set(
+      new Set(
+        on && owned
+          ? this.sections().flatMap((section) =>
+              section.rows
+                .filter((row) => (owned.slots.get(row.key)?.missing ?? row.slot.count) > 0)
+                .map((row) => row.key)
+            )
+          : []
+      )
+    );
+    this.missingOnly.set(on);
   }
 
   /** The notes for a card's row: the rules it breaks. */

@@ -126,6 +126,20 @@ describe('CollectionService', () => {
     expect(service.cardTotal('asia', 'sv01-001', 'en')).toBe(0);
   });
 
+  it('totals all of a card’s copies, across languages and variants', async () => {
+    seed(
+      { ...target(), quantity: 1 },
+      { ...target({ variant: 'reverse' }), quantity: 2 },
+      { ...target({ language: 'de' }), quantity: 4 }
+    );
+    const service = await create();
+
+    await vi.waitFor(() => {
+      expect(service.copiesOfCard('intl:sv01-001')).toBe(7);
+    });
+    expect(service.copiesOfCard('intl:sv01-002')).toBe(0);
+  });
+
   it('lists copies in other languages, in display order', async () => {
     seed(
       { ...target(), quantity: 1 },

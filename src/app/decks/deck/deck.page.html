@@ -41,6 +41,21 @@
           <ion-label>Cards</ion-label>
           <ion-note slot="end" data-testid="deck-total">{{ total() }}</ion-note>
         </ion-item>
+        @if (owned(); as owned) {
+          <ion-item data-testid="missing-only">
+            <ion-toggle
+              [checked]="missingOnly()"
+              [disabled]="toFind() === 0 && !missingOnly()"
+              (ionChange)="showMissingOnly($event.detail.checked)"
+            >
+              @if (toFind() === 0) {
+                You own every card
+              } @else {
+                Show only missing cards ({{ toFind() }})
+              }
+            </ion-toggle>
+          </ion-item>
+        }
       </ion-list>
 
       @if (check(); as check) {
@@ -88,9 +103,12 @@
         </ion-list>
       }
 
-      @for (section of sections(); track section.id) {
+      @for (section of shownSections(); track section.id) {
         <ion-list-header>
-          <ion-label>{{ section.title }} · {{ section.count }}</ion-label>
+          <ion-label>
+            {{ section.title }} · {{ section.count
+            }}{{ missingOnly() && owned() ? ' missing' : '' }}
+          </ion-label>
         </ion-list-header>
         <!-- Two columns on desktop (global list-grid). -->
         <ion-list class="list-grid" [attr.data-testid]="'section-' + section.id">
@@ -119,6 +137,22 @@
                     <div class="media-row-text">
                       {{ row.name }}
                       <p class="hint">{{ row.line }}</p>
+                      @if (ownedLine(row); as owned) {
+                        <p
+                          class="hint owned-line"
+                          [class.short]="owned.short"
+                          data-testid="owned-line"
+                        >
+                          @if (!owned.short) {
+                            <ion-icon
+                              name="checkmark-circle-outline"
+                              color="success"
+                              aria-hidden="true"
+                            ></ion-icon>
+                          }
+                          {{ owned.text }}
+                        </p>
+                      }
                       @for (note of notes(row); track note) {
                         <p class="hint rule-note" data-testid="rule-note">
                           <ion-icon
@@ -136,6 +170,22 @@
                     <div class="media-row-text">
                       {{ row.name }}
                       <p class="hint">{{ row.line }}</p>
+                      @if (ownedLine(row); as owned) {
+                        <p
+                          class="hint owned-line"
+                          [class.short]="owned.short"
+                          data-testid="owned-line"
+                        >
+                          @if (!owned.short) {
+                            <ion-icon
+                              name="checkmark-circle-outline"
+                              color="success"
+                              aria-hidden="true"
+                            ></ion-icon>
+                          }
+                          {{ owned.text }}
+                        </p>
+                      }
                       @for (note of notes(row); track note) {
                         <p class="hint rule-note" data-testid="rule-note">
                           <ion-icon
@@ -192,6 +242,15 @@
               data-testid="add-cards-row"
             >
               <ion-label color="primary">Add cards</ion-label>
+            </ion-item>
+          </ion-list>
+        } @else if (missingOnly() && toFind() === 0) {
+          <ion-list>
+            <ion-item data-testid="none-missing">
+              <ion-label>
+                You own every card in this deck
+                <p class="hint">Copies of identical printings count, in any language</p>
+              </ion-label>
             </ion-item>
           </ion-list>
         }

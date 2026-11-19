@@ -5,6 +5,7 @@ import type { Deck } from '@pokepaper/shared';
 import { vi } from 'vitest';
 import { DeckChecksService } from '../features/decks/deck-checks.service';
 import { DeckService } from '../core/services/deck.service';
+import type { DeckOwned } from '../features/decks/deck-owned';
 import type { DeckCheck } from '../features/decks/deck-rules';
 import { DeckDialogsService } from '../features/decks/deck-dialogs.service';
 import { DecksPage } from './decks.page';
@@ -32,7 +33,11 @@ describe('DecksPage', () => {
   };
   const nav = { navigateForward: vi.fn() };
   const checked = signal<Record<string, DeckCheck>>({});
-  const checks = { check: (id: string): DeckCheck | undefined => checked()[id] };
+  const owned = signal<Record<string, DeckOwned>>({});
+  const checks = {
+    check: (id: string): DeckCheck | undefined => checked()[id],
+    ownedOf: (id: string): DeckOwned | undefined => owned()[id],
+  };
   let fixture: ComponentFixture<DecksPage>;
 
   function create(): DecksPage {
@@ -48,6 +53,7 @@ describe('DecksPage', () => {
     vi.clearAllMocks();
     list.set([]);
     checked.set({});
+    owned.set({});
     decks.loaded.set(true);
     TestBed.configureTestingModule({
       providers: [
@@ -98,6 +104,28 @@ describe('DecksPage', () => {
     expect(query('[data-testid="deck-a"] [data-testid="deck-issues"]')).not.toBeNull();
     expect(query('[data-testid="deck-c"] .hint')?.textContent.trim()).toBe('Standard · 0 cards');
     expect(query('[data-testid="deck-c"] [data-testid="deck-issues"]')).toBeNull();
+  });
+
+  it('counts the copies the collection lacks, before the issues', () => {
+    list.set([deck('a', 'Charizard ex'), deck('b', 'Covered')]);
+    owned.set({
+      a: { slots: new Map(), missing: 18, unknown: 0 },
+      b: { slots: new Map(), missing: 0, unknown: 0 },
+    });
+    checked.set({
+      a: {
+        format: 'standard',
+        issues: [{ id: 'size', text: 'x' }],
+        cardNotes: new Map(),
+        limits: new Map(),
+      },
+    });
+    create();
+
+    expect(query('[data-testid="deck-a"] .hint')?.textContent.trim()).toBe(
+      'Standard · 0 cards · 18 missing · 1 issue'
+    );
+    expect(query('[data-testid="deck-b"] .hint')?.textContent.trim()).toBe('Standard · 0 cards');
   });
 
   it('offers a New deck row when there are none', () => {

@@ -7,6 +7,7 @@ import { makeContractCard, makeContractPack } from '../../core/data/storage-engi
 import { StorageEngineFactory } from '../../core/data/storage-engine.factory';
 import type { CatalogSearchRow } from '../../core/data/storage-engine';
 import { CatalogSyncService } from '../../core/services/catalog-sync.service';
+import { CollectionService } from '../../core/services/collection.service';
 import { DeckChecksService } from './deck-checks.service';
 import { DeckService } from '../../core/services/deck.service';
 
@@ -107,6 +108,12 @@ describe('DeckChecksService', () => {
     deck: (id: string) => list().find((deck) => deck.id === id),
   };
   const changed = new Subject<void>();
+  /** Copies owned by catalog key, any language. */
+  const owned = signal<Record<string, number>>({});
+  const collection = {
+    loaded: signal(true),
+    copiesOfCard: (key: string) => owned()[key] ?? 0,
+  };
 
   const deckOf = (id: string, slots: [CatalogCard, number][], format = 'standard'): Deck => ({
     id,
@@ -123,6 +130,7 @@ describe('DeckChecksService', () => {
         { provide: StorageEngineFactory, useValue: { getEngine: () => engine } },
         { provide: DeckService, useValue: decks },
         { provide: CatalogSyncService, useValue: { changed$: changed.asObservable() } },
+        { provide: CollectionService, useValue: collection },
       ],
     });
     const service = TestBed.inject(DeckChecksService);
@@ -140,6 +148,8 @@ describe('DeckChecksService', () => {
       stored.set(`intl:${entry.id}`, entry);
     }
     list.set([]);
+    owned.set({});
+    collection.loaded.set(true);
   });
 
   it('checks a deck once its cards have been looked up', async () => {
@@ -155,8 +165,8 @@ describe('DeckChecksService', () => {
     await vi.waitFor(() => {
       expect(service.check('a')).toMatchObject({ format: 'standard', issues: [] });
     });
-    // A modern deck needs no reprint search.
-    expect(engine.listCatalogSearchRows).not.toHaveBeenCalled();
+    // Identical printings are searched for every card (owned vs. needed), with one name index.
+    expect(engine.listCatalogSearchRows).toHaveBeenCalledTimes(1);
   });
 
   it('counts an older printing as legal when an identical reprint is (the reprint rule)', async () => {
@@ -255,6 +265,67 @@ describe('DeckChecksService', () => {
       limit: 99,
     });
     await expect(service.copyLimit('missing', pikachu)).resolves.toMatchObject({ total: 0 });
+  });
+
+  it('covers deck cards with owned copies of identical printings, following the collection', async () => {
+    list.set([
+      deckOf('a', [
+        [oldBall, 4],
+        [oddBall, 1],
+      ]),
+    ]);
+    owned.set({ 'intl:me01-131': 3 });
+    const service = create();
+
+    await vi.waitFor(() => {
+      expect(service.ownedOf('a')?.slots.get('intl:sv01-196')).toEqual({
+        owned: 3,
+        fromOther: 3,
+        missing: 1,
+      });
+    });
+    expect(service.ownedOf('a')?.missing).toBe(2); // 1 Ultra Ball, 1 Rare Ball.
+
+    owned.set({ 'intl:me01-131': 3, 'intl:sv02-9': 1 });
+    expect(service.ownedOf('a')?.missing).toBe(1);
+  });
+
+  it('knows nothing owned until the collection has loaded', async () => {
+    collection.loaded.set(false);
+    list.set([deckOf('a', [[pikachu, 1]])]);
+    const service = create();
+    await vi.waitFor(() => {
+      expect(service.check('a')).toBeDefined();
+    });
+
+    expect(service.ownedOf('a')).toBeUndefined();
+    collection.loaded.set(true);
+    expect(service.ownedOf('a')).toEqual({
+      slots: new Map([['intl:sv01-1', { owned: 0, fromOther: 0, missing: 1 }]]),
+      missing: 1,
+      unknown: 0,
+    });
+  });
+
+  it('checks cards by their own printing when the reprint search fails', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    engine.listCatalogSearchRows.mockRejectedValueOnce(new Error('broken'));
+    list.set([
+      deckOf('a', [
+        [pikachu, 4],
+        [oldBall, 1],
+        [energy, 55],
+      ]),
+    ]);
+    owned.set({ 'intl:me01-131': 1 });
+    const service = create();
+
+    await vi.waitFor(() => {
+      expect(issueIds(service, 'a')).toEqual(['legal']); // The G-mark ball, without its reprint.
+    });
+    expect(service.ownedOf('a')?.slots.get('intl:sv01-196')).toMatchObject({ owned: 0 });
+    expect(error).toHaveBeenCalledWith('deck.reprints_failed', expect.any(Error));
+    error.mockRestore();
   });
 
   it('gives the copy limit without waiting for legality (reprint searches)', async () => {

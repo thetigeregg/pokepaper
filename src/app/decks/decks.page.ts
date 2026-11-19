@@ -55,12 +55,21 @@ export class DecksPage {
     addIcons({ addOutline, warningOutline });
   }
 
-  /** "Standard · 47 cards", plus "· 3 issues" once checked and it breaks its rules. */
+  /**
+   * "Standard · 47 cards", plus "· 18 missing" (copies the collection lacks)
+   * and "· 3 issues" (rules it breaks), once known.
+   */
   summary(deck: Deck): string {
+    const parts = [deckSummary(deck)];
+    const missing = this.checks.ownedOf(deck.id)?.missing ?? 0;
+    if (missing > 0) {
+      parts.push(`${String(missing)} missing`);
+    }
     const count = this.issues(deck);
-    return count === 0
-      ? deckSummary(deck)
-      : `${deckSummary(deck)} · ${String(count)} ${count === 1 ? 'issue' : 'issues'}`;
+    if (count > 0) {
+      parts.push(`${String(count)} ${count === 1 ? 'issue' : 'issues'}`);
+    }
+    return parts.join(' · ');
   }
 
   /** Rules the deck breaks (0 until it has been checked). */
