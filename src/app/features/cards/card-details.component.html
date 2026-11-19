@@ -162,7 +162,7 @@
     @if (card().rarity) {
       <ion-item>
         <ion-label>Rarity</ion-label>
-        <ion-note slot="end" data-testid="detail-rarity">
+        <ion-note slot="end" class="icon-text" data-testid="detail-rarity">
           <app-rarity-icon
             [rarity]="card().rarity"
             [region]="set().region"
