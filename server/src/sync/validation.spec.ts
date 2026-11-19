@@ -1,4 +1,4 @@
-import type { CollectionEntry } from '@pokepaper/shared';
+import type { CollectionEntry, Deck } from '@pokepaper/shared';
 import { settingsOp } from '../test-helpers.js';
 import { validateOperation, type RawOperation } from './validation.js';
 
@@ -60,4 +60,54 @@ describe('validateOperation: collectionEntry', () => {
       );
     }
   );
+});
+
+const deck: Deck = {
+  id: '6f1c2c1e-6c1b-4a8e-9a65-0d3b8f7c2e11',
+  name: 'Charizard ex',
+  format: 'standard',
+  cards: [{ region: 'intl', cardId: 'sv03-125', count: 3 }],
+  createdAt: '2026-11-19T10:00:00.000Z',
+  updatedAt: '2026-11-19T10:05:00.000Z',
+};
+
+function deckOp(overrides: Partial<RawOperation> = {}): RawOperation {
+  return {
+    ...settingsOp(),
+    entityType: 'deck',
+    entityId: deck.id,
+    payload: deck,
+    ...overrides,
+  };
+}
+
+describe('validateOperation: deck', () => {
+  it('accepts an upsert whose entity ID is the deck ID', () => {
+    expect(validateOperation(deckOp())).toMatchObject({
+      ok: true,
+      op: { entityType: 'deck', entityId: deck.id, payload: deck },
+    });
+  });
+
+  it('accepts a delete by entity ID alone, dropping any payload', () => {
+    expect(
+      validateOperation(deckOp({ operation: 'delete', payload: { stray: true } }))
+    ).toMatchObject({ ok: true, op: { operation: 'delete', payload: null } });
+  });
+
+  it('rejects an upsert whose entity ID names another deck', () => {
+    expect(message(deckOp({ entityId: 'another-deck' }))).toBe('Invalid deck payload');
+  });
+
+  it('rejects an invalid payload', () => {
+    expect(message(deckOp({ payload: { ...deck, cards: [{ ...deck.cards[0], count: 0 }] } }))).toBe(
+      'Invalid deck payload'
+    );
+  });
+
+  it('rejects an entity ID with a colon, for deletes too', () => {
+    expect(message(deckOp({ entityId: 'a:b', operation: 'delete', payload: null }))).toBe(
+      'Invalid entityId "a:b" for deck'
+    );
+  });
 });

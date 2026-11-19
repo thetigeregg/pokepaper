@@ -2,6 +2,8 @@ import {
   collectionEntryId,
   isCollectionEntry,
   isCollectionEntryId,
+  isDeck,
+  isDeckId,
   isSyncEntityType,
   isUserSettings,
   SETTINGS_ENTITY_ID,
@@ -35,6 +37,10 @@ const ENTITY_RULES: Record<SyncEntityType, EntityRules> = {
     validEntityId: isCollectionEntryId,
     validPayload: (payload, entityId) =>
       isCollectionEntry(payload) && collectionEntryId(payload) === entityId,
+  },
+  deck: {
+    validEntityId: isDeckId,
+    validPayload: (payload, entityId) => isDeck(payload) && payload.id === entityId,
   },
 };
 

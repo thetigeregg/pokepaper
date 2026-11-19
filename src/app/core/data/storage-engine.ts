@@ -7,6 +7,7 @@ import type {
   CatalogSet,
   CatalogSetPack,
   CollectionEntry,
+  Deck,
   SyncEntityType,
   SyncOperation,
   UserSettings,
@@ -31,7 +32,8 @@ export type StorageScope =
   | 'catalogCardSearch'
   | 'imagePins'
   | 'downloadedSets'
-  | 'collection';
+  | 'collection'
+  | 'decks';
 
 /** Catalog rows are keyed `region:id` (IDs repeat across regions; docs/catalog.md). */
 export function catalogKey(region: CatalogRegion, id: string): string {
@@ -234,6 +236,12 @@ export interface StorageEngine {
   putCollectionEntry(entry: CollectionEntry): Promise<void>;
   deleteCollectionEntry(key: string): Promise<void>;
   listCollectionEntries(): Promise<CollectionEntry[]>;
+
+  // Decks (docs/decks.md), keyed by `Deck.id`
+  /** Inserts or replaces the deck with its ID. */
+  putDeck(deck: Deck): Promise<void>;
+  deleteDeck(id: string): Promise<void>;
+  listDecks(): Promise<Deck[]>;
 
   // Outbox
   getOutboxEntry(opId: string): Promise<OutboxEntry | undefined>;

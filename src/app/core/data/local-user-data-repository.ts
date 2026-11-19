@@ -2,7 +2,10 @@ import { Injectable, inject } from '@angular/core';
 import {
   collectionEntry,
   collectionEntryId,
+  deck,
   DEFAULT_SETTINGS,
+  isDeck,
+  isDeckId,
   isCollectionQuantity,
   isCollectionTarget,
   MAX_COLLECTION_QUANTITY,
@@ -10,6 +13,7 @@ import {
   type CollectionChange,
   type CollectionEntry,
   type CollectionTarget,
+  type Deck,
   type UserSettings,
 } from '@pokepaper/shared';
 import { OutboxEntry, StorageEngine, StorageScope } from './storage-engine';
@@ -22,8 +26,7 @@ import { SYNC_OUTBOX_WRITER, SyncOutboxWriter } from './sync-outbox-writer';
  * one transaction, then fires a best-effort sync attempt. Reads go straight
  * to the local engine (instant, offline-capable).
  *
- * Ported from go-gather's repository of the same name. Deck writes will
- * follow the same `withOutboxTransaction` + `queueOperation` pattern.
+ * Ported from go-gather's repository of the same name.
  */
 @Injectable({ providedIn: 'root' })
 export class LocalUserDataRepository {
@@ -120,6 +123,49 @@ export class LocalUserDataRepository {
     });
   }
 
+  listDecks(): Promise<Deck[]> {
+    return this.engine.listDecks();
+  }
+
+  /**
+   * Stores `value` whole, replacing any saved deck with its ID, and queues it
+   * for sync. Rejects a deck the server would reject, so nothing unsyncable
+   * is stored. Only deck fields are kept.
+   *
+   * The sync timestamp is never earlier than the deck's `updatedAt`: the
+   * server keeps the write with the latest timestamp, and `updatedAt` only
+   * moves forward even if the clock goes back (`DeckService`).
+   */
+  async saveDeck(value: Deck): Promise<void> {
+    if (!isDeck(value)) {
+      throw new TypeError('Invalid deck');
+    }
+    const saved = deck(value);
+    const clientTimestamp = notBefore(saved.updatedAt);
+
+    await this.withOutboxTransaction(['decks'], async () => {
+      await this.engine.putDeck(saved);
+      await this.queueOperation('deck', saved.id, 'upsert', saved, clientTimestamp);
+    });
+  }
+
+  /**
+   * Deletes a deck, locally and on the server. `lastUpdatedAt` is the deck's
+   * `updatedAt` as last saved: the delete's sync timestamp is never earlier,
+   * so it wins over that save on the server (see `saveDeck`).
+   */
+  async deleteDeck(id: string, lastUpdatedAt?: string): Promise<void> {
+    if (!isDeckId(id)) {
+      throw new TypeError('Invalid deck ID');
+    }
+    const clientTimestamp = notBefore(lastUpdatedAt);
+
+    await this.withOutboxTransaction(['decks'], async () => {
+      await this.engine.deleteDeck(id);
+      await this.queueOperation('deck', id, 'delete', null, clientTimestamp);
+    });
+  }
+
   private withOutboxTransaction<T>(
     scope: readonly StorageScope[],
     action: () => Promise<T>
@@ -183,4 +229,10 @@ export class LocalUserDataRepository {
       // Best-effort: sync errors are handled inside SyncService.
     }
   }
+}
+
+/** Now as an ISO timestamp, or `timestamp` if that's later (a clock that went back). */
+function notBefore(timestamp: string | undefined): string {
+  const now = new Date().toISOString();
+  return timestamp !== undefined && Date.parse(timestamp) > Date.parse(now) ? timestamp : now;
 }

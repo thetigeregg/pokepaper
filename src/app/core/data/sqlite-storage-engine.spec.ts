@@ -2,7 +2,8 @@ import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
 import initSqlJs, { Database, SqlJsStatic, type SqlValue } from 'sql.js';
 import { vi } from 'vitest';
-import { SQLITE_UPGRADE_STATEMENTS } from './sqlite-connection';
+import { AppDb } from './app-db';
+import { SQLITE_SCHEMA_VERSION, SQLITE_UPGRADE_STATEMENTS } from './sqlite-connection';
 import type { SqliteConnection, SqliteRunResult, SqliteStatement } from './sqlite-connection';
 import { SqliteStorageEngine } from './sqlite-storage-engine';
 import { describeStorageEngineContract } from './storage-engine.contract';
@@ -134,4 +135,20 @@ describeStorageEngineContract('SqliteStorageEngine', async () => {
     engine,
     cleanup: () => connection.close(),
   };
+});
+
+describe('SQLite schema version', () => {
+  // The plugin opens the database at SQLITE_SCHEMA_VERSION and runs only the
+  // upgrades up to it, so an entry added without a bump never runs on iOS.
+  // The in-process connection above runs every entry, so the contract can't
+  // catch that.
+  it('is the last upgrade entry, with entries numbered 1, 2, 3, …', () => {
+    expect(SQLITE_UPGRADE_STATEMENTS.map((upgrade) => upgrade.toVersion)).toEqual(
+      Array.from({ length: SQLITE_SCHEMA_VERSION }, (_, i) => i + 1)
+    );
+  });
+
+  it('matches the Dexie schema version', () => {
+    expect(new AppDb().verno).toBe(SQLITE_SCHEMA_VERSION);
+  });
 });

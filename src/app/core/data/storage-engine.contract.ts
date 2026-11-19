@@ -5,6 +5,7 @@ import type {
   CatalogSeries,
   CatalogSetPack,
   CollectionEntry,
+  Deck,
   UserSettings,
 } from '@pokepaper/shared';
 import { DEFAULT_SETTINGS, SETTINGS_ENTITY_ID } from '@pokepaper/shared';
@@ -53,6 +54,21 @@ export function makeContractOutboxEntry(overrides: Partial<OutboxEntry> = {}): O
     createdAt: '2026-01-01T00:00:00.000Z',
     attemptCount: 0,
     lastError: null,
+    ...overrides,
+  };
+}
+
+export function makeContractDeck(overrides: Partial<Deck> = {}): Deck {
+  return {
+    id: 'deck-1',
+    name: 'Charizard ex',
+    format: 'standard',
+    cards: [
+      { region: 'intl', cardId: 'sv03-125', count: 3 },
+      { region: 'intl', cardId: 'sve-002', count: 9 },
+    ],
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
   };
 }
@@ -383,6 +399,54 @@ export function describeStorageEngineContract(
         ).rejects.toThrow('boom');
 
         expect(await engine.listCollectionEntries()).toEqual([]);
+        expect(await engine.listOutboxOrderedByCreatedAt()).toEqual([]);
+      });
+    });
+
+    describe('decks', () => {
+      it('is empty before any deck is saved', async () => {
+        expect(await engine.listDecks()).toEqual([]);
+      });
+
+      it('keys decks by ID, replacing a saved deck whole', async () => {
+        const first = makeContractDeck();
+        const second = makeContractDeck({ id: 'deck-2', name: 'Lugia VSTAR', cards: [] });
+        const edited = makeContractDeck({
+          name: 'Zard',
+          format: 'expanded',
+          cards: [{ region: 'intl', cardId: 'sv03-125', count: 4 }],
+          updatedAt: '2026-01-02T00:00:00.000Z',
+        });
+
+        await engine.putDeck(first);
+        await engine.putDeck(second);
+        await engine.putDeck(edited);
+
+        const listed = await engine.listDecks();
+        expect(listed).toHaveLength(2);
+        expect(listed).toEqual(expect.arrayContaining([edited, second]));
+      });
+
+      it('deletes a deck by ID, leaving the others', async () => {
+        await engine.putDeck(makeContractDeck());
+        await engine.putDeck(makeContractDeck({ id: 'deck-2' }));
+
+        await engine.deleteDeck('deck-1');
+        await engine.deleteDeck('unknown');
+
+        expect(await engine.listDecks()).toEqual([makeContractDeck({ id: 'deck-2' })]);
+      });
+
+      it('rolls a deck back with the outbox write it shared a transaction with', async () => {
+        await expect(
+          engine.runInTransaction(['decks', 'outbox'], async () => {
+            await engine.putDeck(makeContractDeck());
+            await engine.putOutboxEntry(makeContractOutboxEntry());
+            throw new Error('boom');
+          })
+        ).rejects.toThrow('boom');
+
+        expect(await engine.listDecks()).toEqual([]);
         expect(await engine.listOutboxOrderedByCreatedAt()).toEqual([]);
       });
     });

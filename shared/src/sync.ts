@@ -11,7 +11,7 @@
  * the same. Conflict rules and server requirements: docs/sync.md.
  */
 /** Every syncable entity type. The server rejects operations for anything else. */
-export const SYNC_ENTITY_TYPES = ['settings', 'collectionEntry'] as const;
+export const SYNC_ENTITY_TYPES = ['settings', 'collectionEntry', 'deck'] as const;
 
 export type SyncEntityType = (typeof SYNC_ENTITY_TYPES)[number];
 

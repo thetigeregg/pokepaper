@@ -6,10 +6,18 @@ import type {
   CatalogSeries,
   CatalogSetPack,
   CollectionEntry,
+  Deck,
   UserSettings,
 } from '@pokepaper/shared';
 import { collectionEntryId } from '@pokepaper/shared';
-import { AppDb, CatalogCardRow, CatalogSeriesRow, CollectionRow, SettingsRow } from './app-db';
+import {
+  AppDb,
+  CatalogCardRow,
+  CatalogSeriesRow,
+  CollectionRow,
+  DeckRow,
+  SettingsRow,
+} from './app-db';
 import { catalogSearchRow } from './catalog-search-row';
 import {
   catalogKey,
@@ -50,6 +58,7 @@ const SCOPE_TABLE_NAMES: Record<StorageScope, string> = {
   imagePins: 'imagePins',
   downloadedSets: 'downloadedSets',
   collection: 'collection',
+  decks: 'decks',
 };
 
 const SETTINGS_ROW_ID = 1;
@@ -357,6 +366,18 @@ export class DexieStorageEngine implements StorageEngine {
     return (await this.collectionTable.toArray()).map((row) => row.entry);
   }
 
+  async putDeck(deck: Deck): Promise<void> {
+    await this.decksTable.put({ key: deck.id, deck });
+  }
+
+  deleteDeck(id: string): Promise<void> {
+    return this.decksTable.delete(id);
+  }
+
+  async listDecks(): Promise<Deck[]> {
+    return (await this.decksTable.toArray()).map((row) => row.deck);
+  }
+
   getOutboxEntry(opId: string): Promise<OutboxEntry | undefined> {
     return this.outboxTable.get(opId);
   }
@@ -419,6 +440,10 @@ export class DexieStorageEngine implements StorageEngine {
 
   private get collectionTable(): Table<CollectionRow, string> {
     return this.resolveTable('collection', this.db.collection);
+  }
+
+  private get decksTable(): Table<DeckRow, string> {
+    return this.resolveTable('decks', this.db.decks);
   }
 
   /**

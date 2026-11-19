@@ -1,6 +1,12 @@
 import Dexie, { Table } from 'dexie';
 import { Injectable } from '@angular/core';
-import type { CatalogCard, CatalogSeries, CollectionEntry, UserSettings } from '@pokepaper/shared';
+import type {
+  CatalogCard,
+  CatalogSeries,
+  CollectionEntry,
+  Deck,
+  UserSettings,
+} from '@pokepaper/shared';
 import type {
   CatalogSearchRow,
   DownloadedSet,
@@ -32,6 +38,12 @@ export interface CollectionRow {
   entry: CollectionEntry;
 }
 
+/** A deck, keyed by its ID. */
+export interface DeckRow {
+  key: string;
+  deck: Deck;
+}
+
 /**
  * IndexedDB schema for the web storage engine. Add a new `this.version(n)`
  * block (never edit an existing one) when a feature adds or re-indexes a
@@ -50,6 +62,7 @@ export class AppDb extends Dexie {
   imagePins!: Table<ImagePin, [string, string]>;
   downloadedSets!: Table<DownloadedSet, string>;
   collection!: Table<CollectionRow, string>;
+  decks!: Table<DeckRow, string>;
 
   constructor() {
     super('pokepaper');
@@ -84,6 +97,11 @@ export class AppDb extends Dexie {
     // Collection entries (docs/collection.md). Matches SQLite schema version 5.
     this.version(5).stores({
       collection: 'key',
+    });
+
+    // Decks (docs/decks.md). Matches SQLite schema version 6.
+    this.version(6).stores({
+      decks: 'key',
     });
   }
 }
