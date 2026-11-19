@@ -26,6 +26,10 @@ export const routes: Routes = [
         loadComponent: () => import('../decks/decks.page').then((m) => m.DecksPage),
       },
       {
+        path: 'decks/deck/:id',
+        loadComponent: () => import('../decks/deck/deck.page').then((m) => m.DeckPage),
+      },
+      {
         path: 'settings',
         loadComponent: () => import('../settings/settings.page').then((m) => m.SettingsPage),
       },

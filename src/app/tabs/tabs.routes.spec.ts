@@ -18,6 +18,7 @@ describe('tab routes', () => {
       'cards/set/:region/:setId',
       'collection',
       'decks',
+      'decks/deck/:id',
       'settings',
       'settings/downloads',
       '',

@@ -35,6 +35,15 @@ export class DeckChangeDroppedError extends Error {
   }
 }
 
+/** Rejects adding a printing to a deck that already has `MAX_DECK_SLOTS` of them. */
+export class DeckFullError extends RangeError {
+  override readonly name = 'DeckFullError';
+
+  constructor() {
+    super(`A deck holds at most ${String(MAX_DECK_SLOTS)} different printings`);
+  }
+}
+
 /**
  * The user's decks (docs/decks.md), held in memory: a few dozen decks of at
  * most a few hundred slots each. Changes show at once and are saved locally
@@ -137,7 +146,7 @@ export class DeckService {
     } else if (existing) {
       cards = current.cards.map((other) => (deckCardKey(other) === key ? slot : other));
     } else if (current.cards.length >= MAX_DECK_SLOTS) {
-      throw new RangeError(`A deck holds at most ${String(MAX_DECK_SLOTS)} different printings`);
+      throw new DeckFullError();
     } else {
       cards = [...current.cards, slot];
     }

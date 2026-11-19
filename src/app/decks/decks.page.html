@@ -1,15 +1,59 @@
 <ion-header [translucent]="true">
   <ion-toolbar>
     <ion-title>Decks</ion-title>
+    <ion-buttons slot="end">
+      <ion-button
+        [disabled]="!decks.loaded() || busy()"
+        (click)="create()"
+        aria-label="New deck"
+        data-testid="new-deck"
+      >
+        <ion-icon slot="icon-only" name="add-outline"></ion-icon>
+      </ion-button>
+    </ion-buttons>
   </ion-toolbar>
 </ion-header>
 
-<ion-content [fullscreen]="true" class="ion-padding">
-  <ion-header collapse="condense">
+<ion-content [fullscreen]="true">
+  <ion-header collapse="condense" class="page-column-header">
     <ion-toolbar>
       <ion-title size="large">Decks</ion-title>
     </ion-toolbar>
   </ion-header>
 
-  <p>Build and manage decks. Coming soon.</p>
+  <div class="page-column">
+    @if (decks.loaded()) {
+      <ion-list>
+        @for (deck of decks.decks(); track deck.id) {
+          <ion-item
+            button="true"
+            lines="inset"
+            (click)="open(deck.id)"
+            [attr.data-testid]="'deck-' + deck.id"
+          >
+            <ion-label>
+              {{ deck.name }}
+              <p class="hint">{{ summary(deck) }}</p>
+            </ion-label>
+          </ion-item>
+        } @empty {
+          <ion-item data-testid="no-decks">
+            <ion-label>
+              No decks yet
+              <p class="hint">Build one from cards in any set</p>
+            </ion-label>
+          </ion-item>
+          <ion-item
+            button="true"
+            [detail]="false"
+            [disabled]="busy()"
+            (click)="create()"
+            data-testid="new-deck-row"
+          >
+            <ion-label color="primary">New deck</ion-label>
+          </ion-item>
+        }
+      </ion-list>
+    }
+  </div>
 </ion-content>

@@ -3,7 +3,7 @@ import { MAX_DECK_SLOTS, type Deck, type SyncEntityType } from '@pokepaper/share
 import { Subject } from 'rxjs';
 import { vi } from 'vitest';
 import { LocalUserDataRepository } from '../data/local-user-data-repository';
-import { DeckChangeDroppedError, DeckService } from './deck.service';
+import { DeckChangeDroppedError, DeckFullError, DeckService } from './deck.service';
 import { SyncService } from './sync.service';
 
 function makeDeck(overrides: Partial<Deck> = {}): Deck {
@@ -253,7 +253,9 @@ describe('DeckService', () => {
     seed(makeDeck({ cards }));
     const service = await create();
 
-    await expect(service.setCardCount('deck-1', pidgeot, 1)).rejects.toThrow(
+    const full = service.setCardCount('deck-1', pidgeot, 1);
+    await expect(full).rejects.toThrow(DeckFullError);
+    await expect(full).rejects.toThrow(
       `A deck holds at most ${String(MAX_DECK_SLOTS)} different printings`
     );
     // Changing a printing already in it still works.
