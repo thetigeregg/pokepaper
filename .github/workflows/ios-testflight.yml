@@ -1,0 +1,243 @@
+name: iOS TestFlight
+
+# Builds App PROD and uploads it to TestFlight after a release that changed
+# native code (docs/ios.md -> TestFlight). Ported from go-gather's workflow,
+# without its Firebase step. Web-only changes ship as OTA bundles instead
+# (release-publish.yml); scripts/ios-release-gate.mjs routes each release.
+# After an upload, it records the build as the one OTA bundles target.
+
+on:
+  workflow_run:
+    workflows:
+      - "Release & Publish"
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+# Runs queue instead of overlapping: each run decides against the build the
+# previous one recorded, so a native change is built once, never skipped.
+concurrency:
+  group: pokepaper-ios-testflight
+  cancel-in-progress: false
+
+jobs:
+  detect_changes:
+    name: Detect app changes
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.check.outputs.testflight }}
+      matched_paths: ${{ steps.check.outputs.testflight_paths }}
+      release_tag: ${{ steps.check.outputs.release_tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Evaluate app changes
+        id: check
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          NATIVE_BUILD: ${{ vars.IOS_OTA_NATIVE_BUILD }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            { echo "testflight=true"; echo "testflight_paths=workflow_dispatch"; echo "release_tag="; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CURRENT=$(git tag --list 'v*' --sort=-v:refname | head -1)
+          # Only deploy a release this run produced. A release run commits
+          # the version bump on top of the commit that triggered it and tags
+          # that, so the newest tag must contain the trigger and sit on a
+          # newer commit. Otherwise nothing was released (no releasable
+          # commits, or a manual rerun on the release commit itself) and the
+          # last release already shipped.
+          if [ -z "$CURRENT" ] \
+            || ! git merge-base --is-ancestor "$HEAD_SHA" "$CURRENT" \
+            || [ "$(git rev-list -n 1 "$CURRENT")" = "$HEAD_SHA" ]; then
+            echo "This run released nothing new (newest tag: ${CURRENT:-none}); nothing to deploy."
+            { echo "testflight=false"; echo "testflight_paths="; echo "release_tag="; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Native changes since the last recorded build, not just since the
+          # previous tag: a quick follow-up release can't hide one.
+          node scripts/ios-release-gate.mjs --head "$CURRENT" --native-build "$NATIVE_BUILD" --github-output "$GITHUB_OUTPUT"
+          echo "release_tag=$CURRENT" >> "$GITHUB_OUTPUT"
+
+  skip_summary:
+    name: Skip summary
+    needs:
+      - detect_changes
+    if: needs.detect_changes.outputs.should_deploy != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write skip summary
+        run: |
+          {
+            echo "## iOS TestFlight skipped"
+            echo
+            echo "This release doesn't change native code (web-only changes ship as OTA bundles), or nothing was released."
+            echo
+            echo "Use **workflow_dispatch** on iOS TestFlight to force a build when needed (for example signing retries)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  testflight:
+    name: Build and Upload App PROD
+    needs:
+      - detect_changes
+    if: needs.detect_changes.outputs.should_deploy == 'true'
+    # Xcode 27 (iOS 27 SDK) is only on GitHub's xcode-27 image so far.
+    runs-on: xcode-27
+    timeout-minutes: 60
+    # The signing and App Store Connect secrets live in this environment.
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.detect_changes.outputs.release_tag || github.sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      # Uploads need a recent SDK: the iOS 26 SDK today, and the iOS 27 SDK
+      # from April 2027 (App Store Connect warns with ITMS-90725). Pinned so
+      # a runner image update can't change the toolchain under us.
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_27.2.app/Contents/Developer
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ".ruby-version"
+          bundler-cache: true
+          working-directory: ios
+
+      # The repo and its Actions logs are public. GitHub masks the secret's
+      # exact value, but not the bare hostname derived from it (the passkey
+      # domain the build logs), so mask that too before anything prints it.
+      - name: Mask the backend host
+        env:
+          IOS_BACKEND_ORIGIN_PROD: ${{ secrets.IOS_BACKEND_ORIGIN_PROD }}
+        run: |
+          host=$(node -e 'try { console.log(new URL(process.env.IOS_BACKEND_ORIGIN_PROD).hostname) } catch {}')
+          if [ -n "$host" ]; then
+            echo "::add-mask::$host"
+          fi
+
+      - name: Validate iOS deploy configuration
+        env:
+          IOS_BACKEND_ORIGIN_PROD: ${{ secrets.IOS_BACKEND_ORIGIN_PROD }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+        run: |
+          for required in \
+            IOS_BACKEND_ORIGIN_PROD \
+            APP_STORE_CONNECT_API_KEY_ID \
+            APP_STORE_CONNECT_API_ISSUER_ID \
+            APP_STORE_CONNECT_API_KEY \
+            MATCH_PASSWORD \
+            MATCH_GIT_BASIC_AUTHORIZATION
+          do
+            if [ -z "${!required}" ]; then
+              echo "$required is required for TestFlight deploy." >&2
+              exit 1
+            fi
+          done
+
+      - name: Validate App Store Connect app
+        working-directory: ios
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: bundle exec fastlane validate_asc_app
+
+      - name: Validate match signing assets
+        working-directory: ios
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+        run: bundle exec fastlane validate_match
+
+      - name: Upload to TestFlight
+        id: testflight_upload
+        working-directory: ios
+        env:
+          IOS_BACKEND_ORIGIN_PROD: ${{ secrets.IOS_BACKEND_ORIGIN_PROD }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+        run: bundle exec fastlane deploy_testflight
+
+      # OTA bundles must match the installed native code, so the release
+      # workflow builds them for this build, and only while nothing native
+      # has changed since this commit (scripts/ios-release-gate.mjs). Only
+      # builds of main (a release, or a manual run on main) are recorded,
+      # never a branch build. One variable, so build and commit always match.
+      # Repo variables need the release GitHub App (Variables: write).
+      - name: Create GitHub App token
+        if: needs.detect_changes.outputs.release_tag != '' || github.ref == 'refs/heads/main'
+        id: app_token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.AUTOCOMMIT_CLIENT_ID }}
+          private-key: ${{ secrets.AUTOCOMMIT_APP_PRIVATE_KEY }}
+
+      - name: Record this build for OTA updates
+        if: needs.detect_changes.outputs.release_tag != '' || github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          BUILD_NUMBER: ${{ steps.testflight_upload.outputs.ios_native_build_number }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BUILD_NUMBER" ]; then
+            echo "::error::deploy_testflight didn't report a build number" >&2
+            exit 1
+          fi
+          gh variable set IOS_OTA_NATIVE_BUILD --body "${BUILD_NUMBER}@$(git rev-parse HEAD)"
+
+      - name: Write upload summary
+        env:
+          BUILD_NUMBER: ${{ steps.testflight_upload.outputs.ios_native_build_number }}
+          RELEASE_TAG: ${{ needs.detect_changes.outputs.release_tag }}
+          MATCHED_PATHS: ${{ needs.detect_changes.outputs.matched_paths }}
+        run: |
+          {
+            echo "## Uploaded to TestFlight"
+            echo
+            echo "- Release: ${RELEASE_TAG:-manual run}"
+            echo "- Build number: ${BUILD_NUMBER:-unknown}"
+            echo "- Triggered by: ${MATCHED_PATHS}"
+          } >> "$GITHUB_STEP_SUMMARY"

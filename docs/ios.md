@@ -2,7 +2,7 @@
 
 PokePaper ships as a native iOS app through [Capacitor](https://capacitorjs.com/) 8. The same Angular build runs in the app's web view, with on-device SQLite storage (`SqliteStorageEngine`) in place of IndexedDB.
 
-Status: the native shell, its build scripts and both Xcode targets are in place. Planned next: native passkey sign-in with a Keychain-stored bearer token, TestFlight delivery, and possibly over-the-air web updates.
+Status: the native shell, both Xcode targets, native passkey sign-in, TestFlight delivery and over-the-air web updates are in place ([OTA updates](#ota-updates)).
 
 ## Targets
 
@@ -13,7 +13,7 @@ Status: the native shell, its build scripts and both Xcode targets are in place.
 | App DEV  | `io.github.thetigeregg.poketcg.dev` | PokePaper Dev    | Your Mac's dev server over the LAN (`ios-local`) |
 | App PROD | `io.github.thetigeregg.poketcg`     | PokePaper        | The public deployment (`ios-prod`)               |
 
-Both bundle IDs are listed in `edge/well-known/apple-app-site-association`, which allows both apps to use passkeys for the public domain. Native passkey sign-in isn't wired up yet.
+Both bundle IDs are listed in `edge/well-known/apple-app-site-association`, which allows both apps to use passkeys for the public domain ([Passkeys](#passkeys)).
 
 App DEV has a red "DEV" band on its icon and an App Transport Security exception for plain-HTTP local networking. Both icons are generated from the placeholder `public/favicon.svg` mark. Plugins come in through Swift Package Manager (`ios/App/CapApp-SPM`, managed by `npx cap sync`), so there's no CocoaPods step.
 
@@ -46,7 +46,7 @@ Re-run `npm run sync:ios:local` after every web change. Native-only changes (Swi
 
 ## Production build
 
-Set `IOS_BACKEND_ORIGIN_PROD` in `.env` to the public origin (the server's `PUBLIC_ORIGIN`, https with no path), then:
+Set `IOS_BACKEND_ORIGIN_PROD` in `.env` to the public origin (the server's `PUBLIC_ORIGIN`, https with no path). It's also where the passkey domain comes from ([Passkeys](#passkeys)). Then:
 
 ```bash
 npm run sync:ios:prod
@@ -54,7 +54,84 @@ npm run sync:ios:prod
 
 and run or archive the **App PROD** scheme.
 
-Both targets bundle whatever was synced last (`ios/App/App/public`), and nothing in Xcode checks which build that was. Always run `sync:ios:prod` before running or archiving App PROD, and `sync:ios:local` before App DEV. Otherwise App PROD ships pointed at your LAN, or App DEV talks to production data. CI checks that the `ios-prod` Angular build still compiles (`ios_prod_build_validation` in `ci-pr.yml`). There are no Xcode builds in CI yet.
+Both targets bundle whatever was synced last (`ios/App/App/public`), and nothing in Xcode checks which build that was. Always run `sync:ios:prod` before running or archiving App PROD, and `sync:ios:local` before App DEV. Otherwise App PROD ships pointed at your LAN, or App DEV talks to production data. CI checks that the `ios-prod` Angular build still compiles (`ios_prod_build_validation` in `ci-pr.yml`), and releases ship App PROD to TestFlight ([TestFlight](#testflight)).
+
+## Passkeys
+
+The app signs in with the same passkeys as the web app (iCloud Keychain syncs them), but it can't use WebAuthn in its web view: the web view's origin is `capacitor://localhost`, not the server's domain. Instead:
+
+- **Ceremony:** `PasskeyClient` (`src/app/core/auth/passkey-client.ts`) hands the server's WebAuthn options to [`@capgo/capacitor-passkey`](https://github.com/Cap-go/capacitor-passkey), which runs the ceremony with AuthenticationServices and returns the WebAuthn JSON the server already verifies. In browsers the same class uses SimpleWebAuthn.
+- **Origin:** the app passes `apiUrl` (the public origin) as the ceremony's origin. On iOS 17.4 and later that's what lands in `clientDataJSON`. Earlier versions use `https://<RP ID>`. Either way it must equal the server's `PUBLIC_ORIGIN`, so keep `IOS_BACKEND_ORIGIN_PROD` identical to it.
+- **Associated domain:** iOS only lets an app use passkeys for a domain that lists the app in its `apple-app-site-association` file (served by `edge`, fetched by Apple's CDN) and that the app names in its `com.apple.developer.associated-domains` entitlement. App PROD's entitlements say `webcredentials:$(PASSKEY_DOMAIN)`. App DEV has none: it only talks to a LAN server, where passkeys can't work anyway, and so it builds without the capability (personal signing teams don't support it).
+- **`PASSKEY_DOMAIN`:** `ios/debug.xcconfig` and `ios/release.xcconfig` include the gitignored `ios/passkey.xcconfig`, which `write-environment-ios.mjs` generates on every build. It holds the host of `IOS_BACKEND_ORIGIN_PROD`, or `IOS_PASSKEY_DOMAIN` if the server sets a different `RP_ID`. This keeps the real domain out of the repository. The plugin's own `cap sync` hook, which would write the domain into the entitlements, is turned off (`autoShim: false` in `capacitor.config.ts`).
+- **Session token:** the app signs in as `client: 'ios'`, so the server returns the session as a bearer token instead of a cookie ([`auth.md`](auth.md) → Sessions). `AuthTokenStore` keeps it in the Keychain ([`capacitor-secure-storage-plugin`](https://github.com/martinkasa/capacitor-secure-storage-plugin)), and `authTokenInterceptor` sends it as `Authorization: Bearer …`, only on requests to `apiUrl`.
+  - If the Keychain can't be read (a launch before the device's first unlock), requests fail like network errors and are retried. A request sent without the token would get a 401 and sign you out.
+  - A sign-out the server can't confirm signs the app out right away and moves the token to a separate Keychain entry, used only to revoke it on the server later. That entry survives a reinstall and later sign-ins, which Preferences don't.
+  - If the Keychain write fails after sign-in, the app revokes the new session instead of leaving it behind.
+
+To sign in on a device, build App PROD (`npm run sync:ios:prod`) with your team selected. Automatic signing adds the Associated Domains capability to the App ID. That needs a paid Apple Developer team. A LAN build (App DEV with `sync:ios:local`) talks to a server whose relying party is `localhost`, so it can't use passkeys. Use `AUTH_DEV_BYPASS` there, as described in [Local development](#local-development).
+
+## TestFlight
+
+After each release, the `iOS TestFlight` workflow (`.github/workflows/ios-testflight.yml`) builds App PROD on a macOS runner with Fastlane (`ios/fastlane/`) and uploads it to TestFlight. Install builds with Apple's TestFlight app.
+
+- **When:** after `Release & Publish` succeeds on `main`, if that run produced a release tag and native code changed since the last recorded TestFlight build. The gate compares against that recorded build, not the previous tag, so a native change can't be hidden by a quick follow-up release. Runs queue rather than overlap, so each one decides against the build the previous one recorded. `scripts/ios-release-gate.mjs` decides:
+  - **Native:** `ios/`, `capacitor.config.ts`, the OTA public key, the iOS build scripts, this workflow, and native plugin dependencies (`@capacitor/*`, `@capawesome/*`, `@capgo/*`, `capacitor-*`), read from the lockfile's package versions.
+  - **Web:** `src/`, `shared/`, `public/`, the Angular config, the app's runtime `dependencies`, and the Angular/Ionic toolchain. These ship as OTA bundles instead ([OTA updates](#ota-updates)). Before any build is recorded, web changes go to TestFlight too.
+  - **Neither:** server, edge, docs, CI, dev tooling (eslint, vitest, …), server dependencies, and version-only bumps of the manifests or the Xcode project.
+  - **Manual runs:** `workflow_dispatch` always builds, which is useful for signing retries.
+- **Recorded for OTA:** after an upload of a release, or of a manual run on `main` (never a branch build), the workflow stores `<build number>@<commit>` in the repo variable `IOS_OTA_NATIVE_BUILD`. It's one variable, so the two values never disagree. It uses the release GitHub App, which needs **Variables: write**. OTA bundles are built for that build.
+- **Version:** the build's version is the release's `package.json` version. Its build number is one more than the latest in TestFlight (`sync-ios-version.mjs --build-number`).
+- **Signing:** [fastlane match](https://docs.fastlane.tools/actions/match/) installs the App Store certificate and profile from the team's shared, encrypted match repo (`ios/fastlane/Matchfile`). That's the same repo go-gather uses: one Apple Distribution certificate per team, and one profile per app. CI uses match read-only, so it never creates signing assets.
+- **Xcode:** the workflow pins Xcode 27.2 on GitHub's `xcode-27` runner. Uploads need the iOS 26 SDK today, and the iOS 27 SDK from April 2027 (App Store Connect warns about it with ITMS-90725). Keep the pin at least at the SDK Apple requires.
+
+### One-time setup
+
+1. **App Store Connect:** create the app record (Apps → + → New App) with bundle ID `io.github.thetigeregg.poketcg`, any SKU, and a name. The store name must be unique across the App Store, but the home screen name stays "PokePaper". The App ID needs the Associated Domains capability. Your first signed device build with automatic signing already enabled it.
+2. **App Store profile:** create it once from your Mac, since CI can't create it:
+
+   ```bash
+   cd ios && bundle install
+   MATCH_PASSWORD=… bundle exec fastlane match appstore
+   ```
+
+   This signs in with your Apple ID (or set the `APP_STORE_CONNECT_API_*` variables), reuses the team's distribution certificate, and adds a `match AppStore io.github.thetigeregg.poketcg` profile to the match repo.
+
+3. **GitHub secrets**, in the `production` environment (Settings → Environments → production):
+   - `APP_STORE_CONNECT_API_KEY_ID`, `APP_STORE_CONNECT_API_ISSUER_ID`, `APP_STORE_CONNECT_API_KEY` (the `.p8` file, base64-encoded): an App Store Connect API key with App Manager access. The one go-gather uses works.
+   - `MATCH_PASSWORD`: the match repo's encryption password.
+   - `MATCH_GIT_BASIC_AUTHORIZATION`: `base64("<github-user>:<token>")` for a token that can read the match repo. Fastlane passes it verbatim into an HTTP Basic header.
+   - `IOS_BACKEND_ORIGIN_PROD`: the public origin, the same value as in your `.env`. It also sets the passkey domain, so it lives only in secrets, never in the repo.
+4. Run the workflow once with **workflow_dispatch** to check everything. Its `validate_asc_app` and `validate_match` steps fail fast with a clear error if the app record or profile is missing.
+
+## OTA updates
+
+Web-only changes can reach the installed app without a new TestFlight build, through signed over-the-air (OTA) bundles ([`@capawesome/capacitor-live-update`](https://capawesome.io/docs/plugins/live-update/), as in go-gather). Only App PROD builds check for them (native and production). App DEV and the web app never do.
+
+- **Manifest:** each native build has `<apiUrl>/ota/ios/<build number>/manifest.json`, holding `bundleId`, `semver`, `nativeBuildNumber`, `url`, `checksum` and `signature`. The bundle must be https on the same origin.
+- **When:** `LiveUpdateService` checks on launch, then when the app returns to the foreground, at most every 15 minutes. It never blocks startup: it's started without being awaited, and every failure is only logged.
+- **Staging:** a bundle built for this exact native build, and not already active or staged, is downloaded. The plugin verifies its RSA-SHA256 signature against `config/ios-live-update-public.pem`, set in `capacitor.config.ts`. The bundle is then staged as the next bundle, and the app shows **Update Ready: "A new version (x.y.z) is ready. Reload now to apply it?"**. **Reload** applies it immediately. **Later** applies it on the next cold start.
+- **Rollback:** the very first thing the app does at startup is call `LiveUpdate.ready()` (`LiveUpdateService.start()`, before slower work such as storage migrations). A newly applied bundle that doesn't get that far within 10 seconds (`readyTimeout`) is rolled back to the previous one and blocked (`autoBlockRolledBackBundles`), so it's never staged again; the next published bundle replaces it. Old bundles are deleted once a new one is confirmed (`autoDeleteBundles`).
+- **No manifest:** a 404 means no update for this build. That's the normal state until a bundle is published.
+- **Signing key:** the private key that signs bundles lives in `~/.config/pokepaper/ios/live-update-private.pem` locally, and in the `IOS_LIVE_UPDATE_PRIVATE_KEY` secret (`production` environment) for CI. It never enters the repository. Changing the key pair means shipping the new public key in a TestFlight build first.
+
+### Publishing bundles
+
+- **When:** `scripts/ios-release-gate.mjs` builds a bundle when nothing native has changed since the recorded TestFlight build (`IOS_OTA_NATIVE_BUILD`), and web code has changed since the later of that build and the last bundle (`IOS_OTA_BUNDLE_SHA`, recorded after each bundle). A bundle runs on the installed build's native code, so it mustn't depend on newer plugins. That covers a TestFlight build that's still running or failed: once it's recorded, web changes held back in the meantime ship with the next release. If the gate itself fails, OTA is skipped, and the images still publish.
+- **Where:** `release-publish.yml` rebuilds the `edge` image with `BUILD_IOS_OTA=true`. Its `ota` stage (`edge/Dockerfile`) runs `scripts/build-ios-live-update-artifacts.mjs`:
+  - It writes the `ios-prod` environment and runs `ng build --configuration ios-prod`.
+  - It zips the output (`index.html` at the root) and signs the zip with the private key, which arrives as a BuildKit secret.
+  - It writes `ota/ios/<build>/manifest.json` and `v<version>-b<build>-<hash>.zip`. The zip name includes its content hash, so a rebuild never reuses a URL a cache holds. It replaces only the target build's directory: devices still on an older build keep its last bundle, and the 3 newest builds are kept.
+- **Serving:** Caddy serves `/ota/*` from the image. The manifest gets `no-store` and the zips `immutable`. A missing file returns 404, never the SPA's `index.html`.
+- **Carry-forward:** every other edge build copies the previous image's `/srv-ota` forward (`OTA_PREVIOUS_IMAGE`, the current `pokepaper-edge:main`), so a release without web changes keeps serving the last bundle. A bad bundle can't be pulled by a server-only release; publish a new one, or a new TestFlight build.
+- **Deploy:** bundles go live when the NAS pulls the new `pokepaper-edge` image, like any web release.
+- **Logs:** CI masks the backend host, since the repository and its Actions logs are public.
+- **Local dry run:**
+  ```bash
+  docker buildx build -f edge/Dockerfile --build-arg BUILD_IOS_OTA=true --build-arg IOS_OTA_NATIVE_BUILD_NUMBER=<n> \
+    --secret id=IOS_LIVE_UPDATE_PRIVATE_KEY,src=$HOME/.config/pokepaper/ios/live-update-private.pem \
+    --secret id=IOS_BACKEND_ORIGIN_PROD,src=<file containing the origin> .
+  ```
 
 ## How the build fits together
 
@@ -62,7 +139,7 @@ Both targets bundle whatever was synced last (`ios/App/App/public`), and nothing
 | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `npm run build:ios:local` / `prod` | `ng build` with the `ios-local` / `ios-prod` configuration: no service worker, and `environment.ts` replaced by the generated `environment.ios.*.ts`  |
 | `npm run sync:ios:local` / `prod`  | The build above, then `npx cap sync ios` (copies `www/` into `ios/App/App/public` and updates `CapApp-SPM`)                                           |
-| `prebuild:ios:local` / `prod`      | Runs automatically before each build: writes the environment file, then `prebuild:ios`                                                                |
+| `prebuild:ios:local` / `prod`      | Runs automatically before each build: writes the environment file and `ios/passkey.xcconfig`, then `prebuild:ios`                                     |
 | `prebuild:ios`                     | Sets `MARKETING_VERSION` from `package.json`, then regenerates the Info.plists                                                                        |
 | `npm run generate:ios-info-plists` | Merges `Info.shared.plist` with each target's overlay into the committed `Info.dev.plist` / `Info.prod.plist`. A script test fails if those are stale |
 | `npm run sync:ios:version`         | `--marketing-only` sets every target's version; `--build-number N` sets App PROD's version and build number (for TestFlight)                          |
@@ -71,4 +148,4 @@ Both targets bundle whatever was synced last (`ios/App/App/public`), and nothing
 - **Info.plist:** edit `Info.shared.plist` or a target's `Info.*.overlay.plist`, never the generated `Info.dev.plist` / `Info.prod.plist`. Then run `npm run generate:ios-info-plists`.
 - **Versions:** releases bump `package.json` only, and builds copy that version into the Xcode project. So `MARKETING_VERSION` in `project.pbxproj` can lag behind in git. Don't commit a local bump made by a build.
 - **Native HTTP:** `capacitor.config.ts` enables `CapacitorHttp`, so `fetch` and `HttpClient` requests go through native networking. The app's origin is `capacitor://localhost`, and the server sends no CORS headers.
-- **Generated files:** `ios/App/App/public`, `capacitor.config.json` and `config.xml` come from `npx cap sync` and are gitignored (`ios/.gitignore`).
+- **Generated files:** `ios/App/App/public`, `capacitor.config.json` and `config.xml` come from `npx cap sync`, and `ios/passkey.xcconfig` from the prebuild. All are gitignored (`ios/.gitignore`).

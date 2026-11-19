@@ -89,3 +89,39 @@
 ## v0.15.0 - 2026-11-18
 
 - f232c83 feat(ios): add Capacitor iOS shell with DEV/PROD targets (#30)
+
+## v0.16.0 - 2026-11-18
+
+- b0ff5b5 feat(ios): sign in with native passkeys and a Keychain token (#31)
+
+## v0.16.1 - 2026-11-18
+
+- 4aac699 ci(ios): upload App PROD to TestFlight after app-changing releases (#32)
+
+## v0.16.2 - 2026-11-18
+
+- aec20c7 fix(ci): mask the backend host and build TestFlight with Xcode 27 (#34)
+
+## v0.16.3 - 2026-11-18
+
+- cfde1b3 ci(review): skip Claude review on bot-authored PRs (#35)
+
+## v0.16.4 - 2026-11-18
+
+- 3bd637e chore(deps): Bump addressable from 2.9.0 to 2.9.1 in /ios (#33)
+
+## v0.17.0 - 2026-11-19
+
+- 2445c2d feat(ios): check for and apply signed OTA web updates (#36)
+
+## v0.17.1 - 2026-11-19
+
+- 49105e8 ci(ios): publish signed OTA bundles in the edge image (#37)
+
+## v0.17.2 - 2026-11-19
+
+- 9f93cd6 chore(ios): add a temporary OTA test marker to Settings (#38)
+
+## v0.17.3 - 2026-11-19
+
+- ab78004 chore(ios): remove the temporary OTA test marker (#39)
