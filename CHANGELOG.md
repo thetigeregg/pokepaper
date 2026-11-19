@@ -117,3 +117,7 @@
 ## v0.17.1 - 2026-11-19
 
 - 49105e8 ci(ios): publish signed OTA bundles in the edge image (#37)
+
+## v0.17.2 - 2026-11-19
+
+- 9f93cd6 chore(ios): add a temporary OTA test marker to Settings (#38)
