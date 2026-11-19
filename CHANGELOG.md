@@ -145,3 +145,7 @@
 ## v0.21.0 - 2026-11-19
 
 - 4d3e09d feat(decks): check decks against their format's rules (#44)
+
+## v0.22.0 - 2026-11-19
+
+- 5dbdbef feat(decks): show what the collection covers of each deck (#45)
