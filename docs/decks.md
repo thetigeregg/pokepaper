@@ -8,7 +8,7 @@ Status: storage, sync and the Decks tab screens (deck list, deck page, Add cards
 
 - **Slots are exact printings.** A deck lists catalog cards (region + card ID, e.g. `intl` `sv03-125`), like a printed decklist, so it shows that printing's art and can match your collection.
 - **Each deck has a format:** Standard, Expanded or Unlimited, checked against the rules below. The copy limit is enforced as you add cards; everything else is a **warning, not an error**: a deck in progress always saves.
-- **Owned vs. needed counts copies in any language.** An English and a German copy of a printing both count toward a deck.
+- **Owned vs. needed counts copies of any identical printing, in any language** (see Owned vs. needed below).
 
 ## Format rules
 
@@ -62,12 +62,22 @@ Any card released in the US, with no bans (handbook §4.2). The deck rules above
 - **The 4-copy limit is enforced** when adding (Add cards and the deck page's +), with a message ("A deck holds at most 4 cards named Iono."). A deck that already breaks it (e.g. synced from an older build) shows a warning. Everything else is a warning.
 - **Checks** run on the device (`DeckChecksService`): it reads the catalog cards of every deck's printings, works out their legality (searching for reprints only when a printing's own mark or set isn't legal, by English name through the search rows), and checks each deck (`checkDeck` in `deck-rules.ts`) as it changes. A deck's check appears once all its cards have been looked up; a catalog update looks them up again.
 
+## Owned vs. needed
+
+The deck page compares each card with your collection ([`collection.md`](collection.md)):
+
+- **Identical printings count.** A deck card is covered by copies of any printing with the same English name and rules text, the reprint rule from Format rules: your Scarlet & Violet Ultra Ball covers a Paldea Evolved Ultra Ball slot, but a Pikachu with different attacks doesn't cover a Pikachu slot. What a deck-builder asks is "do I have 4 Ultra Balls?", not "do I have this exact printing?".
+- **Any language and variant.** English, German and reverse holo copies all count.
+- **Shared, never double-counted.** Copies are pooled across a deck's slots of identical printings. Each slot takes copies of its own printing first, then what's left of its identical printings, in deck order. A row says how many came from another printing ("Owned · 2 from another printing"), so you know which physical cards to pull.
+- **Same limits as the format rules:** Japan & Asia printings only cover themselves (no English text to match), TCG Pocket cards never count, and reworded reprints aren't recognized. Cards not on this device aren't counted.
+- **Computed on the device** by `ownedCoverage` (`deck-owned.ts`) from the identical printings `DeckChecksService` finds for each deck card and `CollectionService.copiesOfCard` (all languages and variants). It follows the collection as it changes, and appears once the collection has loaded.
+
 ## Screens
 
 Layout and components: [`ui.md`](ui.md) → Decks.
 
-- **Decks tab:** every deck, most recently changed first, with its format and card total, and a warning with the number of rules it breaks. The add button names a new deck, which starts as Standard and opens.
-- **Deck page:** the deck's format (a choice row) and card total, then the format's rules (what the deck breaks, or that it follows them), then its cards by category (Pokémon, Trainer, Energy) in the order they were added, each with a − count + stepper and notes for any rule it breaks. Rename and Delete are in the header.
+- **Decks tab:** every deck, most recently changed first, with its format and card total, how many copies you're missing, and a warning with the number of rules it breaks. The add button names a new deck, which starts as Standard and opens.
+- **Deck page:** the deck's format (a choice row) and card total, then the format's rules (what the deck breaks, or that it follows them), then its cards by category (Pokémon, Trainer, Energy) in the order they were added, each with a − count + stepper, what you own of it, and notes for any rule it breaks. A toggle shows only the cards you're missing, as a shopping list. Rename and Delete are in the header.
 - **Add cards:** card search with its own query and filters (`CatalogSearchService` provided by the modal, see [`catalog.md`](catalog.md) → Search). Tapping a card adds a copy, and its badge (red, bottom right, like the owned badge it replaces there) shows the copies in the deck. Once the deck has 4 cards with that name, a tap says so instead.
 
 ## Data model

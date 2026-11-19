@@ -18,7 +18,9 @@ import {
 } from './deck-rules';
 import { normalizeSearchText } from '../../core/utils/search-text.util';
 import { CatalogSyncService } from '../../core/services/catalog-sync.service';
+import { CollectionService } from '../../core/services/collection.service';
 import { DeckService } from '../../core/services/deck.service';
+import { ownedCoverage, type DeckOwned } from './deck-owned';
 
 const CHECKED_FORMATS: readonly CheckedFormat[] = ['standard', 'expanded'];
 
@@ -31,6 +33,7 @@ const CHECKED_FORMATS: readonly CheckedFormat[] = ['standard', 'expanded'];
 @Injectable({ providedIn: 'root' })
 export class DeckChecksService {
   private readonly decks = inject(DeckService);
+  private readonly collection = inject(CollectionService);
   private readonly storageEngineFactory = inject(StorageEngineFactory);
 
   /** Cards looked up so far, by deck slot key; a key looked up but absent isn't on this device. */
@@ -79,6 +82,35 @@ export class DeckChecksService {
       .subscribe(() => {
         this.reset();
       });
+  }
+
+  /**
+   * Owned vs. needed per deck (`ownedCoverage`), once the collection has
+   * loaded and the deck's cards have been looked up. Follows the collection.
+   */
+  private readonly owned = computed(() => {
+    if (!this.collection.loaded()) {
+      return new Map<string, DeckOwned>();
+    }
+    const copies = (key: string) => this.collection.copiesOfCard(key);
+    const cards = this.cards();
+    const looked = this.looked();
+    const previous = this.previous();
+    const owned = new Map<string, DeckOwned>();
+    for (const deck of this.decks.decks()) {
+      const keys = deck.cards.map(deckCardKey);
+      if (keys.every((key) => looked.has(key))) {
+        owned.set(deck.id, ownedCoverage(deck, cards, copies));
+      } else if (previous && keys.every((key) => previous.looked.has(key))) {
+        owned.set(deck.id, ownedCoverage(deck, previous.cards, copies));
+      }
+    }
+    return owned;
+  });
+
+  /** What the collection covers of the deck, once known. */
+  ownedOf(deckId: string): DeckOwned | undefined {
+    return this.owned().get(deckId);
   }
 
   /** The deck's check, once all its cards have been looked up. */
@@ -148,23 +180,27 @@ export class DeckChecksService {
   /** A card's legality in each checked format: its own printing, else any identical reprint. */
   private async checkCard(card: CatalogCard): Promise<CheckedCard> {
     const legal: Record<CheckedFormat, boolean> = { standard: false, expanded: false };
+    const own = catalogKey(card.region, card.id);
     const serie = await this.serieOf(card);
     if (card.region !== 'intl' || serie === POCKET_SERIES) {
       // Japan & Asia printings and TCG Pocket cards: warned about as such.
-      return { card, serie, legal };
+      return { card, serie, printings: [own], legal };
     }
     for (const format of CHECKED_FORMATS) {
       legal[format] = printingLegal(card, serie, format);
     }
-    if (CHECKED_FORMATS.some((format) => !legal[format])) {
-      for (const reprint of await this.reprintsOf(card)) {
-        const reprintSerie = await this.serieOf(reprint);
-        for (const format of CHECKED_FORMATS) {
-          legal[format] ||= printingLegal(reprint, reprintSerie, format);
-        }
+    const printings = [own];
+    for (const reprint of await this.reprintsOf(card)) {
+      const reprintSerie = await this.serieOf(reprint);
+      if (reprintSerie === POCKET_SERIES) {
+        continue; // Digital only: neither a legal printing nor a copy to play.
+      }
+      printings.push(catalogKey(reprint.region, reprint.id));
+      for (const format of CHECKED_FORMATS) {
+        legal[format] ||= printingLegal(reprint, reprintSerie, format);
       }
     }
-    return { card, serie, legal };
+    return { card, serie, printings, legal };
   }
 
   /** Other printings with the same English name and rules text (handbook §4.1.3). */

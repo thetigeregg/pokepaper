@@ -262,6 +262,12 @@ export interface CheckedCard {
   card: CatalogCard;
   /** The card's series (TCGdex ID), when its set is on this device. */
   serie: string | null;
+  /**
+   * Keys of every printing with the card's English name and rules text, its
+   * own included (`rulesFingerprint`), for owned vs. needed. Just its own for
+   * Japan & Asia printings and TCG Pocket cards.
+   */
+  printings: readonly string[];
   /** Legal in each format, reprints included (`DeckChecksService`). */
   legal: Record<CheckedFormat, boolean>;
 }
