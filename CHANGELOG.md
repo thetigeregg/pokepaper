@@ -133,3 +133,7 @@
 ## v0.19.0 - 2026-11-19
 
 - c6af80c feat(decks): store and sync decks (#41)
+
+## v0.19.1 - 2026-11-19
+
+- 93a0523 refactor(search): let each screen have its own card search (#42)
