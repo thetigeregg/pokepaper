@@ -224,20 +224,73 @@ describe('DeckPage', () => {
       expect(decks.setCardCount).toHaveBeenCalledTimes(1);
     });
     (row?.querySelector('[data-testid="remove-copy"]') as HTMLElement).click();
+    await vi.waitFor(() => {
+      expect(decks.setCardCount).toHaveBeenCalledTimes(2);
+    });
 
     expect(checks.copyLimit).toHaveBeenCalledTimes(1); // Only when adding.
+    // Each from the deck as it is (the mock doesn't change it): 3 + 1, 3 − 1.
     expect(decks.setCardCount).toHaveBeenNthCalledWith(
       1,
       'deck-1',
-      { region: 'intl', cardId: 'sv01-001', count: 3 },
+      { region: 'intl', cardId: 'sv01-001' },
       4
     );
     expect(decks.setCardCount).toHaveBeenNthCalledWith(
       2,
       'deck-1',
-      { region: 'intl', cardId: 'sv01-001', count: 3 },
+      { region: 'intl', cardId: 'sv01-001' },
       2
     );
+  });
+
+  it('adds one copy per tap of +, however fast, and stops at the limit', async () => {
+    current.set(makeDeck({ cards: [{ region: 'intl', cardId: 'sv01-001', count: 1 }] }));
+    checks.copyLimit.mockImplementation(() =>
+      Promise.resolve({ name: 'sv01-001', total: current()?.cards[0]?.count ?? 0, limit: 4 })
+    );
+    decks.setCardCount.mockImplementation((_id: string, _slot: unknown, count: number) => {
+      current.set(makeDeck({ cards: [{ region: 'intl', cardId: 'sv01-001', count }] }));
+      return Promise.resolve();
+    });
+    await create();
+    const plus = () => {
+      (query('[data-testid="add-copy"]') as HTMLElement).click();
+    };
+
+    // Five taps before any of them finishes: 1 → 4, then the limit.
+    for (let tap = 0; tap < 5; tap++) {
+      plus();
+    }
+    await vi.waitFor(() => {
+      expect(dialogs.showCopyLimit).toHaveBeenCalledTimes(2);
+    });
+
+    expect(current()?.cards[0]?.count).toBe(4);
+    checks.copyLimit.mockReset();
+    checks.copyLimit.mockResolvedValue({ name: 'x', total: 0, limit: 4 });
+    decks.setCardCount.mockReset();
+    decks.setCardCount.mockResolvedValue(undefined);
+  });
+
+  it('removes one copy per tap of −, however fast', async () => {
+    current.set(makeDeck({ cards: [{ region: 'intl', cardId: 'sv01-001', count: 3 }] }));
+    decks.setCardCount.mockImplementation((_id: string, _slot: unknown, count: number) => {
+      current.set(
+        makeDeck({ cards: count ? [{ region: 'intl', cardId: 'sv01-001', count }] : [] })
+      );
+      return Promise.resolve();
+    });
+    await create();
+    const minus = query('[data-testid="remove-copy"]') as HTMLElement;
+
+    minus.click();
+    minus.click();
+    await settle();
+
+    expect(current()?.cards[0]?.count).toBe(1);
+    decks.setCardCount.mockReset();
+    decks.setCardCount.mockResolvedValue(undefined);
   });
 
   it('adds nothing once the deck holds 4 with the name, saying so', async () => {
@@ -245,7 +298,7 @@ describe('DeckPage', () => {
     checks.copyLimit.mockResolvedValueOnce(limit);
     const page = await create();
 
-    await page.setCount(page.sections()[0].rows[0], 4);
+    await page.step(page.sections()[0].rows[0], 1);
 
     expect(checks.copyLimit).toHaveBeenCalledWith('deck-1', pokemon);
     expect(decks.setCardCount).not.toHaveBeenCalled();
@@ -317,7 +370,7 @@ describe('DeckPage', () => {
     decks.setCardCount.mockRejectedValueOnce(error);
     const page = await create();
 
-    await page.setCount(page.sections()[0].rows[0], 4);
+    await page.step(page.sections()[0].rows[0], 1);
 
     expect(dialogs.showSaveError).toHaveBeenCalledWith(error);
   });

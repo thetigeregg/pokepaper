@@ -161,6 +161,56 @@ describe('AddCardsComponent', () => {
     expect(dialogs.showCopyLimit).toHaveBeenCalledWith(limit);
   });
 
+  describe('rapid taps', () => {
+    /** Like the real services: limits read the deck now, and changes show at once. */
+    function liveServices(start: number): void {
+      current.update((deck) => ({
+        ...deck,
+        cards: [{ region: 'intl', cardId: 'sv01-001', count: start }],
+      }));
+      checks.copyLimit.mockImplementation(() =>
+        Promise.resolve({ name: 'Pineco', total: current().cards[0]?.count ?? 0, limit: 4 })
+      );
+      decks.setCardCount.mockImplementation((_id: string, _card: unknown, count: number) => {
+        current.update((deck) => ({
+          ...deck,
+          cards: [{ region: 'intl', cardId: 'sv01-001', count }],
+        }));
+        return Promise.resolve();
+      });
+    }
+
+    afterEach(() => {
+      checks.copyLimit.mockReset();
+      checks.copyLimit.mockResolvedValue({ name: 'x', total: 0, limit: 4 });
+      decks.setCardCount.mockReset();
+      decks.setCardCount.mockResolvedValue(undefined);
+      current.update((deck) => ({
+        ...deck,
+        cards: [{ region: 'intl', cardId: 'sv01-001', count: 2 }],
+      }));
+    });
+
+    it('adds one copy per tap', async () => {
+      liveServices(1);
+      const modal = create();
+
+      await Promise.all([modal.add(pineco), modal.add(pineco)]);
+
+      expect(current().cards[0]?.count).toBe(3);
+    });
+
+    it('stops at the limit however fast the taps come', async () => {
+      liveServices(3);
+      const modal = create();
+
+      await Promise.all([modal.add(pineco), modal.add(pineco), modal.add(pineco)]);
+
+      expect(current().cards[0]?.count).toBe(4);
+      expect(dialogs.showCopyLimit).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it('says why a card wasn’t added', async () => {
     const error = new DeckFullError();
     decks.setCardCount.mockRejectedValueOnce(error);

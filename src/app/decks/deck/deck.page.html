@@ -153,7 +153,7 @@
               <div slot="end" class="stepper">
                 <ion-button
                   fill="clear"
-                  (click)="setCount(row, row.slot.count - 1)"
+                  (click)="step(row, -1)"
                   [attr.aria-label]="'Remove a copy of ' + row.name"
                   data-testid="remove-copy"
                 >
@@ -165,7 +165,7 @@
                 <ion-button
                   fill="clear"
                   [disabled]="atLimit(row)"
-                  (click)="setCount(row, row.slot.count + 1)"
+                  (click)="step(row, 1)"
                   [attr.aria-label]="'Add a copy of ' + row.name"
                   data-testid="add-copy"
                 >

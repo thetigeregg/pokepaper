@@ -291,6 +291,29 @@ export class DeckPage {
     },
   ]);
 
+  /** Stepper taps, applied in order (see `step`). */
+  private steps: Promise<void> = Promise.resolve();
+
+  /**
+   * One step from the deck as it is now. Returns once the change shows (the
+   * deck service applies it at once), with its save still running.
+   */
+  private async applyStep(row: DeckRow, delta: 1 | -1): Promise<{ saving: Promise<void> } | null> {
+    const count = this.deck()?.cards.find((slot) => deckCardKey(slot) === row.key)?.count ?? 0;
+    if (count + delta < 0) {
+      return null;
+    }
+    if (delta > 0 && row.card) {
+      const limit = await this.checks.copyLimit(this.id(), row.card);
+      if (limit.total >= limit.limit) {
+        void this.dialogs.showCopyLimit(limit);
+        return null;
+      }
+    }
+    const card = { region: row.slot.region, cardId: row.slot.cardId };
+    return { saving: this.decks.setCardCount(this.id(), card, count + delta) };
+  }
+
   /** Bumped by each catalog read, so an older one finishing late is dropped. */
   private reads = 0;
 
@@ -333,16 +356,21 @@ export class DeckPage {
     return row.slot.count >= MAX_DECK_CARD_COUNT || (!!limit && limit.total >= limit.limit);
   }
 
-  async setCount(row: DeckRow, count: number): Promise<void> {
-    if (count > row.slot.count && row.card) {
-      const limit = await this.checks.copyLimit(this.id(), row.card);
-      if (limit.total >= limit.limit) {
-        await this.dialogs.showCopyLimit(limit);
-        return;
-      }
-    }
+  /**
+   * Adds or removes one copy of a card (none past its copy limit, saying
+   * so). Steps run one at a time, each from the deck as the previous one
+   * left it, so quick taps neither get lost nor pass the limit. Resolves
+   * once saved (or the failure has been reported).
+   */
+  async step(row: DeckRow, delta: 1 | -1): Promise<void> {
+    const applied = this.steps.then(() => this.applyStep(row, delta));
+    this.steps = applied.then(
+      () => undefined,
+      () => undefined
+    );
+    const step = await applied;
     try {
-      await this.decks.setCardCount(this.id(), row.slot, count);
+      await step?.saving;
     } catch (error: unknown) {
       await this.dialogs.showSaveError(error);
     }

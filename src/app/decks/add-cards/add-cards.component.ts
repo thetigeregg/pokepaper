@@ -98,6 +98,9 @@ export class AddCardsComponent {
   // properties (docs/ui.md → Tests).
   deckIdProp = '';
 
+  /** Taps, applied in order (see `add`). */
+  private adds: Promise<void> = Promise.resolve();
+
   readonly picker: CardPicker = {
     count: (card) => this.count(card),
     pick: (card) => void this.add(card),
@@ -123,23 +126,37 @@ export class AddCardsComponent {
   /**
    * Adds a copy of `card`, unless the deck holds as many as it may (4 with
    * its name, or 99 of a basic Energy printing; docs/decks.md), saying so.
+   * Taps run one at a time, each from the deck as the previous one left it,
+   * so quick taps neither get lost nor pass the limit. Resolves once saved
+   * (or the failure has been reported).
    */
   async add(card: CatalogCard): Promise<void> {
-    const limit = await this.checks.copyLimit(this.deckIdProp, card);
-    if (limit.total >= limit.limit) {
-      await this.dialogs.showCopyLimit(limit);
-      return;
-    }
-    const count = this.count(card);
+    const applied = this.adds.then(() => this.applyAdd(card));
+    this.adds = applied.then(
+      () => undefined,
+      () => undefined
+    );
+    const add = await applied;
     try {
-      await this.decks.setCardCount(
-        this.deckIdProp,
-        { region: card.region, cardId: card.id },
-        count + 1
-      );
+      await add?.saving;
     } catch (error: unknown) {
       await this.dialogs.showSaveError(error);
     }
+  }
+
+  /** One tap from the deck as it is now; returns once the change shows, its save still running. */
+  private async applyAdd(card: CatalogCard): Promise<{ saving: Promise<void> } | null> {
+    const limit = await this.checks.copyLimit(this.deckIdProp, card);
+    if (limit.total >= limit.limit) {
+      void this.dialogs.showCopyLimit(limit);
+      return null;
+    }
+    const saving = this.decks.setCardCount(
+      this.deckIdProp,
+      { region: card.region, cardId: card.id },
+      this.count(card) + 1
+    );
+    return { saving };
   }
 
   /** Enter: search for what's typed now, remember it, and put the phone keyboard away. */
