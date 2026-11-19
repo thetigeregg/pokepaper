@@ -17,6 +17,7 @@ import { authTokenInterceptor } from './app/core/auth/auth-token.interceptor';
 import { AuthService } from './app/core/auth/auth.service';
 import { SettingsSyncApplier } from './app/core/data/settings-sync-applier';
 import { CollectionSyncApplier } from './app/core/data/collection-sync-applier';
+import { DeckSyncApplier } from './app/core/data/deck-sync-applier';
 import { STORAGE_ENGINE } from './app/core/data/storage-engine';
 import { StorageEngineFactory } from './app/core/data/storage-engine.factory';
 import { SYNC_ENTITY_APPLIERS } from './app/core/data/sync-entity-applier';
@@ -79,6 +80,7 @@ bootstrapApplication(AppComponent, {
     { provide: SYNC_OUTBOX_WRITER, useExisting: SyncService },
     { provide: SYNC_ENTITY_APPLIERS, useExisting: SettingsSyncApplier, multi: true },
     { provide: SYNC_ENTITY_APPLIERS, useExisting: CollectionSyncApplier, multi: true },
+    { provide: SYNC_ENTITY_APPLIERS, useExisting: DeckSyncApplier, multi: true },
   ],
 }).catch((err: unknown) => {
   console.error(err);

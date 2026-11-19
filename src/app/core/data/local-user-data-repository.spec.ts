@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { TestBed } from '@angular/core/testing';
-import { DEFAULT_SETTINGS, SETTINGS_ENTITY_ID } from '@pokepaper/shared';
+import { DEFAULT_SETTINGS, SETTINGS_ENTITY_ID, type Deck } from '@pokepaper/shared';
 import { vi } from 'vitest';
 import { AppDb } from './app-db';
 import { DexieStorageEngine } from './dexie-storage-engine';
@@ -238,6 +238,81 @@ describe('LocalUserDataRepository', () => {
         expect(await engine.listOutboxOrderedByCreatedAt()).toEqual([]);
       }
     );
+  });
+
+  describe('decks', () => {
+    const saved: Deck = {
+      id: 'deck-1',
+      name: 'Charizard ex',
+      format: 'standard',
+      cards: [{ region: 'intl', cardId: 'sv03-125', count: 3 }],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+
+    it('saveDeck stores the deck and queues an upsert', async () => {
+      const syncNow = vi.fn(() => Promise.resolve());
+      const repository = await setUp({ syncNow });
+
+      await repository.saveDeck(saved);
+
+      expect(await repository.listDecks()).toEqual([saved]);
+      expect(await engine.listOutboxOrderedByCreatedAt()).toEqual([
+        expect.objectContaining({
+          entityType: 'deck',
+          entityId: 'deck-1',
+          operation: 'upsert',
+          payload: saved,
+        }),
+      ]);
+      expect(syncNow).toHaveBeenCalledTimes(1);
+    });
+
+    it('stores only deck fields', async () => {
+      const repository = await setUp(null);
+
+      await repository.saveDeck({ ...saved, notes: 'dropped' } as Deck);
+
+      expect(await repository.listDecks()).toEqual([saved]);
+    });
+
+    it('deleteDeck removes the deck and queues a delete', async () => {
+      const repository = await setUp({ syncNow: () => Promise.resolve() });
+      await repository.saveDeck(saved);
+
+      await repository.deleteDeck('deck-1');
+
+      expect(await repository.listDecks()).toEqual([]);
+      expect(await engine.listOutboxOrderedByCreatedAt()).toEqual([
+        expect.objectContaining({ entityId: 'deck-1', operation: 'upsert' }),
+        expect.objectContaining({
+          entityType: 'deck',
+          entityId: 'deck-1',
+          operation: 'delete',
+          payload: null,
+        }),
+      ]);
+    });
+
+    it.each([
+      ['a blank name', { ...saved, name: ' ' }],
+      ['a printing listed twice', { ...saved, cards: [...saved.cards, ...saved.cards] }],
+    ])('rejects a deck with %s, storing and queuing nothing', async (_label, value) => {
+      const repository = await setUp({ syncNow: () => Promise.resolve() });
+
+      await expect(repository.saveDeck(value)).rejects.toThrow(TypeError);
+
+      expect(await repository.listDecks()).toEqual([]);
+      expect(await engine.listOutboxOrderedByCreatedAt()).toEqual([]);
+    });
+
+    it('rejects deleting an invalid ID', async () => {
+      const repository = await setUp({ syncNow: () => Promise.resolve() });
+
+      await expect(repository.deleteDeck('a:b')).rejects.toThrow(TypeError);
+
+      expect(await engine.listOutboxOrderedByCreatedAt()).toEqual([]);
+    });
   });
 
   it('without an outbox writer, writes locally and queues nothing', async () => {

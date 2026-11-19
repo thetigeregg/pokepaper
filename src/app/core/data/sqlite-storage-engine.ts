@@ -4,6 +4,7 @@ import type {
   CatalogSeries,
   CatalogSetPack,
   CollectionEntry,
+  Deck,
   UserSettings,
 } from '@pokepaper/shared';
 import { collectionEntryId } from '@pokepaper/shared';
@@ -426,6 +427,23 @@ export class SqliteStorageEngine implements StorageEngine {
   async listCollectionEntries(): Promise<CollectionEntry[]> {
     const rows = await this.sql.query<PayloadRow>('SELECT payload FROM collection_entries', []);
     return rows.map((row) => this.parseEntity(row) as CollectionEntry);
+  }
+
+  async putDeck(deck: Deck): Promise<void> {
+    await this.sql.run(
+      `INSERT INTO decks (key, payload) VALUES (?, ?)
+       ON CONFLICT(key) DO UPDATE SET payload = excluded.payload`,
+      [deck.id, JSON.stringify(deck)]
+    );
+  }
+
+  async deleteDeck(id: string): Promise<void> {
+    await this.sql.run('DELETE FROM decks WHERE key = ?', [id]);
+  }
+
+  async listDecks(): Promise<Deck[]> {
+    const rows = await this.sql.query<PayloadRow>('SELECT payload FROM decks', []);
+    return rows.map((row) => this.parseEntity(row) as Deck);
   }
 
   async getOutboxEntry(opId: string): Promise<OutboxEntry | undefined> {

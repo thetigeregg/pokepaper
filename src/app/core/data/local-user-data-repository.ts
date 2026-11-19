@@ -2,7 +2,10 @@ import { Injectable, inject } from '@angular/core';
 import {
   collectionEntry,
   collectionEntryId,
+  deck,
   DEFAULT_SETTINGS,
+  isDeck,
+  isDeckId,
   isCollectionQuantity,
   isCollectionTarget,
   MAX_COLLECTION_QUANTITY,
@@ -10,6 +13,7 @@ import {
   type CollectionChange,
   type CollectionEntry,
   type CollectionTarget,
+  type Deck,
   type UserSettings,
 } from '@pokepaper/shared';
 import { OutboxEntry, StorageEngine, StorageScope } from './storage-engine';
@@ -22,8 +26,7 @@ import { SYNC_OUTBOX_WRITER, SyncOutboxWriter } from './sync-outbox-writer';
  * one transaction, then fires a best-effort sync attempt. Reads go straight
  * to the local engine (instant, offline-capable).
  *
- * Ported from go-gather's repository of the same name. Deck writes will
- * follow the same `withOutboxTransaction` + `queueOperation` pattern.
+ * Ported from go-gather's repository of the same name.
  */
 @Injectable({ providedIn: 'root' })
 export class LocalUserDataRepository {
@@ -117,6 +120,41 @@ export class LocalUserDataRepository {
           await this.queueOperation('collectionEntry', key, 'upsert', entry, clientTimestamp);
         }
       }
+    });
+  }
+
+  listDecks(): Promise<Deck[]> {
+    return this.engine.listDecks();
+  }
+
+  /**
+   * Stores `value` whole, replacing any saved deck with its ID, and queues it
+   * for sync. Rejects a deck the server would reject, so nothing unsyncable
+   * is stored. Only deck fields are kept.
+   */
+  async saveDeck(value: Deck): Promise<void> {
+    if (!isDeck(value)) {
+      throw new TypeError('Invalid deck');
+    }
+    const saved = deck(value);
+    const clientTimestamp = new Date().toISOString();
+
+    await this.withOutboxTransaction(['decks'], async () => {
+      await this.engine.putDeck(saved);
+      await this.queueOperation('deck', saved.id, 'upsert', saved, clientTimestamp);
+    });
+  }
+
+  /** Deletes a deck, locally and on the server. */
+  async deleteDeck(id: string): Promise<void> {
+    if (!isDeckId(id)) {
+      throw new TypeError('Invalid deck ID');
+    }
+    const clientTimestamp = new Date().toISOString();
+
+    await this.withOutboxTransaction(['decks'], async () => {
+      await this.engine.deleteDeck(id);
+      await this.queueOperation('deck', id, 'delete', null, clientTimestamp);
     });
   }
 

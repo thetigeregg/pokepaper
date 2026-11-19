@@ -130,6 +130,16 @@ export const SQLITE_UPGRADE_STATEMENTS: { toVersion: number; statements: string[
       );`,
     ],
   },
+  {
+    // Decks (docs/decks.md). Matches Dexie version 6.
+    toVersion: 6,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS decks (
+        key TEXT PRIMARY KEY,
+        payload TEXT NOT NULL
+      );`,
+    ],
+  },
 ];
 
 class CapacitorSqliteConnection implements SqliteConnection {

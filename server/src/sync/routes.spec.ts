@@ -75,6 +75,49 @@ describe('sync routes', () => {
     });
   });
 
+  it('syncs decks, and the newest save of a deck wins', async () => {
+    const { app, headers } = testApp();
+    const deck = {
+      id: '6f1c2c1e-6c1b-4a8e-9a65-0d3b8f7c2e11',
+      name: 'Charizard ex',
+      format: 'standard',
+      cards: [{ region: 'intl', cardId: 'sv03-125', count: 3 }],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    const renamed = { ...deck, name: 'Zard', updatedAt: '2026-01-02T00:00:00.000Z' };
+    const first = settingsOp({ entityType: 'deck', entityId: deck.id, payload: deck });
+    const second = settingsOp({
+      entityType: 'deck',
+      entityId: deck.id,
+      payload: renamed,
+      clientTimestamp: '2026-01-02T00:00:00.000Z',
+    });
+
+    const push = await app.inject({
+      method: 'POST',
+      url: '/api/sync/push',
+      headers,
+      payload: { operations: [first, second] },
+    });
+    expect(push.json()).toEqual({
+      results: [
+        { opId: first.opId, status: 'applied' },
+        { opId: second.opId, status: 'applied' },
+      ],
+    });
+
+    const pull = await app.inject({
+      method: 'POST',
+      url: '/api/sync/pull',
+      headers,
+      payload: { cursor: '0' },
+    });
+    expect(pull.json()).toMatchObject({
+      changes: [{ entityType: 'deck', entityId: deck.id, operation: 'upsert', payload: renamed }],
+    });
+  });
+
   it('pull without a cursor starts from the beginning', async () => {
     const { app, headers } = testApp();
 
