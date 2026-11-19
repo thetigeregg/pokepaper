@@ -3,7 +3,14 @@
  * Builds a signed iOS OTA bundle (docs/ios.md -> OTA updates):
  *
  *   ota/ios/<build>/manifest.json
- *   ota/ios/<build>/v<version>-b<build>.zip
+ *   ota/ios/<build>/v<version>-b<build>-<checksum prefix>.zip
+ *
+ * The zip name includes its content hash: zips are served as immutable, so a
+ * rebuild of the same release must never reuse a URL a cache may hold. The
+ * target build's directory is replaced; other builds' directories (carried
+ * forward by edge/Dockerfile) are kept, up to KEEP_NATIVE_BUILDS newest, so
+ * devices still on an older build keep their last bundle until they install
+ * the new one.
  *
  * Runs inside edge/Dockerfile's OTA stage (ported from go-gather's server
  * image step). Environment:
@@ -19,7 +26,16 @@
  *   node scripts/build-ios-live-update-artifacts.mjs --output-root <dir>
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -34,6 +50,9 @@ import { readPackageVersion } from './sync-ios-version.mjs';
 import { generateEnvironmentIos, resolveProdBackendOrigin } from './write-environment-ios.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+/** Native builds whose bundles stay published (the newest ones). */
+export const KEEP_NATIVE_BUILDS = 3;
 
 export function resolveNativeBuildNumber(envValues = process.env) {
   const build = envValues.IOS_OTA_NATIVE_BUILD_NUMBER?.trim() ?? '';
@@ -75,6 +94,19 @@ export function resolveWebDir(outputPath, existsSyncFn = existsSync) {
   throw new Error(`No index.html in the ios-prod build output (${outputPath})`);
 }
 
+/** Deletes all but the `keep` highest-numbered build directories under `outputRoot`. */
+export function pruneNativeBuildDirs(outputRoot, keep = KEEP_NATIVE_BUILDS) {
+  const builds = readdirSync(outputRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && /^\d+$/.test(entry.name))
+    .map((entry) => entry.name)
+    .sort((a, b) => Number(b) - Number(a));
+  const removed = builds.slice(keep);
+  for (const build of removed) {
+    rmSync(join(outputRoot, build), { recursive: true, force: true });
+  }
+  return removed;
+}
+
 export function buildIosLiveUpdateArtifacts({
   outputRoot,
   envValues = process.env,
@@ -83,7 +115,7 @@ export function buildIosLiveUpdateArtifacts({
   readFileSyncFn = readFileSync,
   writeFileSyncFn = writeFileSync,
   existsSyncFn = existsSync,
-  buildDir = mkdtempSync(join(tmpdir(), 'ios-ota-')),
+  buildDir,
 } = {}) {
   // Validate everything before the (slow) build.
   const nativeBuildNumber = resolveNativeBuildNumber(envValues);
@@ -92,37 +124,60 @@ export function buildIosLiveUpdateArtifacts({
   const semver = readPackageVersion(resolve(cwd, 'package.json'), readFileSyncFn);
   const bundleId = buildIosLiveUpdateBundleId(semver, nativeBuildNumber);
 
-  generateEnvironmentIos({ variant: 'prod', envValues, writeFileSyncFn });
-  const webOutput = join(buildDir, 'web');
-  execFileSyncFn(
-    'npx',
-    ['ng', 'build', '--configuration', 'ios-prod', '--output-path', webOutput],
-    {
-      cwd,
-      stdio: 'inherit',
+  const workDir = buildDir ?? mkdtempSync(join(tmpdir(), 'ios-ota-'));
+  try {
+    generateEnvironmentIos({ variant: 'prod', envValues, writeFileSyncFn });
+    const webOutput = join(workDir, 'web');
+    execFileSyncFn(
+      'npx',
+      ['ng', 'build', '--configuration', 'ios-prod', '--output-path', webOutput],
+      { cwd, stdio: 'inherit' }
+    );
+    const webDir = resolveWebDir(webOutput, existsSyncFn);
+
+    // index.html at the zip root, as the plugin expects.
+    const tempZip = join(workDir, 'bundle.zip');
+    execFileSyncFn('zip', ['-qr', tempZip, '.'], {
+      cwd: webDir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const zip = readFileSyncFn(tempZip);
+    const checksum = computeBundleChecksum(zip);
+
+    const root = resolve(outputRoot);
+    const outputDir = join(root, nativeBuildNumber);
+    rmSync(outputDir, { recursive: true, force: true });
+    mkdirSync(outputDir, { recursive: true });
+    const zipName = `${bundleId}-${checksum.slice(0, 12)}.zip`;
+    const zipPath = join(outputDir, zipName);
+    renameSync(tempZip, zipPath);
+
+    const manifest = buildIosLiveUpdateManifest({
+      bundleId,
+      semver,
+      nativeBuildNumber,
+      backendOrigin,
+      zipName,
+      checksum,
+      signature: signBundleBuffer(zip, privateKeyPem),
+    });
+    writeFileSyncFn(join(outputDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+    const pruned = pruneNativeBuildDirs(root);
+
+    return {
+      bundleId,
+      nativeBuildNumber,
+      outputDir,
+      zipPath,
+      manifest,
+      pruned,
+      sizeBytes: zip.length,
+    };
+  } finally {
+    if (buildDir === undefined) {
+      rmSync(workDir, { recursive: true, force: true });
     }
-  );
-  const webDir = resolveWebDir(webOutput, existsSyncFn);
-
-  const outputDir = resolve(outputRoot, nativeBuildNumber);
-  const zipPath = join(outputDir, `${bundleId}.zip`);
-  mkdirSync(outputDir, { recursive: true });
-  rmSync(zipPath, { force: true });
-  // index.html at the zip root, as the plugin expects.
-  execFileSyncFn('zip', ['-qr', zipPath, '.'], { cwd: webDir, stdio: ['ignore', 'pipe', 'pipe'] });
-
-  const zip = readFileSyncFn(zipPath);
-  const manifest = buildIosLiveUpdateManifest({
-    bundleId,
-    semver,
-    nativeBuildNumber,
-    backendOrigin,
-    checksum: computeBundleChecksum(zip),
-    signature: signBundleBuffer(zip, privateKeyPem),
-  });
-  writeFileSyncFn(join(outputDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
-
-  return { bundleId, nativeBuildNumber, outputDir, zipPath, manifest, sizeBytes: zip.length };
+  }
 }
 
 export function parseArgs(argv) {
@@ -140,6 +195,9 @@ function main() {
     console.log(
       `${tag} built ${result.bundleId} for native build ${result.nativeBuildNumber} (${result.sizeBytes} bytes)`
     );
+    if (result.pruned.length > 0) {
+      console.log(`${tag} removed bundles for native builds ${result.pruned.join(', ')}`);
+    }
   } catch (error) {
     console.error(`${tag} ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);

@@ -10,6 +10,10 @@ FROM ${OTA_PREVIOUS_IMAGE} AS ota-previous
 FROM node:24.22.2-slim AS builder
 WORKDIR /app
 ENV HUSKY=0
+# For the OTA stage's bundle zip. Installed before anything that changes per
+# release, so this layer stays cached.
+RUN apt-get update && apt-get install -y --no-install-recommends zip \
+  && rm -rf /var/lib/apt/lists/*
 
 # Only the root app and the shared workspace are needed for ng build; the
 # server workspace's runtime dependencies are skipped.
@@ -23,15 +27,13 @@ COPY public ./public
 COPY src ./src
 RUN npm run build
 
-# --- Stage 2: iOS OTA bundle (docs/ios.md -> OTA updates) ---
-# BUILD_IOS_OTA=true builds a fresh signed bundle for the installed TestFlight
-# build (only that build's directory is kept: older builds' devices need a
-# TestFlight update anyway). Otherwise the previous image's bundles are
-# carried forward unchanged. The signing key and origin arrive as BuildKit
-# secrets, never as build args or layers.
+# --- Stage 2: iOS OTA bundles (docs/ios.md -> OTA updates) ---
+# The previous image's bundles are always carried forward. With
+# BUILD_IOS_OTA=true, a fresh signed bundle then replaces the target build's
+# directory (other builds' bundles stay, for devices not yet on the new
+# build; the script keeps the newest few). The signing key and origin arrive
+# as BuildKit secrets, never as build args or layers.
 FROM builder AS ota
-RUN apt-get update && apt-get install -y --no-install-recommends zip \
-  && rm -rf /var/lib/apt/lists/*
 COPY scripts/ios-live-update-common.mjs scripts/build-ios-live-update-artifacts.mjs \
   scripts/write-environment-ios.mjs scripts/lan-host.mjs scripts/sync-ios-version.mjs ./scripts/
 ARG BUILD_IOS_OTA=false
@@ -41,6 +43,9 @@ RUN --mount=type=secret,id=IOS_LIVE_UPDATE_PRIVATE_KEY,required=false \
     --mount=type=bind,from=ota-previous,target=/ota-previous \
     set -eu; \
     mkdir -p /ota/ios; \
+    if [ -d /ota-previous/srv-ota/ios ]; then \
+      cp -a /ota-previous/srv-ota/ios/. /ota/ios/; \
+    fi; \
     if [ "$BUILD_IOS_OTA" = "true" ]; then \
       test -s /run/secrets/IOS_LIVE_UPDATE_PRIVATE_KEY || { echo "IOS_LIVE_UPDATE_PRIVATE_KEY secret required" >&2; exit 1; }; \
       test -s /run/secrets/IOS_BACKEND_ORIGIN_PROD || { echo "IOS_BACKEND_ORIGIN_PROD secret required" >&2; exit 1; }; \
@@ -48,8 +53,6 @@ RUN --mount=type=secret,id=IOS_LIVE_UPDATE_PRIVATE_KEY,required=false \
       IOS_LIVE_UPDATE_PRIVATE_KEY_PATH=/run/secrets/IOS_LIVE_UPDATE_PRIVATE_KEY \
       IOS_OTA_NATIVE_BUILD_NUMBER="$IOS_OTA_NATIVE_BUILD_NUMBER" \
         node scripts/build-ios-live-update-artifacts.mjs --output-root /ota/ios; \
-    elif [ -d /ota-previous/srv-ota/ios ]; then \
-      cp -a /ota-previous/srv-ota/ios/. /ota/ios/; \
     fi
 
 # --- Stage 3: Caddy serving the app and proxying the API ---

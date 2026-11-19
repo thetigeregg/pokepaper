@@ -75,12 +75,12 @@ To sign in on a device, build App PROD (`npm run sync:ios:prod`) with your team 
 
 After each release, the `iOS TestFlight` workflow (`.github/workflows/ios-testflight.yml`) builds App PROD on a macOS runner with Fastlane (`ios/fastlane/`) and uploads it to TestFlight. Install builds with Apple's TestFlight app.
 
-- **When:** after `Release & Publish` succeeds on `main`, but only if that run produced a release tag and the release changed **native** code. `scripts/ios-release-gate.mjs` compares the release with the previous tag.
-  - **Native:** `ios/`, `capacitor.config.ts`, the OTA public key, the iOS build scripts, this workflow, and dependency changes to native plugins (`@capacitor/*`, `@capawesome/*`, `@capgo/*`, `capacitor-*`), read from the lockfile's package versions.
-  - **Web** (`src/`, `shared/`, `public/`, the Angular config, other dependencies) ships as an OTA bundle instead ([OTA updates](#ota-updates)).
-  - **Neither:** server, edge, docs, CI, and version-only bumps of the manifests or the Xcode project.
+- **When:** after `Release & Publish` succeeds on `main`, if that run produced a release tag and native code changed since the last recorded TestFlight build. The gate compares against that recorded build, not the previous tag, so a native change can't be hidden by a quick follow-up release. Runs queue rather than overlap, so each one decides against the build the previous one recorded. `scripts/ios-release-gate.mjs` decides:
+  - **Native:** `ios/`, `capacitor.config.ts`, the OTA public key, the iOS build scripts, this workflow, and native plugin dependencies (`@capacitor/*`, `@capawesome/*`, `@capgo/*`, `capacitor-*`), read from the lockfile's package versions.
+  - **Web:** `src/`, `shared/`, `public/`, the Angular config, the app's runtime `dependencies`, and the Angular/Ionic toolchain. These ship as OTA bundles instead ([OTA updates](#ota-updates)). Before any build is recorded, web changes go to TestFlight too.
+  - **Neither:** server, edge, docs, CI, dev tooling (eslint, vitest, …), server dependencies, and version-only bumps of the manifests or the Xcode project.
   - **Manual runs:** `workflow_dispatch` always builds, which is useful for signing retries.
-- **Recorded for OTA:** after an upload, the workflow stores the build number and commit in the repo variables `IOS_OTA_NATIVE_BUILD_NUMBER` and `IOS_OTA_NATIVE_SHA`, using the release GitHub App, which needs **Variables: write**. OTA bundles are built for that build.
+- **Recorded for OTA:** after an upload of a release, or of a manual run on `main` (never a branch build), the workflow stores `<build number>@<commit>` in the repo variable `IOS_OTA_NATIVE_BUILD`. It's one variable, so the two values never disagree. It uses the release GitHub App, which needs **Variables: write**. OTA bundles are built for that build.
 - **Version:** the build's version is the release's `package.json` version. Its build number is one more than the latest in TestFlight (`sync-ios-version.mjs --build-number`).
 - **Signing:** [fastlane match](https://docs.fastlane.tools/actions/match/) installs the App Store certificate and profile from the team's shared, encrypted match repo (`ios/fastlane/Matchfile`). That's the same repo go-gather uses: one Apple Distribution certificate per team, and one profile per app. CI uses match read-only, so it never creates signing assets.
 - **Xcode:** the workflow pins Xcode 27.2 on GitHub's `xcode-27` runner. Uploads need the iOS 26 SDK today, and the iOS 27 SDK from April 2027 (App Store Connect warns about it with ITMS-90725). Keep the pin at least at the SDK Apple requires.
@@ -117,11 +117,11 @@ Web-only changes can reach the installed app without a new TestFlight build, thr
 
 ### Publishing bundles
 
-- **When:** a release gets a bundle when `scripts/ios-release-gate.mjs` finds web changes and no native ones, _and_ nothing native has changed since `IOS_OTA_NATIVE_SHA`. A bundle runs on the installed build's native code, so it mustn't depend on newer plugins. That also covers a TestFlight build that's still running or failed. Native releases ship through TestFlight instead.
+- **When:** `scripts/ios-release-gate.mjs` builds a bundle when nothing native has changed since the recorded TestFlight build (`IOS_OTA_NATIVE_BUILD`), and web code has changed since the later of that build and the last bundle (`IOS_OTA_BUNDLE_SHA`, recorded after each bundle). A bundle runs on the installed build's native code, so it mustn't depend on newer plugins. That covers a TestFlight build that's still running or failed: once it's recorded, web changes held back in the meantime ship with the next release. If the gate itself fails, OTA is skipped, and the images still publish.
 - **Where:** `release-publish.yml` rebuilds the `edge` image with `BUILD_IOS_OTA=true`. Its `ota` stage (`edge/Dockerfile`) runs `scripts/build-ios-live-update-artifacts.mjs`:
   - It writes the `ios-prod` environment and runs `ng build --configuration ios-prod`.
   - It zips the output (`index.html` at the root) and signs the zip with the private key, which arrives as a BuildKit secret.
-  - It writes `ota/ios/<build>/manifest.json` and `v<version>-b<build>.zip`. Only the current build's directory is kept.
+  - It writes `ota/ios/<build>/manifest.json` and `v<version>-b<build>-<hash>.zip`. The zip name includes its content hash, so a rebuild never reuses a URL a cache holds. It replaces only the target build's directory: devices still on an older build keep its last bundle, and the 3 newest builds are kept.
 - **Serving:** Caddy serves `/ota/*` from the image. The manifest gets `no-store` and the zips `immutable`. A missing file returns 404, never the SPA's `index.html`.
 - **Carry-forward:** every other edge build copies the previous image's `/srv-ota` forward (`OTA_PREVIOUS_IMAGE`, the current `pokepaper-edge:main`), so a release without web changes keeps serving the last bundle. A bad bundle can't be pulled by a server-only release; publish a new one, or a new TestFlight build.
 - **Deploy:** bundles go live when the NAS pulls the new `pokepaper-edge` image, like any web release.

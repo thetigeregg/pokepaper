@@ -137,7 +137,7 @@ Releases skip themselves: the release commit is `chore(release): vX.Y.Z [skip ci
 - `AUTOCOMMIT_CLIENT_ID` (variable) and `AUTOCOMMIT_APP_PRIVATE_KEY` (secret): the release GitHub App (the same one go-gather uses). Install the app on this repository and add it as a bypass actor on the `main` ruleset so the release commit can be pushed.
 - `CODECOV_TOKEN` (secret): coverage uploads. Until it's set, uploads are best-effort and don't fail PRs.
 - iOS TestFlight: App Store Connect API key, match password and access, and `IOS_BACKEND_ORIGIN_PROD`, in the `production` environment. See [`docs/ios.md`](docs/ios.md) → TestFlight.
-- iOS OTA updates: `IOS_LIVE_UPDATE_PRIVATE_KEY` (secret, `production` environment). The release GitHub App also needs **Variables: write**, so the TestFlight workflow can record `IOS_OTA_NATIVE_BUILD_NUMBER` / `IOS_OTA_NATIVE_SHA`.
+- iOS OTA updates: `IOS_LIVE_UPDATE_PRIVATE_KEY` (secret, `production` environment). The release GitHub App also needs **Variables: write**, so the workflows can record `IOS_OTA_NATIVE_BUILD` and `IOS_OTA_BUNDLE_SHA`.
 - `CLAUDE_CODE_OAUTH_TOKEN` (secret): already configured.
 
 ## Deployment

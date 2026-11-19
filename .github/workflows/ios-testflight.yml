@@ -22,9 +22,11 @@ permissions:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
+# Runs queue instead of overlapping: each run decides against the build the
+# previous one recorded, so a native change is built once, never skipped.
 concurrency:
-  group: pokepaper-ios-testflight-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
-  cancel-in-progress: true
+  group: pokepaper-ios-testflight
+  cancel-in-progress: false
 
 jobs:
   detect_changes:
@@ -50,6 +52,7 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          NATIVE_BUILD: ${{ vars.IOS_OTA_NATIVE_BUILD }}
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
@@ -72,7 +75,9 @@ jobs:
             exit 0
           fi
 
-          node scripts/ios-release-gate.mjs --head "$CURRENT" --github-output "$GITHUB_OUTPUT"
+          # Native changes since the last recorded build, not just since the
+          # previous tag: a quick follow-up release can't hide one.
+          node scripts/ios-release-gate.mjs --head "$CURRENT" --native-build "$NATIVE_BUILD" --github-output "$GITHUB_OUTPUT"
           echo "release_tag=$CURRENT" >> "$GITHUB_OUTPUT"
 
   skip_summary:
@@ -197,10 +202,13 @@ jobs:
         run: bundle exec fastlane deploy_testflight
 
       # OTA bundles must match the installed native code, so the release
-      # workflow builds them for this build only, and only while nothing
-      # native has changed since this commit (scripts/ios-release-gate.mjs).
+      # workflow builds them for this build, and only while nothing native
+      # has changed since this commit (scripts/ios-release-gate.mjs). Only
+      # builds of main (a release, or a manual run on main) are recorded,
+      # never a branch build. One variable, so build and commit always match.
       # Repo variables need the release GitHub App (Variables: write).
       - name: Create GitHub App token
+        if: needs.detect_changes.outputs.release_tag != '' || github.ref == 'refs/heads/main'
         id: app_token
         uses: actions/create-github-app-token@v3
         with:
@@ -208,6 +216,7 @@ jobs:
           private-key: ${{ secrets.AUTOCOMMIT_APP_PRIVATE_KEY }}
 
       - name: Record this build for OTA updates
+        if: needs.detect_changes.outputs.release_tag != '' || github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
           BUILD_NUMBER: ${{ steps.testflight_upload.outputs.ios_native_build_number }}
@@ -217,8 +226,7 @@ jobs:
             echo "::error::deploy_testflight didn't report a build number" >&2
             exit 1
           fi
-          gh variable set IOS_OTA_NATIVE_BUILD_NUMBER --body "$BUILD_NUMBER"
-          gh variable set IOS_OTA_NATIVE_SHA --body "$(git rev-parse HEAD)"
+          gh variable set IOS_OTA_NATIVE_BUILD --body "${BUILD_NUMBER}@$(git rev-parse HEAD)"
 
       - name: Write upload summary
         env:

@@ -1,13 +1,22 @@
 import assert from 'node:assert/strict';
 import { createVerify, generateKeyPairSync } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
 
 import {
   buildIosLiveUpdateArtifacts,
   parseArgs,
+  pruneNativeBuildDirs,
   resolveNativeBuildNumber,
   resolvePrivateKeyPem,
   resolveWebDir,
@@ -44,6 +53,7 @@ test('builds bundle ids and manifests', () => {
       semver: ' 0.17.0 ',
       nativeBuildNumber: 4,
       backendOrigin: 'https://pokepaper.example.com',
+      zipName: 'v0.17.0-b4-abc.zip',
       checksum: 'c',
       signature: 's',
     }),
@@ -51,7 +61,7 @@ test('builds bundle ids and manifests', () => {
       bundleId: 'v0.17.0-b4',
       semver: '0.17.0',
       nativeBuildNumber: '4',
-      url: 'https://pokepaper.example.com/ota/ios/4/v0.17.0-b4.zip',
+      url: 'https://pokepaper.example.com/ota/ios/4/v0.17.0-b4-abc.zip',
       checksum: 'c',
       signature: 's',
     }
@@ -94,15 +104,34 @@ test('parses arguments', () => {
   assert.throws(() => parseArgs(['--output-root']), /Usage/);
 });
 
-test('builds a signed bundle and manifest (ng build and zip faked)', () => {
+test('keeps only the newest native build directories', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ota-prune-'));
+  try {
+    for (const name of ['2', '10', '9', '3', 'notes']) mkdirSync(join(root, name));
+    assert.deepEqual(pruneNativeBuildDirs(root, 3), ['2']);
+    assert.deepEqual(readdirSync(root).sort(), ['10', '3', '9', 'notes']);
+    assert.deepEqual(pruneNativeBuildDirs(root, 1), ['9', '3']);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('builds a signed bundle with a content-addressed zip, keeping other builds (ng build and zip faked)', () => {
   const root = mkdtempSync(join(tmpdir(), 'ota-test-'));
   try {
     const outputRoot = join(root, 'ota');
     const buildDir = join(root, 'build');
+    // Carried forward from the previous image: build 3's bundle, and a stale
+    // zip in build 4's directory, which the new bundle replaces.
+    mkdirSync(join(outputRoot, '3'), { recursive: true });
+    writeFileSync(join(outputRoot, '3', 'manifest.json'), '{}');
+    mkdirSync(join(outputRoot, '4'), { recursive: true });
+    writeFileSync(join(outputRoot, '4', 'v0.16.0-b4-old.zip'), 'old');
+
     const written = {};
     const calls = [];
     const execFileSyncFn = (cmd, args, options) => {
-      calls.push([cmd, ...args].join(' '));
+      calls.push(cmd);
       if (cmd === 'npx') {
         const out = join(args.at(-1), 'browser');
         mkdirSync(out, { recursive: true });
@@ -134,25 +163,50 @@ test('builds a signed bundle and manifest (ng build and zip faked)', () => {
       },
     });
 
+    const checksum = computeBundleChecksum(Buffer.from('fake zip'));
+    const zipName = `v0.17.0-b4-${checksum.slice(0, 12)}.zip`;
     assert.equal(result.bundleId, 'v0.17.0-b4');
-    assert.deepEqual(
-      calls.map((call) => call.split(' ').slice(0, 4).join(' ')),
-      ['npx ng build --configuration', `zip -qr ${join(outputRoot, '4', 'v0.17.0-b4.zip')} .`]
-    );
+    assert.deepEqual(calls, ['npx', 'zip']);
+    assert.deepEqual(readdirSync(join(outputRoot, '4')).sort(), ['manifest.json', zipName]);
+    assert.ok(existsSync(join(outputRoot, '3', 'manifest.json')));
     const environment = Object.entries(written).find(([path]) =>
       path.endsWith('environment.ios.prod.ts')
     );
     assert.match(environment?.[1] ?? '', /apiUrl: 'https:\/\/pokepaper\.example\.com'/);
 
     const manifest = JSON.parse(readFileSync(join(outputRoot, '4', 'manifest.json'), 'utf8'));
-    assert.equal(manifest.url, 'https://pokepaper.example.com/ota/ios/4/v0.17.0-b4.zip');
+    assert.equal(manifest.url, `https://pokepaper.example.com/ota/ios/4/${zipName}`);
+    assert.equal(manifest.checksum, checksum);
     const verifier = createVerify('RSA-SHA256');
     verifier.update(Buffer.from('fake zip'));
     assert.equal(verifier.verify(publicKey, manifest.signature, 'base64'), true);
-    assert.equal(manifest.checksum, computeBundleChecksum(Buffer.from('fake zip')));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('removes its temporary build directory, even when the build fails', () => {
+  const created = [];
+  assert.throws(
+    () =>
+      buildIosLiveUpdateArtifacts({
+        outputRoot: join(tmpdir(), 'ota-never'),
+        execFileSyncFn: (_cmd, args) => {
+          created.push(args.at(-1));
+          throw new Error('ng build failed');
+        },
+        envValues: {
+          IOS_OTA_NATIVE_BUILD_NUMBER: '4',
+          IOS_BACKEND_ORIGIN_PROD: 'https://pokepaper.example.com',
+          IOS_LIVE_UPDATE_PRIVATE_KEY: PRIVATE_PEM,
+        },
+        readFileSyncFn: () => JSON.stringify({ version: '0.17.0' }),
+        writeFileSyncFn: () => undefined,
+      }),
+    /ng build failed/
+  );
+  assert.equal(created.length, 1);
+  assert.equal(existsSync(dirname(created[0])), false);
 });
 
 test('validates inputs before building anything', () => {

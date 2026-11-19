@@ -115,6 +115,7 @@ jobs:
       ota: ${{ steps.ota.outputs.ota }}
       ota_paths: ${{ steps.ota.outputs.ota_paths }}
       ota_skipped_reason: ${{ steps.ota.outputs.ota_skipped_reason }}
+      ota_native_build_number: ${{ steps.ota.outputs.ota_native_build_number }}
     env:
       TAG: ${{ needs.release.outputs.tag }}
       FORCE_PUBLISH: ${{ inputs.force_publish == true }}
@@ -140,14 +141,20 @@ jobs:
           node scripts/image-should-publish.mjs "${args[@]}"
 
       # iOS OTA bundle (docs/ios.md -> OTA updates): built into the edge
-      # image when this release changes only web code and nothing native
-      # changed since the installed TestFlight build (recorded by
-      # ios-testflight.yml).
+      # image when web code changed since the last bundle (or TestFlight
+      # build) and nothing native changed since the TestFlight build recorded
+      # by ios-testflight.yml. It must never block the images: if the gate
+      # itself fails, OTA is skipped.
       - name: Evaluate iOS OTA bundle
         id: ota
         env:
-          NATIVE_SHA: ${{ vars.IOS_OTA_NATIVE_SHA }}
-        run: node scripts/ios-release-gate.mjs --head "$TAG" --native-sha "$NATIVE_SHA" --github-output "$GITHUB_OUTPUT"
+          NATIVE_BUILD: ${{ vars.IOS_OTA_NATIVE_BUILD }}
+          BUNDLE_SHA: ${{ vars.IOS_OTA_BUNDLE_SHA }}
+        run: |
+          if ! node scripts/ios-release-gate.mjs --head "$TAG" --native-build "$NATIVE_BUILD" --bundle-sha "$BUNDLE_SHA" --github-output "$GITHUB_OUTPUT"; then
+            echo "::warning::The iOS release gate failed; no OTA bundle for this release."
+            { echo "ota=false"; echo "ota_paths="; echo "ota_skipped_reason=The iOS release gate failed (see the Detect image changes log)."; echo "ota_native_build_number="; } >> "$GITHUB_OUTPUT"
+          fi
 
   publish:
     name: Publish ${{ matrix.image }} image
@@ -213,11 +220,11 @@ jobs:
         if: env.BUILD_OTA == 'true'
         env:
           IOS_LIVE_UPDATE_PRIVATE_KEY: ${{ secrets.IOS_LIVE_UPDATE_PRIVATE_KEY }}
-          IOS_OTA_NATIVE_BUILD_NUMBER: ${{ vars.IOS_OTA_NATIVE_BUILD_NUMBER }}
+          IOS_OTA_NATIVE_BUILD_NUMBER: ${{ needs.detect_changes.outputs.ota_native_build_number }}
         run: |
           set -euo pipefail
           if [ -z "$IOS_OTA_NATIVE_BUILD_NUMBER" ]; then
-            echo "::error::IOS_OTA_NATIVE_BUILD_NUMBER is not set (ios-testflight.yml records it)" >&2
+            echo "::error::The gate chose an OTA bundle but reported no native build number" >&2
             exit 1
           fi
           (umask 077; printf '%s\n' "$IOS_LIVE_UPDATE_PRIVATE_KEY" > "$RUNNER_TEMP/ios-live-update-key.pem")
@@ -239,7 +246,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             BUILD_IOS_OTA=true
-            IOS_OTA_NATIVE_BUILD_NUMBER=${{ vars.IOS_OTA_NATIVE_BUILD_NUMBER }}
+            IOS_OTA_NATIVE_BUILD_NUMBER=${{ needs.detect_changes.outputs.ota_native_build_number }}
           secrets: |
             IOS_BACKEND_ORIGIN_PROD=${{ secrets.IOS_BACKEND_ORIGIN_PROD }}
           secret-files: |
@@ -267,13 +274,31 @@ jobs:
         if: always() && env.BUILD_OTA == 'true'
         run: rm -f "$RUNNER_TEMP/ios-live-update-key.pem"
 
+      # The next release only builds a bundle if web code changed since this
+      # one (scripts/ios-release-gate.mjs). Repo variables need the release
+      # GitHub App (Variables: write).
+      - name: Create GitHub App token
+        if: env.BUILD_OTA == 'true'
+        id: app_token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.AUTOCOMMIT_CLIENT_ID }}
+          private-key: ${{ secrets.AUTOCOMMIT_APP_PRIVATE_KEY }}
+
+      - name: Record the bundled release
+        if: env.BUILD_OTA == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          RELEASE_SHA: ${{ needs.release.outputs.release_sha }}
+        run: gh variable set IOS_OTA_BUNDLE_SHA --body "$RELEASE_SHA"
+
       - name: Write OTA summary
         if: matrix.image == 'edge'
         env:
           OTA: ${{ needs.detect_changes.outputs.ota }}
           OTA_PATHS: ${{ needs.detect_changes.outputs.ota_paths }}
           OTA_SKIPPED_REASON: ${{ needs.detect_changes.outputs.ota_skipped_reason }}
-          NATIVE_BUILD: ${{ vars.IOS_OTA_NATIVE_BUILD_NUMBER }}
+          NATIVE_BUILD: ${{ needs.detect_changes.outputs.ota_native_build_number }}
         run: |
           {
             if [ "$OTA" = "true" ]; then

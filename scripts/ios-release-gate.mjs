@@ -1,24 +1,34 @@
 #!/usr/bin/env node
 /**
  * Decides how a release reaches the iOS app (docs/ios.md -> TestFlight, OTA
- * updates):
+ * updates). Two recorded commits drive it:
  *
- * - **native** changes (the Xcode project, Capacitor config, native plugins,
- *   iOS build tooling) need a new TestFlight build;
- * - **web** changes (the Angular app and what it's built from) ship as a
- *   signed OTA bundle, but only when nothing native changed since the commit
- *   the installed TestFlight build was made from (`--native-sha`): a bundle
- *   runs on that build's native code, so it mustn't depend on newer plugins.
- *   That also covers a TestFlight build that's still running or failed.
+ * - `--native-build <number>@<sha>` (repo variable IOS_OTA_NATIVE_BUILD): the
+ *   last TestFlight build of main, recorded by ios-testflight.yml.
+ * - `--bundle-sha <sha>` (IOS_OTA_BUNDLE_SHA): the release the last OTA
+ *   bundle was built from, recorded by release-publish.yml.
+ *
+ * Decisions:
+ * - **TestFlight** when native code (the Xcode project, Capacitor config,
+ *   native plugins, iOS build tooling) changed since the recorded build, so
+ *   a change is never lost to a quick follow-up release. Before any build is
+ *   recorded, web changes count too: there's no OTA-capable build yet.
+ * - **OTA bundle** when nothing native changed since the recorded build (a
+ *   bundle runs on that build's native code) and web code (the Angular app
+ *   and its runtime dependencies) changed since the later of the recorded
+ *   build and the last bundle, so web changes held back while a TestFlight
+ *   build was pending still ship. OTA problems never fail the gate: they
+ *   skip with a reason, so image publishing isn't blocked.
  *
  *   node scripts/ios-release-gate.mjs --head v1.2.0 [--base v1.1.0]
- *     [--native-sha <sha>] [--github-output $GITHUB_OUTPUT]
+ *     [--native-build 5@<sha>] [--bundle-sha <sha>] [--github-output $GITHUB_OUTPUT]
  *
- * Outputs: testflight, testflight_paths, ota, ota_paths, ota_skipped_reason.
+ * Outputs: testflight, testflight_paths, ota, ota_paths, ota_skipped_reason,
+ * ota_native_build_number.
  *
  * Version-only bumps (the manifests' `version`, project.pbxproj's
  * MARKETING_VERSION) count as nothing. Dependency changes are read from the
- * lockfile itself: a Capacitor plugin bump is native, anything else is web.
+ * lockfile and package.json themselves.
  */
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
@@ -62,6 +72,8 @@ export const WEB_RULE = {
 
 /** npm packages with native iOS code: changing them needs a TestFlight build. */
 export const NATIVE_PACKAGE = /^(@capacitor|@capacitor-community|@capawesome|@capgo)\/|^capacitor-/;
+/** Build toolchain packages that change the bundle even as devDependencies. */
+export const WEB_TOOLCHAIN_PACKAGE = /^@angular(-devkit)?\/|^@ionic\/|^typescript$/;
 
 const MARKETING_VERSION_LINE = /^\t*MARKETING_VERSION = [^;]+;$/;
 const GIT_OPTIONS = { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] };
@@ -89,70 +101,89 @@ export function pbxprojDiffIsMarketingVersionOnly(diff) {
 
 function packageNameOf(lockKey) {
   const index = lockKey.lastIndexOf('node_modules/');
-  return index >= 0 ? lockKey.slice(index + 'node_modules/'.length) : lockKey;
-}
-
-function withoutVersion(entry) {
-  if (!entry || typeof entry !== 'object') return entry;
-  const { version: _version, ...rest } = entry;
-  return rest;
+  return index >= 0 ? lockKey.slice(index + 'node_modules/'.length) : null;
 }
 
 /**
- * What a manifest change means: 'native' if a native package changed, 'web'
- * for any other change, or null when only `version` fields changed.
+ * Classifies changed package names: 'native' if any is a native plugin,
+ * 'web' if any ships in the app (a root runtime dependency, or the Angular /
+ * Ionic toolchain), else null (server or tooling-only: eslint, vitest, …).
  */
-export function classifyManifestChange(filePath, before, after) {
-  const changed = new Set();
+function classifyPackages(names, appDependencies) {
+  if (names.some((name) => NATIVE_PACKAGE.test(name))) return 'native';
+  if (names.some((name) => appDependencies.has(name) || WEB_TOOLCHAIN_PACKAGE.test(name))) {
+    return 'web';
+  }
+  return null;
+}
+
+/**
+ * What a manifest change means for the iOS app. `appDependencies` are the
+ * root package.json `dependencies` (at either ref).
+ */
+export function classifyManifestChange(filePath, before, after, appDependencies) {
+  const names = [];
   if (filePath === 'package-lock.json') {
     const beforePackages = before?.packages ?? {};
     const afterPackages = after?.packages ?? {};
     for (const key of new Set([...Object.keys(beforePackages), ...Object.keys(afterPackages)])) {
-      // The root entry ("") carries the release version; compare the rest.
-      const a = key === '' ? withoutVersion(beforePackages[key]) : beforePackages[key];
-      const b = key === '' ? withoutVersion(afterPackages[key]) : afterPackages[key];
-      if (JSON.stringify(a) !== JSON.stringify(b)) {
-        changed.add(key === '' ? '' : packageNameOf(key));
+      const name = packageNameOf(key);
+      // Workspace entries ("", "server", "shared") aren't packages.
+      if (name === null) continue;
+      if (JSON.stringify(beforePackages[key]) !== JSON.stringify(afterPackages[key])) {
+        names.push(name);
       }
     }
   } else {
-    const fields = new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})]);
-    fields.delete('version');
-    for (const field of fields) {
-      const a = before?.[field];
-      const b = after?.[field];
-      if (JSON.stringify(a) === JSON.stringify(b)) continue;
-      if (field === 'dependencies' || field === 'devDependencies') {
-        for (const name of new Set([...Object.keys(a ?? {}), ...Object.keys(b ?? {})])) {
-          if (a?.[name] !== b?.[name]) changed.add(name);
-        }
-      } else {
-        changed.add('');
+    for (const field of ['dependencies', 'devDependencies']) {
+      const a = before?.[field] ?? {};
+      const b = after?.[field] ?? {};
+      for (const name of new Set([...Object.keys(a), ...Object.keys(b)])) {
+        if (a[name] !== b[name]) names.push(name);
       }
     }
   }
-  if (changed.size === 0) return null;
-  return [...changed].some((name) => NATIVE_PACKAGE.test(name)) ? 'native' : 'web';
+  return classifyPackages(names, appDependencies);
+}
+
+function gitShowJson(ref, filePath, execFileSyncFn, cwd) {
+  try {
+    return JSON.parse(
+      execFileSyncFn('git', ['show', `${ref}:${filePath}`], { cwd, ...GIT_OPTIONS })
+    );
+  } catch {
+    return null; // didn't exist at that ref
+  }
+}
+
+function gitSucceeds(args, execFileSyncFn, cwd) {
+  try {
+    execFileSyncFn('git', args, { cwd, ...GIT_OPTIONS });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Changed paths between two refs, split into native and web. */
 export function classifyRange({ base, head, execFileSyncFn = execFileSync, cwd = process.cwd() }) {
-  const readJson = (ref, filePath) => {
-    try {
-      return JSON.parse(
-        execFileSyncFn('git', ['show', `${ref}:${filePath}`], { cwd, ...GIT_OPTIONS })
-      );
-    } catch {
-      return null; // didn't exist at that ref
-    }
-  };
+  const appDependencies = new Set(
+    [base, head].flatMap((ref) =>
+      Object.keys(gitShowJson(ref, 'package.json', execFileSyncFn, cwd)?.dependencies ?? {})
+    )
+  );
   const native = [];
   const web = [];
   for (const raw of listChangedFiles({ base, head, execFileSyncFn, cwd })) {
     const filePath = normalize(raw);
     let kind;
     if (MANIFESTS.includes(filePath)) {
-      kind = classifyManifestChange(filePath, readJson(base, filePath), readJson(head, filePath));
+      kind = classifyManifestChange(
+        filePath,
+        gitShowJson(base, filePath, execFileSyncFn, cwd),
+        gitShowJson(head, filePath, execFileSyncFn, cwd),
+        appDependencies
+      );
     } else if (filePath === PBXPROJ_PATH) {
       const diff = readManifestDiff({ base, head, paths: [filePath], execFileSyncFn, cwd });
       kind = pbxprojDiffIsMarketingVersionOnly(diff) ? null : 'native';
@@ -165,51 +196,109 @@ export function classifyRange({ base, head, execFileSyncFn = execFileSync, cwd =
   return { native, web };
 }
 
+/** `<number>@<sha>` → { buildNumber, sha }, or null if unset or malformed. */
+export function parseNativeBuild(value) {
+  const match = /^\s*(\d+)@([0-9a-f]{7,40})\s*$/.exec(value ?? '');
+  return match ? { buildNumber: match[1], sha: match[2] } : null;
+}
+
 /**
- * The release's routing. `nativeSha` is the commit the installed TestFlight
- * build was made from (unset: no OTA-capable build is known yet).
+ * The release's routing (see the file comment). `nativeBuild` is the
+ * `<number>@<sha>` string; `bundleSha` the last bundled commit.
  */
 export function decide({
   head,
   base,
-  nativeSha,
+  nativeBuild,
+  bundleSha,
   execFileSyncFn = execFileSync,
   cwd = process.cwd(),
 }) {
+  const isCommit = (sha) => gitSucceeds(['cat-file', '-e', `${sha}^{commit}`], execFileSyncFn, cwd);
+  const skip = (skippedReason) => ({
+    deploy: false,
+    paths: [],
+    skippedReason,
+    nativeBuildNumber: '',
+  });
+
   const previous = base === undefined ? resolvePreviousTag(head, { execFileSyncFn, cwd }) : base;
   if (typeof previous !== 'string' || previous.trim().length === 0) {
     // First release: ship a native build; there's nothing to update over the air.
     return {
       testflight: { deploy: true, paths: ['no-previous-tag'] },
-      ota: { deploy: false, paths: [], skippedReason: 'First release: TestFlight only.' },
+      ota: skip('First release: TestFlight only.'),
     };
   }
 
-  const release = classifyRange({ base: previous, head, execFileSyncFn, cwd });
-  const testflight = { deploy: release.native.length > 0, paths: release.native };
+  const recorded = parseNativeBuild(nativeBuild);
+  const native = recorded && isCommit(recorded.sha) ? recorded : null;
 
-  const skip = (skippedReason) => ({ deploy: false, paths: [], skippedReason });
+  if (native === null) {
+    // No usable record of an OTA-capable build: TestFlight ships everything.
+    const release = classifyRange({ base: previous, head, execFileSyncFn, cwd });
+    const paths = [...release.native, ...release.web];
+    return {
+      testflight: { deploy: paths.length > 0, paths },
+      ota: skip(
+        recorded
+          ? `The recorded TestFlight build's commit (${recorded.sha}) isn't in this repository's history.`
+          : 'No OTA-capable TestFlight build is recorded yet (IOS_OTA_NATIVE_BUILD).'
+      ),
+    };
+  }
+
+  const sinceNative = classifyRange({ base: native.sha, head, execFileSyncFn, cwd });
+  const testflight = { deploy: sinceNative.native.length > 0, paths: sinceNative.native };
+  if (testflight.deploy) {
+    return {
+      testflight,
+      ota: skip(
+        'Native code changed since the installed TestFlight build: it ships through TestFlight.'
+      ),
+    };
+  }
+
   let ota;
-  if (release.web.length === 0) {
-    ota = skip('No web changes in this release.');
-  } else if (release.native.length > 0) {
-    ota = skip('This release changes native code: it ships through TestFlight instead.');
-  } else if (typeof nativeSha !== 'string' || nativeSha.trim().length === 0) {
-    ota = skip('No OTA-capable TestFlight build is recorded yet (IOS_OTA_NATIVE_SHA).');
-  } else {
-    const sinceNative = classifyRange({ base: nativeSha.trim(), head, execFileSyncFn, cwd });
+  try {
+    // Web changes not yet in the installed build or the last bundle.
+    const bundleIsNewer =
+      typeof bundleSha === 'string' &&
+      /^[0-9a-f]{7,40}$/.test(bundleSha.trim()) &&
+      isCommit(bundleSha.trim()) &&
+      gitSucceeds(
+        ['merge-base', '--is-ancestor', native.sha, bundleSha.trim()],
+        execFileSyncFn,
+        cwd
+      );
+    const webBase = bundleIsNewer ? bundleSha.trim() : native.sha;
+    const pending =
+      webBase === native.sha
+        ? sinceNative
+        : classifyRange({ base: webBase, head, execFileSyncFn, cwd });
     ota =
-      sinceNative.native.length > 0
-        ? skip(
-            'Native code changed since the installed TestFlight build was made; waiting for a newer TestFlight build.'
-          )
-        : { deploy: true, paths: release.web, skippedReason: '' };
+      pending.web.length > 0
+        ? {
+            deploy: true,
+            paths: pending.web,
+            skippedReason: '',
+            nativeBuildNumber: native.buildNumber,
+          }
+        : skip('No web changes since the last bundle or TestFlight build.');
+  } catch (error) {
+    ota = skip(`OTA check failed: ${error instanceof Error ? error.message : String(error)}`);
   }
   return { testflight, ota };
 }
 
 export function parseArgs(argv) {
-  const args = { head: 'HEAD', base: undefined, nativeSha: undefined, githubOutput: null };
+  const args = {
+    head: 'HEAD',
+    base: undefined,
+    nativeBuild: undefined,
+    bundleSha: undefined,
+    githubOutput: null,
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index];
     const next = () => {
@@ -218,7 +307,8 @@ export function parseArgs(argv) {
     };
     if (value === '--head') args.head = next();
     else if (value === '--base') args.base = next();
-    else if (value === '--native-sha') args.nativeSha = next() ?? undefined;
+    else if (value === '--native-build') args.nativeBuild = next() ?? undefined;
+    else if (value === '--bundle-sha') args.bundleSha = next() ?? undefined;
     else if (value === '--github-output') args.githubOutput = next();
     else throw new Error(`Unknown argument "${value}"`);
   }
@@ -242,6 +332,7 @@ function main() {
         ota: String(ota.deploy),
         ota_paths: ota.paths.join(','),
         ota_skipped_reason: ota.skippedReason,
+        ota_native_build_number: ota.nativeBuildNumber,
       });
     }
   } catch (error) {

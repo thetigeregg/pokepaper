@@ -42,6 +42,7 @@ export function buildIosLiveUpdateManifest({
   semver,
   nativeBuildNumber,
   backendOrigin,
+  zipName,
   checksum,
   signature,
 }) {
@@ -50,7 +51,7 @@ export function buildIosLiveUpdateManifest({
     bundleId,
     semver: semver.trim(),
     nativeBuildNumber: build,
-    url: `${backendOrigin}/ota/ios/${build}/${bundleId}.zip`,
+    url: `${backendOrigin}/ota/ios/${build}/${zipName}`,
     checksum,
     signature,
   };
