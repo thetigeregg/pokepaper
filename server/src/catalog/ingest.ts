@@ -376,7 +376,35 @@ async function ingestSet(
     return 'empty';
   }
   await resolveUnlinkedImages(context, set.serieId, cards);
+  carryBorrowedScans(cards, existing);
   return store.writeSet(set, cards) ? 'written' : 'unchanged';
+}
+
+/**
+ * Keeps the borrowed basic Energy scans a set had (`borrowEnergyScans`) when
+ * its cards are rebuilt from fresh TCGdex data, which has none: otherwise a
+ * full run would write the set without them (and clients would download it
+ * twice), and a run that stops early would leave them out. A card language
+ * that now has a scan of its own keeps that; the end-of-region pass still
+ * updates or drops borrowed scans.
+ */
+function carryBorrowedScans(
+  cards: readonly CatalogCard[],
+  existing: ReadonlyMap<string, CatalogCard>
+): void {
+  for (const card of cards) {
+    const previous = existing.get(card.id);
+    for (const [language, text] of Object.entries(card.text) as [
+      CatalogLanguage,
+      NonNullable<CatalogCard['text'][CatalogLanguage]>,
+    ][]) {
+      const old = previous?.text[language];
+      if (!text.image && old?.imageFrom && old.image) {
+        text.image = old.image;
+        text.imageFrom = old.imageFrom;
+      }
+    }
+  }
 }
 
 /**

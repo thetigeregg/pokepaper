@@ -137,6 +137,23 @@ export function basicEnergyType(englishName: string): BasicEnergyType | null {
 }
 
 /**
+ * A card's basic Energy type, or null when it isn't basic Energy: TCGdex's
+ * `energyType` must say basic ("Normal") and the English name must match
+ * (`basicEnergyType`). Both, because each alone is wrong somewhere: TCGdex
+ * marks Prism Energy and Ignition Energy basic, and older special Energy
+ * (Neo to HeartGold & SoulSilver) are named plain "Darkness Energy" and
+ * "Metal Energy". Null without English text (Japan & Asia printings).
+ */
+export function basicEnergyTypeOf(
+  card: Pick<CatalogCard, 'category' | 'energyType' | 'text'>
+): BasicEnergyType | null {
+  if (card.category !== 'Energy' || card.energyType !== 'Normal' || !card.text.en) {
+    return null;
+  }
+  return basicEnergyType(card.text.en.name);
+}
+
+/**
  * One card printing with every imported language's text. Vocabulary fields
  * (category, rarity, types, stage, …) are canonical English values whatever
  * the language, so filters work across languages.

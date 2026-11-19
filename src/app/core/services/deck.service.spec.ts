@@ -136,6 +136,11 @@ describe('DeckService', () => {
 
     await service.setCover('deck-1', null);
     expect(stored.get('deck-1')).not.toHaveProperty('cover');
+
+    // Choosing what's already chosen saves nothing.
+    repository.saveDeck.mockClear();
+    await service.setCover('deck-1', null);
+    expect(repository.saveDeck).not.toHaveBeenCalled();
     expect(stored.get('deck-1')?.updatedAt > '2026-01-01T00:00:00.000Z').toBe(true);
   });
 

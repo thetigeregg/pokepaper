@@ -122,6 +122,19 @@ describe('planEnergyScans', () => {
     ]);
   });
 
+  it('leaves old special Energy named like basic Energy alone, as donor or not', () => {
+    const special = energy('neo1-104', '2026-06-01', { en: text('Darkness Energy', 'en/special') });
+    special.card.energyType = 'Special';
+    const scanless = energy('ex1-93', '2026-06-01', { en: text('Darkness Energy', null) });
+    scanless.card.energyType = 'Special';
+    const basic = energy('sm1-170', '2017-02-03', { en: text('Darkness Energy', 'en/basic') });
+    const needy = energy('mee-7', '2026-09-01', { en: text('Darkness Energy', null) });
+
+    expect(planEnergyScans([special, scanless, basic, needy])).toEqual([
+      { setId: 'mee', cardId: 'mee-7', language: 'en', image: 'en/basic', imageFrom: 'sm1-170' },
+    ]);
+  });
+
   it('only touches basic Energy, recognized by name', () => {
     expect(
       planEnergyScans([

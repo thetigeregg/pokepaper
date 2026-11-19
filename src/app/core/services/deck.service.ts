@@ -128,6 +128,10 @@ export class DeckService {
    */
   async setCover(id: string, cover: DeckCardRef | null): Promise<void> {
     const current = this.require(id);
+    const key = (ref: DeckCardRef | undefined | null) => (ref ? deckCardKey(ref) : null);
+    if (key(cover) === key(current.cover)) {
+      return; // Unchanged: don't move the deck up the list or sync anything.
+    }
     const { cover: _previous, ...rest } = current;
     await this.save({
       ...rest,

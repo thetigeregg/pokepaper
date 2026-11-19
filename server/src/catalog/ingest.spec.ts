@@ -500,9 +500,15 @@ describe('runCatalogIngest', () => {
       // The card's own path was checked first (and missed).
       expect(store.getImageProbe('en/me/mee/2')?.found).toBe(false);
 
-      // Unchanged on the next run.
+      // Unchanged on the next runs, full ones included: a set rebuilt from
+      // fresh data keeps its borrowed scans, so it isn't rewritten.
+      const hash = store.getSetHash('intl', 'mee');
       const second = await ingest(store, fake, { kind: 'light' });
       expect(second.images.borrowed).toBe(0);
+      const full = await ingest(store, fake, { kind: 'full' });
+      expect(full.images.borrowed).toBe(0);
+      expect(store.getSetHash('intl', 'mee')).toBe(hash);
+      expect(card(store, 'intl', 'mee', 'mee-2')?.text.en?.imageFrom).toBe('sve-2');
 
       // TCGdex gets the card's own scan: it replaces the borrowed one.
       store.saveImageProbe('en/me/mee/2', false, new Date(Date.now() - 31 * 24 * 3600 * 1000));

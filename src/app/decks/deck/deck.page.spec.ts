@@ -767,6 +767,24 @@ describe('DeckPage', () => {
       expect(decks.setCover).toHaveBeenLastCalledWith('deck-1', null);
     });
 
+    it('shows the default as current when the chosen card isn’t on this device', async () => {
+      current.set({
+        ...makeDeck({
+          cards: [...makeDeck().cards, { region: 'intl', cardId: 'gone-1', count: 1 }],
+        }),
+        cover: { region: 'intl', cardId: 'gone-1' },
+      });
+      dismissal = { role: 'cancel' };
+      const page = await create();
+
+      await page.chooseCover();
+
+      const options = createModal.mock.lastCall?.[0] as {
+        componentProps: { currentProp: string | null };
+      };
+      expect(options.componentProps.currentProp).toBeNull();
+    });
+
     it('shows the default as current when the chosen card has left the deck', async () => {
       current.set({ ...makeDeck(), cover: { region: 'intl', cardId: 'gone' } });
       dismissal = { role: 'cancel' };

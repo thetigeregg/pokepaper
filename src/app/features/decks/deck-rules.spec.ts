@@ -94,6 +94,10 @@ describe('card kinds', () => {
     expect(isBasicEnergy(basicEnergy('sve-3', 'Basic Water Energy'))).toBe(true);
     // TCGdex marks Prism Energy "Normal"; it's a special Energy.
     expect(isBasicEnergy(basicEnergy('bw4-93', 'Prism Energy'))).toBe(false);
+    // Old special Energy share a basic Energy's name.
+    expect(
+      isBasicEnergy({ ...basicEnergy('neo1-104', 'Darkness Energy'), energyType: 'Special' })
+    ).toBe(false);
     const japanese: CatalogCard = { ...basicEnergy('SV1-1'), region: 'asia' };
     japanese.text = { ja: { ...englishText(basicEnergy('a')), name: '基本炎エネルギー' } };
     expect(isBasicEnergy(japanese)).toBe(true); // No English name: by energyType.

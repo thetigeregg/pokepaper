@@ -501,7 +501,8 @@ export class DeckPage {
       component: DeckCoverPickerComponent,
       componentProps: {
         rowsProp: rows,
-        currentProp: rows.some((row) => row.key === chosen) ? chosen : null,
+        // A chosen card not on this device isn't listed (nor shown as the cover).
+        currentProp: rows.some((row) => row.key === chosen && row.card) ? chosen : null,
       },
       ...(sheet ? { breakpoints: [0, 0.75, 1], initialBreakpoint: 0.75, handle: true } : {}),
     });

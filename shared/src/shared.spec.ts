@@ -1,5 +1,6 @@
 import {
   basicEnergyType,
+  basicEnergyTypeOf,
   catalogCardImageUrl,
   DEFAULT_SETTINGS,
   isSyncEntityType,
@@ -118,5 +119,44 @@ describe('catalogCardImageUrl', () => {
     expect(catalogCardImageUrl(borrowed, 'en', 'high')).toBe(
       '/images/catalog/cards/intl/sv01-001/en/high.webp?from=sve%202'
     );
+  });
+});
+
+describe('basicEnergyTypeOf', () => {
+  const text = (name: string) => ({
+    en: {
+      name,
+      description: null,
+      effect: null,
+      evolveFrom: null,
+      attacks: [],
+      abilities: [],
+      image: null,
+    },
+  });
+
+  it('needs both a basic energyType and a basic Energy name', () => {
+    expect(
+      basicEnergyTypeOf({
+        category: 'Energy',
+        energyType: 'Normal',
+        text: text('Basic Fire Energy'),
+      })
+    ).toBe('Fire');
+    // Old special Energy share the name; TCGdex marks Prism Energy basic.
+    expect(
+      basicEnergyTypeOf({
+        category: 'Energy',
+        energyType: 'Special',
+        text: text('Darkness Energy'),
+      })
+    ).toBeNull();
+    expect(
+      basicEnergyTypeOf({ category: 'Energy', energyType: 'Normal', text: text('Prism Energy') })
+    ).toBeNull();
+    expect(
+      basicEnergyTypeOf({ category: 'Trainer', energyType: 'Normal', text: text('Fire Energy') })
+    ).toBeNull();
+    expect(basicEnergyTypeOf({ category: 'Energy', energyType: 'Normal', text: {} })).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
 import {
-  basicEnergyType,
+  basicEnergyTypeOf,
   type AssetPath,
   type CatalogCard,
   type CatalogLanguage,
@@ -50,8 +50,8 @@ export interface EnergyScanChange {
  */
 export function planEnergyScans(cards: readonly EnergyCard[]): EnergyScanChange[] {
   const typed = cards.flatMap((entry) => {
-    const type = entry.card.text.en ? basicEnergyType(entry.card.text.en.name) : null;
-    return entry.card.category === 'Energy' && type ? [{ ...entry, type }] : [];
+    const type = basicEnergyTypeOf(entry.card);
+    return type ? [{ ...entry, type }] : [];
   });
 
   const donors = new Map<
