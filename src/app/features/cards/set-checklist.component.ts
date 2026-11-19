@@ -44,12 +44,16 @@ interface ChecklistRow {
         background: none;
         cursor: pointer;
       }
+      /* The rarity (symbol and name), set apart from the name and the toggles. */
+      .rarity {
+        margin: 6px 0 0;
+      }
       /* One toggle per variant, side by side under the name and rarity. */
       .variants {
         display: flex;
         flex-wrap: wrap;
         gap: 10px 8px;
-        margin-top: 6px;
+        margin-top: 10px;
       }
 
       .variants ion-button {
@@ -94,7 +98,7 @@ interface ChecklistRow {
               <div class="media-row-text">
                 {{ row.card.localId }} · {{ row.name }}
                 @if (row.card.rarity) {
-                  <p data-testid="checklist-rarity">
+                  <p class="rarity" data-testid="checklist-rarity">
                     <app-rarity-icon
                       [rarity]="row.card.rarity"
                       [region]="set().region"
