@@ -109,3 +109,7 @@
 ## v0.16.4 - 2026-11-18
 
 - 3bd637e chore(deps): Bump addressable from 2.9.0 to 2.9.1 in /ios (#33)
+
+## v0.17.0 - 2026-11-19
+
+- 2445c2d feat(ios): check for and apply signed OTA web updates (#36)
