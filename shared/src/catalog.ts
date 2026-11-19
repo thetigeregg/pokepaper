@@ -101,6 +101,56 @@ export interface CatalogCardText {
   abilities: { type: string; name: string; effect: string | null }[];
   /** Card scan in this language, or null when TCGdex has none. */
   image: AssetPath | null;
+  /**
+   * Set when `image` is another printing's scan: a basic Energy without one
+   * of its own borrows the newest scan of the same Energy type in this
+   * language (docs/catalog.md → Basic Energy scans). That printing's card ID.
+   */
+  imageFrom?: string;
+}
+
+/** The basic Energy types, as their cards are named ("Fire Energy", "Basic Fire Energy"). */
+export const BASIC_ENERGY_TYPES = [
+  'Grass',
+  'Fire',
+  'Water',
+  'Lightning',
+  'Psychic',
+  'Fighting',
+  'Darkness',
+  'Metal',
+  'Fairy',
+] as const;
+export type BasicEnergyType = (typeof BASIC_ENERGY_TYPES)[number];
+
+const BASIC_ENERGY_NAME = new RegExp(`^(?:Basic )?(${BASIC_ENERGY_TYPES.join('|')}) Energy$`);
+
+/**
+ * The type of a basic Energy card, from its English name, or null for
+ * anything else. By name, because TCGdex's `energyType` marks some special
+ * Energy (Prism Energy, Ignition Energy) as basic, and many basic Energy
+ * have no `types`.
+ */
+export function basicEnergyType(englishName: string): BasicEnergyType | null {
+  const match = BASIC_ENERGY_NAME.exec(englishName.replace(/\s+/g, ' ').trim());
+  return match ? (match[1] as BasicEnergyType) : null;
+}
+
+/**
+ * A card's basic Energy type, or null when it isn't basic Energy: TCGdex's
+ * `energyType` must say basic ("Normal") and the English name must match
+ * (`basicEnergyType`). Both, because each alone is wrong somewhere: TCGdex
+ * marks Prism Energy and Ignition Energy basic, and older special Energy
+ * (Neo to HeartGold & SoulSilver) are named plain "Darkness Energy" and
+ * "Metal Energy". Null without English text (Japan & Asia printings).
+ */
+export function basicEnergyTypeOf(
+  card: Pick<CatalogCard, 'category' | 'energyType' | 'text'>
+): BasicEnergyType | null {
+  if (card.category !== 'Energy' || card.energyType !== 'Normal' || !card.text.en) {
+    return null;
+  }
+  return basicEnergyType(card.text.en.name);
 }
 
 /**
@@ -173,14 +223,19 @@ export type CatalogImageQuality = 'low' | 'high';
 
 /**
  * Same-origin URL of a card scan, served (and cached) by the PokePaper
- * server. Only valid when `card.text[language].image` is set.
+ * server. Only valid when `card.text[language].image` is set. A borrowed
+ * scan (`imageFrom`) gets `?from=` its source, so the app's image cache
+ * (keyed by URL) fetches anew when the source changes or the card gets its
+ * own scan; the server ignores it.
  */
 export function catalogCardImageUrl(
-  card: Pick<CatalogCard, 'region' | 'id'>,
+  card: Pick<CatalogCard, 'region' | 'id'> & { text?: CatalogCard['text'] },
   language: CatalogLanguage,
   quality: CatalogImageQuality
 ): string {
-  return `/images/catalog/cards/${card.region}/${encodeURIComponent(card.id)}/${language}/${quality}.webp`;
+  const from = card.text?.[language]?.imageFrom;
+  const url = `/images/catalog/cards/${card.region}/${encodeURIComponent(card.id)}/${language}/${quality}.webp`;
+  return from ? `${url}?from=${encodeURIComponent(from)}` : url;
 }
 
 /** Same-origin URL of a set's logo (per language) or symbol. */

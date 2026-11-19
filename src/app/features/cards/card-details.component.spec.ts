@@ -149,6 +149,15 @@ describe('CardDetailsComponent', () => {
     expect(root.querySelector('app-card-image')).not.toBeNull();
   });
 
+  it('notes when the scan is another printing’s, and only then', () => {
+    expect(element(create(base)).querySelector('[data-testid="detail-scan"]')).toBeNull();
+
+    const borrowed = create({ ...base, text: textWith({ imageFrom: 'sve-2' }) });
+    expect(element(borrowed).querySelector('[data-testid="detail-scan"]')?.textContent.trim()).toBe(
+      'From another printing'
+    );
+  });
+
   it('lists abilities', () => {
     const fixture = create({
       ...base,

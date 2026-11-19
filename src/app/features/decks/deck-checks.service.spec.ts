@@ -328,6 +328,63 @@ describe('DeckChecksService', () => {
     error.mockRestore();
   });
 
+  it('covers a deck with its chosen printing while it’s in the deck, else its first Pokémon', async () => {
+    const chosen = {
+      ...deckOf('a', [
+        [oldBall, 1],
+        [pikachu, 4],
+      ]),
+      cover: { region: 'intl', cardId: 'sv01-196' },
+    };
+    const gone = {
+      ...deckOf('b', [
+        [oldBall, 1],
+        [pikachu, 4],
+      ]),
+      cover: { region: 'intl', cardId: 'gone' },
+    };
+    list.set([chosen, gone, deckOf('c', [[oldBall, 1]])]);
+    const service = create();
+
+    await vi.waitFor(() => {
+      expect(service.coverOf('a')?.id).toBe('sv01-196');
+    });
+    expect(service.coverOf('b')?.id).toBe('sv01-1');
+    expect(service.coverOf('c')).toBeUndefined(); // No Pokémon.
+  });
+
+  it('shows no cover while the chosen printing is still being looked up', async () => {
+    list.set([deckOf('a', [[pikachu, 4]])]);
+    const service = create();
+    await vi.waitFor(() => {
+      expect(service.coverOf('a')?.id).toBe('sv01-1');
+    });
+    let finish: (cards: CatalogCard[]) => void = () => undefined;
+    engine.getCatalogCardsByKey.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+
+    list.set([
+      {
+        ...deckOf('a', [
+          [pikachu, 4],
+          [oldBall, 1],
+        ]),
+        cover: { region: 'intl', cardId: 'sv01-196' },
+      },
+    ]);
+    TestBed.tick();
+
+    expect(service.coverOf('a')).toBeUndefined(); // Not the first Pokémon for a moment.
+    finish([oldBall]);
+    await vi.waitFor(() => {
+      expect(service.coverOf('a')?.id).toBe('sv01-196');
+    });
+  });
+
   it('gives the copy limit without waiting for legality (reprint searches)', async () => {
     engine.listCatalogSearchRows.mockReturnValueOnce(new Promise(() => undefined));
     list.set([deckOf('a', [[oldBall, 2]])]);

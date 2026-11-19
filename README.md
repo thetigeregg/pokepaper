@@ -9,7 +9,7 @@ PokePaper is a one-user Ionic + Angular app for the Pokémon Trading Card Game:
 
 It runs as a web app and as a native iOS app (Capacitor). It works offline: data lives on the device and syncs when online. It's served on the public internet behind passkey-only authentication ([`docs/auth.md`](docs/auth.md)).
 
-> **Status:** early scaffolding. This repo is being built in phases: tooling → app shell → server → passkey auth → Docker/deploy → CI/CD → iOS. iOS is in progress: the native shell, native passkey sign-in and TestFlight delivery are in place, and OTA web updates are in place ([`docs/ios.md`](docs/ios.md)).
+> **Status:** in use. The infrastructure phases are complete (tooling → app shell → server → passkey auth → Docker/deploy → CI/CD → iOS, with native passkey sign-in, TestFlight delivery and OTA web updates: [`docs/ios.md`](docs/ios.md)). The app covers the card catalog with search ([`docs/catalog.md`](docs/catalog.md)), collection tracking ([`docs/collection.md`](docs/collection.md)) and deck building with format rules and owned vs. needed ([`docs/decks.md`](docs/decks.md)).
 
 ## Repository Structure
 

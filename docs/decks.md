@@ -50,7 +50,7 @@ Any card released in the US, with no bans (handbook §4.2). The deck rules above
 
 - **Legality is worked out by PokePaper,** not taken from TCGdex's `legal` flags. Those follow each printing's mark only: they don't apply the reprint rule (G-mark Ultra Ball is flagged not Standard-legal), and they have errors (`sv04-266` Reversal Energy, G-mark, is flagged Standard-legal).
 - **Reprints are matched by English name and rules text:** a printing is legal if one with a legal mark (or set) has the same English name and the same English rules text (attacks, abilities, effect, HP, types and so on). Reworded but functionally identical reprints, like the handbook's Copycat example, aren't recognized and get a warning.
-- **Basic Energy is always legal:** most printings have no regulation mark, and the handbook doesn't say otherwise.
+- **Basic Energy is always legal:** most printings have no regulation mark, and the handbook doesn't say otherwise. It's recognized by both TCGdex's `energyType` and its English name ("Fire Energy", "Basic Fire Energy"; `basicEnergyTypeOf`), since TCGdex marks some special Energy (Prism Energy) as basic and older special Energy are named plain "Darkness Energy" or "Metal Energy"; a Japan & Asia printing goes by `energyType` alone.
 - **A missing mark in a series that prints them** (Sword & Shield, Scarlet & Violet, Mega Evolution) is a gap in TCGdex's data, typically a set that just came out, so that printing's TCGdex flags are used. In November 2026 that covers Delta Reign (released November 6, legal from November 20 by §4.1.2: TCGdex says not yet Standard-legal) and a few promos.
 - **SM Black Star promos below SM158** aren't Expanded-legal (§4.1.1), though TCGdex flags them legal.
 - **TCG Pocket cards** (the digital game, TCGdex series `tcgp`) are never legal and never count as reprints; a deck holding one gets a "digital only" warning in every format.
@@ -77,9 +77,13 @@ The deck page compares each card with your collection ([`collection.md`](collect
 
 Layout and components: [`ui.md`](ui.md) → Decks.
 
-- **Decks tab:** every deck, most recently changed first, with its format and card total, how many copies you're missing, and a warning with the number of rules it breaks. The add button names a new deck, which starts as Standard and opens.
+- **Decks tab:** every deck, most recently changed first, led by its cover's scan, with its format and card total, how many copies you're missing, and a warning with the number of rules it breaks. The add button names a new deck, which starts as Standard and opens.
 - **Deck page:** the deck's format (a choice row) and card total, then the format's rules (what the deck breaks, or that it follows them), then its cards by category (Pokémon, Trainer, Energy) in the order they were added, each with a − count + stepper, what you own of it, and notes for any rule it breaks. A toggle shows only the cards you're missing, as a shopping list. Rename and Delete are in the header.
 - **Add cards:** card search with its own query and filters (`CatalogSearchService` provided by the modal, see [`catalog.md`](catalog.md) → Search). Tapping a card adds a copy, and its badge (red, bottom right, like the owned badge it replaces there) shows the copies in the deck. Once the deck has 4 cards with that name, a tap says so instead.
+
+## Cover card
+
+Each deck is shown in the Decks list with a cover: the printing chosen with the deck page's "Choose cover" (`DeckService.setCover`), or by default its first Pokémon in deck order. A chosen cover that's no longer in the deck falls back to the default, and so does "First Pokémon" in the picker; a deck without a Pokémon has no cover. `DeckChecksService.coverOf` works it out from the cards it has looked up. The chosen cover syncs with the deck (`cover`, optional); an older build that saves the deck drops it, since a deck syncs whole.
 
 ## Data model
 
@@ -93,6 +97,7 @@ A **deck** syncs whole:
 | `cards`     | `[{ region, cardId, count }]` | Up to 200 slots, in the order they were added; each printing at most once      |
 | `createdAt` | `2026-11-19T10:00:00.000Z`    | UTC, as `toISOString()` writes it                                              |
 | `updatedAt` | `2026-11-19T10:05:00.000Z`    | Moves forward with every change (the deck list sorts by it)                    |
+| `cover`     | `{ region, cardId }`          | Optional: the printing shown for the deck in the Decks list (see Cover card)   |
 
 These bounds only keep synced data sane; they aren't game rules. A slot's `count` is 1 to 99, well above any format's copy limit, since rule breaks will only be warnings. A count of 0 removes the slot.
 

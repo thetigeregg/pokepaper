@@ -123,6 +123,24 @@ export class DeckService {
   }
 
   /**
+   * Chooses the printing shown for the deck in the Decks list, or (null)
+   * goes back to the default, its first Pokémon.
+   */
+  async setCover(id: string, cover: DeckCardRef | null): Promise<void> {
+    const current = this.require(id);
+    const key = (ref: DeckCardRef | undefined | null) => (ref ? deckCardKey(ref) : null);
+    if (key(cover) === key(current.cover)) {
+      return; // Unchanged: don't move the deck up the list or sync anything.
+    }
+    const { cover: _previous, ...rest } = current;
+    await this.save({
+      ...rest,
+      ...(cover ? { cover: { region: cover.region, cardId: cover.cardId } } : {}),
+      updatedAt: this.nextUpdatedAt(current),
+    });
+  }
+
+  /**
    * Sets the copies of one printing in a deck (0 removes it). A new printing
    * is added at the end, so the deck keeps the order cards were added in.
    */

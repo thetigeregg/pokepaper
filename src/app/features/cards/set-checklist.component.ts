@@ -98,7 +98,7 @@ interface ChecklistRow {
               <div class="media-row-text">
                 {{ row.card.localId }} · {{ row.name }}
                 @if (row.card.rarity) {
-                  <p class="rarity" data-testid="checklist-rarity">
+                  <p class="rarity icon-text" data-testid="checklist-rarity">
                     <app-rarity-icon
                       [rarity]="row.card.rarity"
                       [region]="set().region"

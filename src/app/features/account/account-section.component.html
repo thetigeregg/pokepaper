@@ -5,7 +5,7 @@
   @for (passkey of passkeys(); track passkey.id) {
     <ion-item>
       <ion-label>
-        <h3>
+        <h3 class="title-row">
           {{ passkey.label }}
           @if (passkey.deviceType === 'multiDevice') {
             <ion-badge color="medium">Synced</ion-badge>
@@ -47,7 +47,7 @@
   @for (session of sessions(); track session.id) {
     <ion-item>
       <ion-label>
-        <h3>
+        <h3 class="title-row">
           {{ session.client === 'ios' ? 'iOS app' : 'Web browser' }}
           @if (session.current) {
             <ion-badge color="primary">This device</ion-badge>

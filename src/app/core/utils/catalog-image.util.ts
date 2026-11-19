@@ -29,8 +29,15 @@ export function displayImage(
   card: Pick<CatalogCard, 'region' | 'id' | 'text'>,
   language: CatalogLanguage,
   quality: CatalogImageQuality
-): { language: CatalogLanguage; url: string } | null {
+): { language: CatalogLanguage; url: string; borrowed: boolean } | null {
   const candidates = [language, ...regionLanguages(card.region).filter((l) => l !== language)];
   const found = candidates.find((candidate) => card.text[candidate]?.image);
-  return found ? { language: found, url: catalogCardImageUrl(card, found, quality) } : null;
+  return found
+    ? {
+        language: found,
+        url: catalogCardImageUrl(card, found, quality),
+        // Another printing's scan (basic Energy; docs/catalog.md → Basic Energy scans).
+        borrowed: !!card.text[found]?.imageFrom,
+      }
+    : null;
 }

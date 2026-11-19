@@ -22,6 +22,18 @@ describe('displayImage', () => {
     expect(displayImage(card({ en: 'a', de: 'b' }), 'de', 'low')).toEqual({
       language: 'de',
       url: '/images/catalog/cards/intl/sv01-001/de/low.webp',
+      borrowed: false,
+    });
+  });
+
+  it('marks another printing’s scan, its URL naming the source', () => {
+    const energy = card({ en: 'en/sv/sve/2' });
+    (energy.text.en as { imageFrom?: string }).imageFrom = 'sve-2';
+
+    expect(displayImage(energy, 'en', 'low')).toEqual({
+      language: 'en',
+      url: '/images/catalog/cards/intl/sv01-001/en/low.webp?from=sve-2',
+      borrowed: true,
     });
   });
 

@@ -124,9 +124,13 @@
               }
               <div class="media-row-text">
                 @if (option.rarity; as rarity) {
-                  <app-rarity-icon [rarity]="rarity" [region]="region()" />
+                  <span class="icon-text">
+                    <app-rarity-icon [rarity]="rarity" [region]="region()" />
+                    {{ option.label }}
+                  </span>
+                } @else {
+                  {{ option.label }}
                 }
-                {{ option.label }}
               </div>
             </div>
           </ion-checkbox>

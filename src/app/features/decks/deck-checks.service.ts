@@ -108,6 +108,40 @@ export class DeckChecksService {
     return owned;
   });
 
+  /**
+   * Each deck's cover: its chosen printing while it's still in the deck (and
+   * on this device), else its first Pokémon (in deck order), from the cards
+   * looked up so far. A chosen printing still being looked up shows nothing
+   * yet, rather than the first Pokémon for a moment.
+   */
+  private readonly covers = computed(() => {
+    const cards = this.cards();
+    const looked = this.looked();
+    const previous = this.previous();
+    const card = (key: string) => (cards.get(key) ?? previous?.cards.get(key))?.card;
+    const isLooked = (key: string) => looked.has(key) || (previous?.looked.has(key) ?? false);
+    const covers = new Map<string, CatalogCard>();
+    for (const deck of this.decks.decks()) {
+      const keys = deck.cards.map(deckCardKey);
+      const chosen = deck.cover ? deckCardKey(deck.cover) : null;
+      if (chosen && keys.includes(chosen) && !isLooked(chosen)) {
+        continue;
+      }
+      const cover =
+        (chosen && keys.includes(chosen) ? card(chosen) : undefined) ??
+        keys.map(card).find((entry) => entry?.category === 'Pokemon');
+      if (cover) {
+        covers.set(deck.id, cover);
+      }
+    }
+    return covers;
+  });
+
+  /** The card shown for the deck in the Decks list, if any. */
+  coverOf(deckId: string): CatalogCard | undefined {
+    return this.covers().get(deckId);
+  }
+
   /** What the collection covers of the deck, once known. */
   ownedOf(deckId: string): DeckOwned | undefined {
     return this.owned().get(deckId);

@@ -73,6 +73,22 @@ export class CatalogStore {
     ).map((row) => JSON.parse(row.payload) as CatalogCard);
   }
 
+  /** A region's Energy cards with their sets' release dates (for borrowed basic Energy scans). */
+  listEnergyCards(region: CatalogRegion): { card: CatalogCard; releaseDate: string | null }[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT c.payload, s.release_date FROM catalog_cards c
+           JOIN catalog_sets s ON s.region = c.region AND s.id = c.set_id
+           WHERE c.region = ? AND json_extract(c.payload, '$.category') = 'Energy'`
+        )
+        .all(region) as { payload: string; release_date: string | null }[]
+    ).map((row) => ({
+      card: JSON.parse(row.payload) as CatalogCard,
+      releaseDate: row.release_date,
+    }));
+  }
+
   getCard(region: CatalogRegion, id: string): CatalogCard | undefined {
     const row = this.db
       .prepare('SELECT payload FROM catalog_cards WHERE region = ? AND id = ?')

@@ -50,6 +50,7 @@ import {
   addOutline,
   checkmarkCircleOutline,
   createOutline,
+  imageOutline,
   removeCircleOutline,
   trashOutline,
   warningOutline,
@@ -73,6 +74,7 @@ import {
 import { DeckDialogsService } from '../../features/decks/deck-dialogs.service';
 import { DECK_FORMAT_LABELS, deckCardTotal, deckFormat } from '../../features/decks/deck-display';
 import { AddCardsComponent } from '../add-cards/add-cards.component';
+import { DeckCoverPickerComponent, type DeckCoverChoice } from './deck-cover-picker.component';
 
 /** Section a deck's cards are listed under, in display order. */
 type SectionId = 'Pokemon' | 'Trainer' | 'Energy' | 'other' | 'missing';
@@ -336,6 +338,13 @@ export class DeckPage {
       run: () => void this.rename(),
     },
     {
+      id: 'cover',
+      label: 'Choose cover',
+      icon: 'image-outline',
+      disabled: !this.deck(),
+      run: () => void this.chooseCover(),
+    },
+    {
       id: 'delete',
       label: 'Delete deck',
       icon: 'trash-outline',
@@ -380,6 +389,7 @@ export class DeckPage {
       addCircleOutline,
       removeCircleOutline,
       createOutline,
+      imageOutline,
       trashOutline,
       warningOutline,
       checkmarkCircleOutline,
@@ -471,6 +481,41 @@ export class DeckPage {
       await this.decks.update(this.id(), { format: value });
     } catch {
       await this.dialogs.showSaveError();
+    }
+  }
+
+  /**
+   * Opens the "Choose cover" sheet (the deck's cards, and the default first
+   * Pokémon) and saves what's picked.
+   */
+  async chooseCover(): Promise<void> {
+    const deck = this.deck();
+    if (!deck) {
+      return;
+    }
+    const rows = this.sections().flatMap((section) => section.rows);
+    const chosen = deck.cover ? deckCardKey(deck.cover) : null;
+    // A sheet on phones, a centered dialog on desktop (docs/ui.md).
+    const sheet = !this.layout.wide();
+    const modal = await this.modals.create({
+      component: DeckCoverPickerComponent,
+      componentProps: {
+        rowsProp: rows,
+        // A chosen card not on this device isn't listed (nor shown as the cover).
+        currentProp: rows.some((row) => row.key === chosen && row.card) ? chosen : null,
+      },
+      ...(sheet ? { breakpoints: [0, 0.75, 1], initialBreakpoint: 0.75, handle: true } : {}),
+    });
+    await modal.present();
+    const { data, role } = await modal.onWillDismiss<DeckCoverChoice>();
+    if (role !== 'select' || !data) {
+      return;
+    }
+    const row = rows.find((entry) => entry.key === data.key);
+    try {
+      await this.decks.setCover(deck.id, row ? row.slot : null);
+    } catch (error: unknown) {
+      await this.dialogs.showSaveError(error);
     }
   }
 

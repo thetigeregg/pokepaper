@@ -21,6 +21,7 @@ import {
   type RawSetDetail,
   type Vocabulary,
 } from './normalize.js';
+import { applyEnergyScans, planEnergyScans, type EnergyScanChange } from './energy-scans.js';
 import type { CatalogRunKind, CatalogStore } from './store.js';
 import { TcgdexResponseError, TcgdexUnavailableError, type TcgdexClient } from './tcgdex-client.js';
 
@@ -65,9 +66,10 @@ export interface CatalogIngestStats {
   cards: { fetched: number; skipped: number };
   /**
    * Checks for scans TCGdex has but doesn't link (see `resolveUnlinkedImages`).
-   * `failed`: checks that couldn't complete (retried next run).
+   * `failed`: checks that couldn't complete (retried next run). `borrowed`:
+   * basic Energy scans borrowed, changed or dropped (see `borrowEnergyScans`).
    */
-  images: { probed: number; found: number; failed: number };
+  images: { probed: number; found: number; failed: number; borrowed: number };
   /** Regions whose listings couldn't be loaded, so their sets weren't touched. */
   skippedRegions: CatalogRegion[];
   requests: number;
@@ -97,7 +99,7 @@ export async function runCatalogIngest(options: CatalogIngestOptions): Promise<C
     status: 'ok',
     sets: { seen: 0, written: 0, unchanged: 0, empty: 0, failed: 0, skipped: 0, removed: 0 },
     cards: { fetched: 0, skipped: 0 },
-    images: { probed: 0, found: 0, failed: 0 },
+    images: { probed: 0, found: 0, failed: 0, borrowed: 0 },
     skippedRegions: [],
     requests: 0,
     durationMs: 0,
@@ -252,6 +254,8 @@ async function ingestRegion(context: RegionContext): Promise<void> {
     }
   }
 
+  borrowEnergyScans(context);
+
   for (const [language, vocabulary] of vocabularies) {
     if (vocabulary.size > 0) {
       store.saveVocabulary(language, vocabulary);
@@ -372,7 +376,66 @@ async function ingestSet(
     return 'empty';
   }
   await resolveUnlinkedImages(context, set.serieId, cards);
+  carryBorrowedScans(cards, existing);
   return store.writeSet(set, cards) ? 'written' : 'unchanged';
+}
+
+/**
+ * Keeps the borrowed basic Energy scans a set had (`borrowEnergyScans`) when
+ * its cards are rebuilt from fresh TCGdex data, which has none: otherwise a
+ * full run would write the set without them (and clients would download it
+ * twice), and a run that stops early would leave them out. A card language
+ * that now has a scan of its own keeps that; the end-of-region pass still
+ * updates or drops borrowed scans.
+ */
+function carryBorrowedScans(
+  cards: readonly CatalogCard[],
+  existing: ReadonlyMap<string, CatalogCard>
+): void {
+  for (const card of cards) {
+    const previous = existing.get(card.id);
+    for (const [language, text] of Object.entries(card.text) as [
+      CatalogLanguage,
+      NonNullable<CatalogCard['text'][CatalogLanguage]>,
+    ][]) {
+      const old = previous?.text[language];
+      if (!text.image && old?.imageFrom && old.image) {
+        text.image = old.image;
+        text.imageFrom = old.imageFrom;
+      }
+    }
+  }
+}
+
+/**
+ * Gives basic Energy without a scan of their own the newest scan of their
+ * type in the same language (`planEnergyScans`), once the region's sets are
+ * in: donors can be in any set. Sets whose cards change are rewritten (so
+ * clients download them again); a borrowed scan whose source is gone is
+ * dropped.
+ */
+function borrowEnergyScans(context: RegionContext): void {
+  const { store, region, stats, log } = context;
+  const changes = planEnergyScans(store.listEnergyCards(region));
+  const bySet = new Map<string, EnergyScanChange[]>();
+  for (const change of changes) {
+    bySet.set(change.setId, [...(bySet.get(change.setId) ?? []), change]);
+  }
+  for (const [setId, setChanges] of bySet) {
+    const stored = store.getSet(region, setId);
+    if (!stored) {
+      continue;
+    }
+    const cards = store.listSetCards(region, setId);
+    stats.images.borrowed += applyEnergyScans(cards, setChanges);
+    store.writeSet(stored.set, cards); // A changed hash makes clients download the set again.
+  }
+  if (changes.length > 0) {
+    log.info(
+      { region, changes: changes.length, sets: bySet.size },
+      'catalog.energy_scans_borrowed'
+    );
+  }
 }
 
 /**
@@ -382,7 +445,9 @@ async function ingestSet(
  * another language with this language swapped in, else
  * `{lang}/{serie}/{set}/{localId}`. A path counts only when both `low.webp`
  * and `high.webp` exist. Answers are remembered (hits forever, misses for
- * IMAGE_MISS_TTL_MS), so each path is checked about once.
+ * IMAGE_MISS_TTL_MS), so each path is checked about once. A borrowed
+ * basic Energy scan (`imageFrom`) counts as none: the card's own path is
+ * still checked, and a hit replaces the borrowed scan.
  *
  * Remembered hits always apply. New checks are best effort: the first one
  * that fails cancels the set's others (retried next run), and after
@@ -399,9 +464,9 @@ async function resolveUnlinkedImages(
   const toCheck: { path: string; apply: () => void }[] = [];
 
   for (const card of cards) {
-    const linked = Object.values(card.text).find((text) => text.image)?.image;
+    const linked = Object.values(card.text).find((text) => text.image && !text.imageFrom)?.image;
     for (const [language, text] of Object.entries(card.text)) {
-      if (text.image) {
+      if (text.image && !text.imageFrom) {
         continue;
       }
       const path = linked
@@ -410,16 +475,15 @@ async function resolveUnlinkedImages(
       if (!isAssetPath(path)) {
         continue; // Built from TCGdex IDs, which are only length-checked.
       }
+      const own = () => {
+        text.image = path;
+        delete text.imageFrom;
+      };
       const known = store.getImageProbe(path);
       if (known?.found) {
-        text.image = path;
+        own();
       } else if (!known || now - known.checkedAt.getTime() >= IMAGE_MISS_TTL_MS) {
-        toCheck.push({
-          path,
-          apply: () => {
-            text.image = path;
-          },
-        });
+        toCheck.push({ path, apply: own });
       }
     }
   }
