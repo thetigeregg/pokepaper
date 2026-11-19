@@ -190,7 +190,15 @@ export class DeckChecksService {
       legal[format] = printingLegal(card, serie, format);
     }
     const printings = [own];
-    for (const reprint of await this.reprintsOf(card)) {
+    let reprints: CatalogCard[] = [];
+    try {
+      reprints = await this.reprintsOf(card);
+    } catch (error: unknown) {
+      // Without the reprint search, the card still checks by its own mark
+      // and covers only its own printing.
+      console.error('deck.reprints_failed', error);
+    }
+    for (const reprint of reprints) {
       const reprintSerie = await this.serieOf(reprint);
       if (reprintSerie === POCKET_SERIES) {
         continue; // Digital only: neither a legal printing nor a copy to play.

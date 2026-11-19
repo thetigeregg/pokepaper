@@ -45,13 +45,13 @@
           <ion-item data-testid="missing-only">
             <ion-toggle
               [checked]="missingOnly()"
-              [disabled]="owned.missing === 0 && !missingOnly()"
-              (ionChange)="missingOnly.set($event.detail.checked)"
+              [disabled]="toFind() === 0 && !missingOnly()"
+              (ionChange)="showMissingOnly($event.detail.checked)"
             >
-              @if (owned.missing === 0) {
+              @if (toFind() === 0) {
                 You own every card
               } @else {
-                Show only missing cards ({{ owned.missing }})
+                Show only missing cards ({{ toFind() }})
               }
             </ion-toggle>
           </ion-item>
@@ -106,7 +106,8 @@
       @for (section of shownSections(); track section.id) {
         <ion-list-header>
           <ion-label>
-            {{ section.title }} · {{ section.count }}{{ missingOnly() ? ' missing' : '' }}
+            {{ section.title }} · {{ section.count
+            }}{{ missingOnly() && owned() ? ' missing' : '' }}
           </ion-label>
         </ion-list-header>
         <!-- Two columns on desktop (global list-grid). -->
@@ -243,7 +244,7 @@
               <ion-label color="primary">Add cards</ion-label>
             </ion-item>
           </ion-list>
-        } @else if (missingOnly()) {
+        } @else if (missingOnly() && toFind() === 0) {
           <ion-list>
             <ion-item data-testid="none-missing">
               <ion-label>

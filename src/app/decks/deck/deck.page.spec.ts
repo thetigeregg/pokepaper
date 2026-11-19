@@ -84,9 +84,11 @@ describe('DeckPage', () => {
   };
   const present = vi.fn(() => Promise.resolve());
   const createModal = vi.fn((_options: Record<string, unknown>) => Promise.resolve({ present }));
+  /** What the collection covers, as the service's signal would give it. */
+  const ownedNow = signal<DeckOwned | undefined>(undefined);
   const checks = {
     check: vi.fn((_id: string): DeckCheck | undefined => undefined),
-    ownedOf: vi.fn((_id: string): DeckOwned | undefined => undefined),
+    ownedOf: vi.fn((_id: string): DeckOwned | undefined => ownedNow()),
     copyLimit: vi.fn((_id: string, _card: CatalogCard): Promise<NameLimit> =>
       Promise.resolve({ name: 'x', total: 0, limit: 4 })
     ),
@@ -381,17 +383,17 @@ describe('DeckPage', () => {
         ['intl:sv01-258', { owned: 0, fromOther: 0, missing: 9 }],
       ]),
       missing: 10,
+      unknown: 0,
     };
     const line = (key: string) =>
       query(`[data-testid="deck-card-${key}"] [data-testid="owned-line"]`);
 
     afterEach(() => {
-      checks.ownedOf.mockReset();
-      checks.ownedOf.mockReturnValue(undefined);
+      ownedNow.set(undefined);
     });
 
     it('says on each row what the collection covers', async () => {
-      checks.ownedOf.mockReturnValue(someMissing);
+      ownedNow.set(someMissing);
       await create();
 
       expect(line('intl:sv01-001')?.textContent.trim()).toBe('Own 2 of 3');
@@ -409,13 +411,13 @@ describe('DeckPage', () => {
     });
 
     it('shows only the missing cards, counted as missing, when asked', async () => {
-      checks.ownedOf.mockReturnValue(someMissing);
+      ownedNow.set(someMissing);
       const page = await create();
       expect(query('[data-testid="missing-only"]')?.textContent).toContain(
         'Show only missing cards (10)'
       );
 
-      page.missingOnly.set(true);
+      page.showMissingOnly(true);
       fixture.detectChanges();
 
       expect(sectionTitles()).toEqual(['Pokémon · 3', 'Trainer · 4', 'Energy · 9']);
@@ -426,17 +428,87 @@ describe('DeckPage', () => {
       expect(query('[data-testid="deck-card-intl:sv01-166"]')).toBeNull();
     });
 
-    it('says when every card is owned, missing only or not', async () => {
-      checks.ownedOf.mockReturnValue({
+    it('keeps rows listed while missing-only is on, even once they’re covered', async () => {
+      ownedNow.set(someMissing);
+      const page = await create();
+      page.showMissingOnly(true);
+      fixture.detectChanges();
+
+      ownedNow.set({
+        ...someMissing,
+        slots: new Map([
+          ...someMissing.slots,
+          ['intl:sv01-001', { owned: 3, fromOther: 0, missing: 0 }],
+        ]),
+        missing: 9,
+      });
+      current.set(makeDeck({ updatedAt: '2026-01-02T00:00:00.000Z' })); // Recompute.
+      fixture.detectChanges();
+
+      expect(line('intl:sv01-001')?.textContent.trim()).toBe('Owned');
+      expect(query('[data-testid="deck-card-intl:sv01-166"]')).toBeNull();
+
+      page.showMissingOnly(false);
+      page.showMissingOnly(true);
+      fixture.detectChanges();
+      expect(query('[data-testid="deck-card-intl:sv01-001"]')).toBeNull();
+    });
+
+    it('counts cards not on this device as to find, and lists them, never claiming all are owned', async () => {
+      current.set(
+        makeDeck({
+          cards: [
+            { region: 'intl', cardId: 'sv01-001', count: 3 },
+            { region: 'intl', cardId: 'gone-1', count: 4 },
+          ],
+        })
+      );
+      ownedNow.set({
         slots: new Map([['intl:sv01-001', { owned: 3, fromOther: 0, missing: 0 }]]),
         missing: 0,
+        unknown: 4,
+      });
+      const page = await create();
+
+      expect(query('[data-testid="missing-only"]')?.textContent).toContain(
+        'Show only missing cards (4)'
+      );
+      page.showMissingOnly(true);
+      fixture.detectChanges();
+
+      expect(query('[data-testid="deck-card-intl:gone-1"]')).not.toBeNull();
+      expect(query('[data-testid="none-missing"]')).toBeNull();
+      expect(root().textContent).toContain('Not on this device · 4 missing');
+    });
+
+    it('keeps the last result while a card just added is looked up', async () => {
+      ownedNow.set(someMissing);
+      const page = await create();
+      page.showMissingOnly(true);
+      fixture.detectChanges();
+
+      ownedNow.set(undefined); // A new printing, not looked up yet.
+      current.set(makeDeck({ updatedAt: '2026-01-02T00:00:00.000Z' }));
+      fixture.detectChanges();
+
+      expect(query('[data-testid="missing-only"]')).not.toBeNull();
+      expect(query('[data-testid="deck-card-intl:sv01-166"]')).toBeNull(); // Still filtered.
+      expect(root().textContent).toContain('Pokémon · 1 missing');
+    });
+
+    it('says when every card is owned, missing only or not', async () => {
+      current.set(makeDeck({ cards: [{ region: 'intl', cardId: 'sv01-001', count: 3 }] }));
+      ownedNow.set({
+        slots: new Map([['intl:sv01-001', { owned: 3, fromOther: 0, missing: 0 }]]),
+        missing: 0,
+        unknown: 0,
       });
       const page = await create();
       const toggle = query('[data-testid="missing-only"] ion-toggle') as HTMLIonToggleElement;
       expect(toggle.textContent.trim()).toBe('You own every card');
       expect(toggle.disabled).toBe(true);
 
-      page.missingOnly.set(true);
+      page.showMissingOnly(true);
       fixture.detectChanges();
 
       expect(query('[data-testid="none-missing"]')).not.toBeNull();

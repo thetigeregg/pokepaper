@@ -86,5 +86,44 @@ describe('ownedCoverage', () => {
 
     expect(owned.slots.has('intl:gone-1')).toBe(false);
     expect(owned.missing).toBe(1);
+    expect(owned.unknown).toBe(4);
+  });
+
+  it('pools slots whose printings only overlap, so no copy covers two cards', () => {
+    // A lists B as identical, but B's own lookup didn't find A.
+    const overlapping = new Map<string, CheckedCard>([
+      ['intl:a-1', checked('a-1', ['intl:a-1', 'intl:b-1'])],
+      ['intl:b-1', checked('b-1', ['intl:b-1'])],
+    ]);
+    const owned = ownedCoverage(
+      deckOf([
+        ['a-1', 2],
+        ['b-1', 2],
+      ]),
+      overlapping,
+      (key) => (key === 'intl:b-1' ? 2 : 0)
+    );
+
+    expect(owned.slots.get('intl:b-1')).toEqual({ owned: 2, fromOther: 0, missing: 0 });
+    expect(owned.slots.get('intl:a-1')).toEqual({ owned: 0, fromOther: 0, missing: 2 });
+    expect(owned.missing).toBe(2);
+  });
+
+  it('copes with a card’s own printing listed anywhere, or not at all', () => {
+    const odd = new Map<string, CheckedCard>([
+      ['intl:a-1', checked('a-1', ['intl:b-1', 'intl:a-1'])],
+      ['intl:c-1', checked('c-1', ['intl:d-1'])],
+    ]);
+    const owned = ownedCoverage(
+      deckOf([
+        ['a-1', 1],
+        ['c-1', 1],
+      ]),
+      odd,
+      (key) => (key === 'intl:b-1' || key === 'intl:c-1' ? 1 : 0)
+    );
+
+    expect(owned.slots.get('intl:a-1')).toEqual({ owned: 1, fromOther: 1, missing: 0 });
+    expect(owned.slots.get('intl:c-1')).toEqual({ owned: 1, fromOther: 0, missing: 0 });
   });
 });

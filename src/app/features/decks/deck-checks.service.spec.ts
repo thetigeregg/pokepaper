@@ -303,7 +303,29 @@ describe('DeckChecksService', () => {
     expect(service.ownedOf('a')).toEqual({
       slots: new Map([['intl:sv01-1', { owned: 0, fromOther: 0, missing: 1 }]]),
       missing: 1,
+      unknown: 0,
     });
+  });
+
+  it('checks cards by their own printing when the reprint search fails', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    engine.listCatalogSearchRows.mockRejectedValueOnce(new Error('broken'));
+    list.set([
+      deckOf('a', [
+        [pikachu, 4],
+        [oldBall, 1],
+        [energy, 55],
+      ]),
+    ]);
+    owned.set({ 'intl:me01-131': 1 });
+    const service = create();
+
+    await vi.waitFor(() => {
+      expect(issueIds(service, 'a')).toEqual(['legal']); // The G-mark ball, without its reprint.
+    });
+    expect(service.ownedOf('a')?.slots.get('intl:sv01-196')).toMatchObject({ owned: 0 });
+    expect(error).toHaveBeenCalledWith('deck.reprints_failed', expect.any(Error));
+    error.mockRestore();
   });
 
   it('gives the copy limit without waiting for legality (reprint searches)', async () => {

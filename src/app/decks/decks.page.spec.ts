@@ -109,8 +109,8 @@ describe('DecksPage', () => {
   it('counts the copies the collection lacks, before the issues', () => {
     list.set([deck('a', 'Charizard ex'), deck('b', 'Covered')]);
     owned.set({
-      a: { slots: new Map(), missing: 18 },
-      b: { slots: new Map(), missing: 0 },
+      a: { slots: new Map(), missing: 18, unknown: 0 },
+      b: { slots: new Map(), missing: 0, unknown: 0 },
     });
     checked.set({
       a: {
