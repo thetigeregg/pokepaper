@@ -79,4 +79,59 @@ describe('CardTileComponent', () => {
 
     expect(opened).toHaveBeenCalled();
   });
+
+  describe('adding to a deck', () => {
+    function createAdding(inDeck: number): ComponentFixture<CardTileComponent> {
+      const fixture = TestBed.createComponent(CardTileComponent);
+      fixture.componentRef.setInput('card', makeContractCard('intl', 'sv01', 'sv01-001', 0));
+      fixture.componentRef.setInput('language', 'en');
+      fixture.componentRef.setInput('name', 'Pineco');
+      fixture.componentRef.setInput('setLine', 'SVI · 001/198');
+      fixture.componentRef.setInput('adding', true);
+      fixture.componentRef.setInput('inDeck', inDeck);
+      fixture.detectChanges();
+      return fixture;
+    }
+    const inDeckBadge = (fixture: ComponentFixture<CardTileComponent>) =>
+      element(fixture).querySelector('[data-testid="in-deck-badge"]');
+
+    it('labels the tap as adding, with no deck badge until the deck has the card', () => {
+      const fixture = createAdding(0);
+
+      expect(inDeckBadge(fixture)).toBeNull();
+      expect(element(fixture).querySelector('button')?.getAttribute('aria-label')).toBe(
+        'Add Pineco'
+      );
+    });
+
+    it('badges the copies in the deck beside the owned badge, and says both', () => {
+      owned.set({ 'sv01-001:en': 1 });
+      const fixture = createAdding(2);
+
+      expect(inDeckBadge(fixture)?.textContent.trim()).toBe('2');
+      expect(badge(fixture)?.textContent.trim()).toBe('1');
+      expect(element(fixture).querySelector('button')?.getAttribute('aria-label')).toBe(
+        'Add Pineco, 2 in deck, 1 owned'
+      );
+    });
+
+    it('opens the card from the info button, without the tap that adds', () => {
+      const fixture = createAdding(0);
+      const opened = vi.fn();
+      const info = vi.fn();
+      fixture.componentInstance.opened.subscribe(opened);
+      fixture.componentInstance.info.subscribe(info);
+
+      const button = element(fixture).querySelector('[data-testid="tile-info"]') as HTMLElement;
+      expect(button.getAttribute('aria-label')).toBe('Show Pineco');
+      button.click();
+
+      expect(info).toHaveBeenCalled();
+      expect(opened).not.toHaveBeenCalled();
+    });
+
+    it('has no info button when not adding', () => {
+      expect(element(create()).querySelector('[data-testid="tile-info"]')).toBeNull();
+    });
+  });
 });

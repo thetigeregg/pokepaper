@@ -247,6 +247,76 @@ describe('SearchResultsComponent', () => {
     expect(present).toHaveBeenCalled();
   });
 
+  describe('with a picker (a deck\u2019s Add cards)', () => {
+    const counts = signal<Record<string, number>>({});
+    const picker = {
+      count: vi.fn((picked: CatalogCard) => counts()[picked.id] ?? 0),
+      pick: vi.fn(),
+    };
+
+    beforeEach(() => {
+      counts.set({});
+    });
+
+    async function createPicking(cards: CatalogCard[]): Promise<void> {
+      store(cards);
+      search.results.set(result(cards));
+      fixture = TestBed.createComponent(SearchResultsComponent);
+      fixture.componentRef.setInput('picker', picker);
+      fixture.detectChanges();
+      await settle();
+    }
+
+    it('picks a tapped card instead of opening it, remembering the search', async () => {
+      const cards = [card('sv02', 1), card('sv01', 2)];
+      await createPicking(cards);
+
+      (root().querySelectorAll('.card-button')[1] as HTMLButtonElement).click();
+
+      expect(picker.pick).toHaveBeenCalledWith(cards[1]);
+      expect(search.rememberQuery).toHaveBeenCalled();
+      expect(createModal).not.toHaveBeenCalled();
+    });
+
+    it('badges the copies picked, updating as they change', async () => {
+      const cards = [card('sv02', 1), card('sv01', 2)];
+      counts.set({ 'sv01-002': 3 });
+      await createPicking(cards);
+
+      const badges = () =>
+        [...root().querySelectorAll('[data-testid="in-deck-badge"]')].map((badge) =>
+          badge.textContent.trim()
+        );
+      expect(badges()).toEqual(['3']);
+
+      counts.set({ 'sv01-002': 4, 'sv02-001': 1 });
+      fixture.detectChanges();
+      expect(badges()).toEqual(['1', '4']);
+    });
+
+    it('opens a card from its info button, paging through the results', async () => {
+      const cards = [card('sv02', 1), card('sv01', 2)];
+      await createPicking(cards);
+
+      (root().querySelectorAll('[data-testid="tile-info"]')[1] as HTMLElement).click();
+      await settle();
+
+      expect(picker.pick).not.toHaveBeenCalled();
+      const modalProps = (createModal.mock.lastCall as unknown as [Record<string, unknown>])[0];
+      expect(modalProps['componentProps']).toMatchObject({ cardsProp: cards, startIndex: 1 });
+    });
+
+    it('shows no info buttons without a picker', async () => {
+      const cards = [card('sv02', 1)];
+      store(cards);
+      search.results.set(result(cards));
+      await create();
+
+      expect(root().querySelector('[data-testid="tile-info"]')).toBeNull();
+      expect(root().querySelector('[data-testid="in-deck-badge"]')).toBeNull();
+    });
+  });
+
   it('lets the card modal load the next page of results', async () => {
     const cards = Array.from({ length: RESULTS_PAGE_SIZE + 3 }, (_, n) => card('sv01', n + 1));
     store(cards);

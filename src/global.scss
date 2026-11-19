@@ -122,12 +122,23 @@ ion-item.child-row {
 }
 
 /* Card detail modal: a centered dialog on desktop (a full-height sheet on
-   phones, set where it opens). */
+   phones, set where it opens). Add cards likewise. */
 @media (min-width: 992px) {
   ion-modal.card-detail-modal {
     --width: min(960px, 92vw);
     --height: min(780px, 90vh);
   }
+
+  /* A deck's Add cards: a large dialog for browsing the grid (full screen on phones). */
+  ion-modal.add-cards-modal {
+    --width: min(1100px, 92vw);
+    --height: min(860px, 90vh);
+  }
+}
+
+/* The red button of a confirm alert ("Remove", "Delete"; docs/ui.md → Actions). */
+ion-alert .alert-button.alert-button-danger {
+  color: var(--ion-color-danger);
 }
 
 /* Search filter popover (desktop; a sheet on phones): wide enough for set

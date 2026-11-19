@@ -48,7 +48,9 @@ Standards for PokePaper's screens, so new pages look and behave like existing on
 - **Destructive actions** use `color="danger"`, e.g. "Sign out of this device".
 - **Actions on one row** (e.g. "Remove" on a passkey) are `fill="clear"` buttons at the row's end (`slot="end"`).
 - **Disable actions while they run** (`[disabled]="busy()"`), rather than hiding them.
-- **Confirm bulk or hard-to-undo removals** (a whole series, everything, a passkey) with an alert: "Cancel" plus a red "Remove". Removing a single item that's easy to redo (one downloaded set) doesn't ask.
+- **Confirm bulk or hard-to-undo removals** (a whole series, everything, a passkey, a deck) with an alert: "Cancel" plus a red "Remove" (or "Delete"), a `role: 'confirm'` button with `cssClass: 'alert-button-danger'` (red through a global rule in `src/global.scss`). Removing a single item that's easy to redo (one downloaded set) doesn't ask.
+- **Naming something** (a new deck, a rename) uses an alert with one text input, focused on open, and Cancel plus the action ("Create", "Rename"). A blank name keeps the alert open.
+- **A change that couldn't be saved** (and was rolled back) is reported with an `IonToast` (`color="danger"`, 3 seconds, at the bottom), e.g. "Couldn't save the deck. Try again."
 - **A screen's single main call to action outside any list** (e.g. the sign-in button) is an `ion-button expand="block"`.
 
 ## Cards
@@ -83,6 +85,17 @@ Standards for PokePaper's screens, so new pages look and behave like existing on
   - Each value is an `IonItem` with an `ion-checkbox` (`justify="start" labelPlacement="end"`, so the box leads) and its card count as an `IonNote` at the end. Type values show their energy icon, rarity values their symbol, set values their logo.
   - Only values the current search has cards for are listed, with counts for the current query and the other filters (not the filter's own picks, which add cards). Picked values always stay listed, at 0 if need be, so they can be cleared. When nothing is left, the list says "No cards match this search". The Collection picker always lists both of its values, Owned and Missing (docs/collection.md), even at 0.
   - Groups can be picked as a whole: categories with their subtypes as child rows (Trainer → Supporter, Item, …), and sets under sticky series dividers that hold the series' own checkbox. A picked group covers all its values (shown checked and disabled), and a partly picked one is indeterminate. The Set picker has its own `IonSearchbar` ("Search sets").
+
+## Decks
+
+See [`decks.md`](decks.md) for what decks hold and how they sync.
+
+- **Decks tab:** the large-title page in the `page-column`. The header's end slot has an `add-outline` button that opens the New deck alert (see Actions → Naming); the new deck is Standard and opens at once. Each deck is an `IonItem button` row with a chevron: its name, and a hint "Standard · 47 cards". Most recently changed first. With no decks, a "No decks yet" row and a primary "New deck" action row.
+- **Deck page** (`decks/deck/:id`, pushed on phones and desktop alike): back button "Decks" and the deck's name as a small title. The header's end slot has Add cards (`add-outline`), then a `HeaderActionsComponent` (`pinned` 0) with Rename deck (`create-outline`, the naming alert) and Delete deck (`trash-outline`, a confirm alert, then back to the list): phones show Add plus More, desktop three icon buttons.
+  - In the `page-column`: a Format choice row (`ion-select`, popover: Standard, Expanded, Unlimited), and a Cards row with the total as an `ion-note`.
+  - Then a section per category, titled "Pokémon · 18", "Trainer · 25", "Energy · 4" (copies), each a `list-grid` list (two columns from `lg`). A row has the card's scan (52 px, leading the label in a `media-row`; tapping it opens the card modal, paging through the deck), its name with "OBF · 125/197" as a hint, and a − count + stepper at the end like the card detail's Collection section (+ disabled at 99; − at 1 removes the card). Rows keep the order cards were added in. Cards whose category isn't one of the three go under "Other"; cards not in the catalog on this device under "Not on this device", by ID, without a scan.
+  - With no cards, a "No cards yet" row and a primary "Add cards" action row.
+- **Add cards:** an `IonModal`, full screen on phones and a large dialog on desktop (`.add-cards-modal`, `min(1100px, 92vw)` × `min(860px, 90vh)`). Header: "Add cards", then the Filters button (phones) and a bold Done; under it an `IonSearchbar` ("Search cards"), the catalog segment, and on desktop the filter chips. Results, recent searches and filters work as in Cards → Search, with a search of its own: its query and filters don't touch the Cards tab's (recent searches and the catalog are shared). Tapping a card adds a copy; a `color="primary"` `IonBadge` at the tile's top left shows the copies in the deck (the red owned badge stays bottom right), and an icon-only `information-circle-outline` button after the caption opens the card modal instead. Done closes its own modal, even while a filter sheet is still closing on top.
 
 ## Tests
 

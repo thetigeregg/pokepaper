@@ -2,7 +2,7 @@
 
 PokePaper lets you build decks from the catalog: named lists of card printings, each with a copy count, checked against a format.
 
-Status: storage and sync are implemented. The Decks tab screens, format checks and "owned vs. needed" are next.
+Status: storage, sync and the Decks tab screens (deck list, deck page, Add cards) are implemented. Format checks and "owned vs. needed" are next.
 
 ## Design
 
@@ -10,6 +10,14 @@ Status: storage and sync are implemented. The Decks tab screens, format checks a
 - **Each deck has a format:** Standard, Expanded or Unlimited. Breaking a format's rules will be a **warning, not an error**: a deck in progress always saves. Nothing checks format rules yet.
 - **Format rules and legality are still to be sourced.** Before they're built, the deck-construction rules (deck size, copy limits and their exceptions, ban lists) will be taken from the official Play! Pokémon rules and written up here with sources. The catalog has TCGdex's `legal.standard` / `legal.expanded` flags for every international card, but they aren't verified yet: one G-mark card (`sv04-266`) is flagged Standard-legal, and it's unknown whether the flags follow ban lists and rotations promptly.
 - **Owned vs. needed counts copies in any language.** An English and a German copy of a printing both count toward a deck.
+
+## Screens
+
+Layout and components: [`ui.md`](ui.md) → Decks.
+
+- **Decks tab:** every deck, most recently changed first, with its format and card total. The add button names a new deck, which starts as Standard and opens.
+- **Deck page:** the deck's format (a choice row) and card total, then its cards by category (Pokémon, Trainer, Energy) in the order they were added, each with a − count + stepper. Rename and Delete are in the header.
+- **Add cards:** card search with its own query and filters (`CatalogSearchService` provided by the modal, see [`catalog.md`](catalog.md) → Search). Tapping a card adds a copy and its badge shows the copies in the deck. There's no cap at the format's limit yet; that's for the format rules.
 
 ## Data model
 

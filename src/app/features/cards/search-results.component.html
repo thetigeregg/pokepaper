@@ -89,7 +89,10 @@
                 [language]="group.language"
                 [name]="name(entry.card, group.language)"
                 [setLine]="line(group, entry.card)"
-                (opened)="openCard(entry.index)"
+                [adding]="picker() !== null"
+                [inDeck]="picker()?.count(entry.card) ?? 0"
+                (opened)="tap(entry.card, entry.index)"
+                (info)="openCard(entry.index)"
               />
             </ion-col>
           }

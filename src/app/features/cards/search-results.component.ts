@@ -4,6 +4,7 @@ import {
   computed,
   effect,
   inject,
+  input,
   signal,
   untracked,
 } from '@angular/core';
@@ -38,6 +39,16 @@ import { CardTileComponent } from './card-tile.component';
 
 /** Cards loaded per page as the results scroll. */
 export const RESULTS_PAGE_SIZE = 60;
+
+/**
+ * Makes results pick cards instead of opening them (a deck's Add cards):
+ * tapping a card calls `pick`, its tile shows `count`, and its info button
+ * opens it.
+ */
+export interface CardPicker {
+  count(card: CatalogCard): number;
+  pick(card: CatalogCard): void;
+}
 
 interface LoadedCard {
   key: string;
@@ -96,6 +107,9 @@ export class SearchResultsComponent {
   private readonly catalogLanguage = inject(CatalogLanguageService);
   private readonly modals = inject(ModalController);
   private readonly layout = inject(LayoutService);
+
+  /** Set by a deck's Add cards: tapping a card picks it (see `CardPicker`). */
+  readonly picker = input<CardPicker | null>(null);
 
   readonly loaded = signal<LoadedCard[]>([]);
   /**
@@ -215,6 +229,17 @@ export class SearchResultsComponent {
 
   line(group: ResultGroup, card: CatalogCard): string {
     return group.set ? setLine(group.set, card) : card.localId;
+  }
+
+  /** A tapped card: picked when there's a picker, else opened. */
+  tap(card: CatalogCard, index: number): void {
+    const picker = this.picker();
+    if (picker) {
+      void this.search.rememberQuery();
+      picker.pick(card);
+    } else {
+      void this.openCard(index);
+    }
   }
 
   pickRecent(query: string): void {

@@ -1,0 +1,124 @@
+<ion-header [translucent]="true">
+  <ion-toolbar>
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/tabs/decks" text="Decks"></ion-back-button>
+    </ion-buttons>
+    <ion-title data-testid="deck-title">{{ deck()?.name ?? '' }}</ion-title>
+    @if (deck()) {
+      <ion-buttons slot="end">
+        <ion-button (click)="addCards()" aria-label="Add cards" data-testid="add-cards">
+          <ion-icon slot="icon-only" name="add-outline"></ion-icon>
+        </ion-button>
+        <app-header-actions [actions]="actions()" [pinned]="0" />
+      </ion-buttons>
+    }
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  @if (loaded() && !deck()) {
+    <ion-text color="medium">
+      <p class="ion-padding" data-testid="deck-missing">This deck isn't on this device.</p>
+    </ion-text>
+  }
+  @if (deck(); as deck) {
+    <div class="page-column">
+      <ion-list>
+        <ion-item lines="inset">
+          <ion-select
+            label="Format"
+            interface="popover"
+            [value]="format()"
+            (ionChange)="pickFormat($event.detail.value)"
+            data-testid="deck-format"
+          >
+            @for (option of formats; track option.value) {
+              <ion-select-option [value]="option.value">{{ option.label }}</ion-select-option>
+            }
+          </ion-select>
+        </ion-item>
+        <ion-item>
+          <ion-label>Cards</ion-label>
+          <ion-note slot="end" data-testid="deck-total">{{ total() }}</ion-note>
+        </ion-item>
+      </ion-list>
+
+      @for (section of sections(); track section.id) {
+        <ion-list-header>
+          <ion-label>{{ section.title }} · {{ section.count }}</ion-label>
+        </ion-list-header>
+        <!-- Two columns on desktop (global list-grid). -->
+        <ion-list class="list-grid" [attr.data-testid]="'section-' + section.id">
+          @for (row of section.rows; track row.key) {
+            <ion-item lines="inset" [attr.data-testid]="'deck-card-' + row.key">
+              <ion-label>
+                <div class="media-row">
+                  @if (row.card; as card) {
+                    <button
+                      type="button"
+                      class="thumb"
+                      (click)="openCard(row)"
+                      [attr.aria-label]="'Show ' + row.name"
+                      data-testid="open-thumb"
+                    >
+                      <app-card-image
+                        [card]="card"
+                        [language]="row.language"
+                        [setLine]="row.line"
+                      />
+                    </button>
+                  }
+                  <div class="media-row-text">
+                    {{ row.name }}
+                    <p class="hint">{{ row.line }}</p>
+                  </div>
+                </div>
+              </ion-label>
+              <div slot="end" class="stepper">
+                <ion-button
+                  fill="clear"
+                  (click)="setCount(row, row.slot.count - 1)"
+                  [attr.aria-label]="'Remove a copy of ' + row.name"
+                  data-testid="remove-copy"
+                >
+                  <ion-icon slot="icon-only" name="remove-circle-outline"></ion-icon>
+                </ion-button>
+                <span class="count" aria-live="polite" data-testid="count">
+                  {{ row.slot.count }}
+                </span>
+                <ion-button
+                  fill="clear"
+                  [disabled]="row.slot.count >= maxCount"
+                  (click)="setCount(row, row.slot.count + 1)"
+                  [attr.aria-label]="'Add a copy of ' + row.name"
+                  data-testid="add-copy"
+                >
+                  <ion-icon slot="icon-only" name="add-circle-outline"></ion-icon>
+                </ion-button>
+              </div>
+            </ion-item>
+          }
+        </ion-list>
+      } @empty {
+        @if (cardsLoaded() || deck.cards.length === 0) {
+          <ion-list>
+            <ion-item data-testid="deck-empty">
+              <ion-label>
+                No cards yet
+                <p class="hint">Search the catalog and tap cards to add them</p>
+              </ion-label>
+            </ion-item>
+            <ion-item
+              button="true"
+              [detail]="false"
+              (click)="addCards()"
+              data-testid="add-cards-row"
+            >
+              <ion-label color="primary">Add cards</ion-label>
+            </ion-item>
+          </ion-list>
+        }
+      }
+    </div>
+  }
+</ion-content>
