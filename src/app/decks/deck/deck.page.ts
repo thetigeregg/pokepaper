@@ -79,6 +79,9 @@ const SECTION_TITLES: Record<SectionId, string> = {
   missing: 'Not on this device',
 };
 
+/** The missing section's title when the catalog couldn't be read (they may be there). */
+const UNREAD_TITLE = "Couldn't be read";
+
 const SECTION_ORDER: readonly SectionId[] = ['Pokemon', 'Trainer', 'Energy', 'other', 'missing'];
 
 /** A card in the deck, with what its row shows. */
@@ -203,6 +206,10 @@ export class DeckPage {
     cards: ReadonlyMap<string, CatalogCard>;
     sets: ReadonlyMap<string, CatalogSet>;
   }>({ keys: new Set(), cards: new Map(), sets: new Map() });
+  /** The last catalog read failed: cards it didn't find are listed by ID, with Try again. */
+  readonly readFailed = signal(false);
+  /** The page is going back after deleting its deck: don't say the deck is missing. */
+  readonly deleting = signal(false);
 
   /** The printings in the deck, as one string: changes when cards are added or removed. */
   private readonly cardKeys = computed(() => (this.deck()?.cards ?? []).map(deckCardKey));
@@ -229,7 +236,8 @@ export class DeckPage {
         : this.fallbackLanguage(slot.region);
       let section = sections.get(id);
       if (!section) {
-        section = { id, title: SECTION_TITLES[id], count: 0, rows: [] };
+        const title = id === 'missing' && this.readFailed() ? UNREAD_TITLE : SECTION_TITLES[id];
+        section = { id, title, count: 0, rows: [] };
         sections.set(id, section);
       }
       section.count += slot.count;
@@ -295,7 +303,9 @@ export class DeckPage {
   }
 
   async pickFormat(value: unknown): Promise<void> {
-    if (!isDeckFormat(value) || value === this.format()) {
+    // Against the stored format: an unknown one shows as Unlimited, and
+    // picking Unlimited then makes it so.
+    if (!isDeckFormat(value) || value === this.deck()?.format) {
       return;
     }
     try {
@@ -326,7 +336,9 @@ export class DeckPage {
     if (!deck || !(await this.dialogs.confirmDelete(deck))) {
       return;
     }
-    void this.nav.navigateBack('/tabs/decks');
+    // Leave first: removing it while this page shows would flash "isn't on this device".
+    this.deleting.set(true);
+    await this.nav.navigateBack('/tabs/decks');
     try {
       await this.decks.remove(deck.id);
     } catch {
@@ -364,6 +376,11 @@ export class DeckPage {
     await modal.present();
   }
 
+  /** Reads the deck's cards again (Try again, after a failed read). */
+  retryCards(): void {
+    void this.loadCards();
+  }
+
   private async loadCards(): Promise<void> {
     const read = ++this.reads;
     const keys = this.cardKeys();
@@ -378,6 +395,7 @@ export class DeckPage {
       if (read !== this.reads) {
         return;
       }
+      this.readFailed.set(false);
       this.catalog.set({
         keys: new Set(keys),
         cards: new Map(cards.map((card) => [catalogKey(card.region, card.id), card])),
@@ -389,6 +407,13 @@ export class DeckPage {
       });
     } catch (error: unknown) {
       console.error('deck.cards_load_failed', error);
+      if (read !== this.reads) {
+        return;
+      }
+      // Keep what was read, and list the rest by ID so they can still be
+      // seen and edited (with Try again), rather than hiding them.
+      this.readFailed.set(true);
+      this.catalog.update((catalog) => ({ ...catalog, keys: new Set(keys) }));
     }
   }
 

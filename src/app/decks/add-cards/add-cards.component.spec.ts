@@ -28,10 +28,14 @@ describe('AddCardsComponent', () => {
     updatedAt: '2026-01-01T00:00:00.000Z',
   });
   const decks = {
+    loaded: signal(true),
     deck: vi.fn((id: string) => (id === current().id ? current() : undefined)),
     setCardCount: vi.fn(() => Promise.resolve()),
   };
-  const dialogs = { showSaveError: vi.fn(() => Promise.resolve()) };
+  const dialogs = {
+    showSaveError: vi.fn(() => Promise.resolve()),
+    showCopyLimit: vi.fn(() => Promise.resolve()),
+  };
   const modals = { dismiss: vi.fn(() => Promise.resolve(true)) };
   const recent = { recent: signal<string[]>([]), remember: vi.fn(() => Promise.resolve()) };
   const wide = signal(false);
@@ -122,7 +126,19 @@ describe('AddCardsComponent', () => {
     );
   });
 
-  it('adds nothing past the most copies a slot holds', async () => {
+  it('closes when its deck is deleted (on another device)', () => {
+    create();
+    expect(modals.dismiss).not.toHaveBeenCalled();
+    const saved = current();
+
+    current.set({ ...saved, id: 'another' });
+    fixture.detectChanges();
+
+    expect(modals.dismiss).toHaveBeenCalled();
+    current.set(saved);
+  });
+
+  it('adds nothing past the most copies a slot holds, saying so', async () => {
     current.update((deck) => ({
       ...deck,
       cards: [{ region: 'intl', cardId: 'sv01-001', count: 99 }],
@@ -132,6 +148,7 @@ describe('AddCardsComponent', () => {
     await modal.add(pineco);
 
     expect(decks.setCardCount).not.toHaveBeenCalled();
+    expect(dialogs.showCopyLimit).toHaveBeenCalled();
     current.update((deck) => ({
       ...deck,
       cards: [{ region: 'intl', cardId: 'sv01-001', count: 2 }],

@@ -94,7 +94,7 @@ describe('DecksPage', () => {
     expect(page.busy()).toBe(false);
   });
 
-  it('creates nothing when naming is cancelled', async () => {
+  it('creates nothing when naming is canceled', async () => {
     dialogs.askNewName.mockResolvedValueOnce(null);
     const page = create();
 

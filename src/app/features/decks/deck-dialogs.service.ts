@@ -1,7 +1,12 @@
 import { Injectable, inject } from '@angular/core';
 import { AlertController, ToastController } from '@ionic/angular';
-import { MAX_DECK_NAME_LENGTH, isDeckName, type Deck } from '@pokepaper/shared';
-import { DeckFullError } from '../../core/services/deck.service';
+import {
+  MAX_DECK_CARD_COUNT,
+  MAX_DECK_NAME_LENGTH,
+  isDeckName,
+  type Deck,
+} from '@pokepaper/shared';
+import { DeckChangeDroppedError, DeckFullError } from '../../core/services/deck.service';
 
 /**
  * The deck screens' dialogs (docs/ui.md → Decks): stock Ionic alerts for
@@ -12,12 +17,12 @@ export class DeckDialogsService {
   private readonly alerts = inject(AlertController);
   private readonly toasts = inject(ToastController);
 
-  /** Asks for a new deck's name: the trimmed name, or null if cancelled. */
+  /** Asks for a new deck's name: the trimmed name, or null if canceled. */
   askNewName(): Promise<string | null> {
     return this.askName('New deck', 'Create', '');
   }
 
-  /** Asks for a deck's new name: the trimmed name, or null if cancelled or unchanged. */
+  /** Asks for a deck's new name: the trimmed name, or null if canceled or unchanged. */
   async askRename(deck: Deck): Promise<string | null> {
     const name = await this.askName('Rename deck', 'Rename', deck.name);
     return name === deck.name ? null : name;
@@ -40,12 +45,28 @@ export class DeckDialogsService {
 
   /**
    * Says a deck change didn't happen: the deck is full, or it couldn't be
-   * saved (and has been rolled back).
+   * saved (and has been rolled back). Changes dropped behind a failed save
+   * say nothing: that failure is reported once.
    */
   async showSaveError(error?: unknown): Promise<void> {
+    if (error instanceof DeckChangeDroppedError) {
+      return;
+    }
+    await this.showToast(
+      error instanceof DeckFullError ? `${error.message}.` : "Couldn't save the deck. Try again."
+    );
+  }
+
+  /** Says a printing already has as many copies as a deck holds. */
+  showCopyLimit(): Promise<void> {
+    return this.showToast(
+      `A deck holds at most ${String(MAX_DECK_CARD_COUNT)} copies of a printing.`
+    );
+  }
+
+  private async showToast(message: string): Promise<void> {
     const toast = await this.toasts.create({
-      message:
-        error instanceof DeckFullError ? `${error.message}.` : "Couldn't save the deck. Try again.",
+      message,
       color: 'danger',
       duration: 3000,
       position: 'bottom',

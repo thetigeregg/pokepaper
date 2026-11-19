@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { AlertController, ToastController } from '@ionic/angular';
 import type { Deck } from '@pokepaper/shared';
 import { vi } from 'vitest';
-import { DeckFullError } from '../../core/services/deck.service';
+import { DeckChangeDroppedError, DeckFullError } from '../../core/services/deck.service';
 import { DeckDialogsService } from './deck-dialogs.service';
 
 interface AlertButton {
@@ -73,7 +73,7 @@ describe('DeckDialogsService', () => {
   });
 
   it.each([
-    ['cancelled', { role: 'cancel' }],
+    ['canceled', { role: 'cancel' }],
     ['dismissed by the backdrop', { role: 'backdrop' }],
     ['confirmed blank', { role: 'confirm', data: { values: { name: ' ' } } }],
   ])('returns null when %s', async (_label, outcome) => {
@@ -121,5 +121,22 @@ describe('DeckDialogsService', () => {
       expect.objectContaining({ message: 'A deck holds at most 200 different printings.' })
     );
     expect(toast.present).toHaveBeenCalledTimes(2);
+  });
+
+  it('says nothing for changes dropped behind a failed save (reported once)', async () => {
+    await create().showSaveError(new DeckChangeDroppedError());
+
+    expect(toasts.create).not.toHaveBeenCalled();
+  });
+
+  it('says when a printing has as many copies as a deck holds', async () => {
+    await create().showCopyLimit();
+
+    expect(toasts.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'A deck holds at most 99 copies of a printing.',
+        color: 'danger',
+      })
+    );
   });
 });

@@ -80,7 +80,7 @@ describe('DeckPage', () => {
   };
   const present = vi.fn(() => Promise.resolve());
   const createModal = vi.fn((_options: Record<string, unknown>) => Promise.resolve({ present }));
-  const nav = { navigateBack: vi.fn() };
+  const nav = { navigateBack: vi.fn((_url: string) => Promise.resolve(true)) };
   const changed = new Subject<void>();
   const wide = signal(false);
   let fixture: ComponentFixture<DeckPage>;
@@ -255,14 +255,16 @@ describe('DeckPage', () => {
     expect(decks.update).toHaveBeenCalledWith('deck-1', { format: 'expanded' });
   });
 
-  it('shows an unknown format as Unlimited', async () => {
+  it('shows an unknown format as Unlimited, and saves Unlimited when picked', async () => {
     current.set(makeDeck({ format: 'glc' }));
     const page = await create();
 
     expect(page.format()).toBe('unlimited');
+    await page.pickFormat('unlimited');
+    expect(decks.update).toHaveBeenCalledWith('deck-1', { format: 'unlimited' });
   });
 
-  it('renames the deck, or leaves it when renaming is cancelled', async () => {
+  it('renames the deck, or leaves it when renaming is canceled', async () => {
     const page = await create();
 
     await page.rename();
@@ -273,12 +275,26 @@ describe('DeckPage', () => {
     expect(decks.update).toHaveBeenCalledTimes(1);
   });
 
-  it('deletes the deck after confirming, going back to the list', async () => {
+  it('deletes the deck after confirming, once back on the list', async () => {
+    let arrive: (done: boolean) => void = () => undefined;
+    nav.navigateBack.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          arrive = resolve;
+        })
+    );
     const page = await create();
 
-    await page.delete();
-
+    const deleting = page.delete();
+    await settle();
     expect(nav.navigateBack).toHaveBeenCalledWith('/tabs/decks');
+    expect(decks.remove).not.toHaveBeenCalled();
+    current.set(undefined); // Even if it goes meanwhile (a sync), no "isn't on this device".
+    fixture.detectChanges();
+    expect(query('[data-testid="deck-missing"]')).toBeNull();
+
+    arrive(true);
+    await deleting;
     expect(decks.remove).toHaveBeenCalledWith('deck-1');
   });
 
@@ -472,7 +488,7 @@ describe('DeckPage', () => {
     expect(sectionTitles()).toEqual(['Energy · 1']);
   });
 
-  it('keeps what it shows when reading the catalog fails', async () => {
+  it('keeps what it read when a read fails, listing the rest by ID with Try again', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     await create();
     engine.getCatalogCardsByKey.mockRejectedValueOnce(new Error('broken'));
@@ -484,7 +500,58 @@ describe('DeckPage', () => {
     await settle();
 
     expect(error).toHaveBeenCalledWith('deck.cards_load_failed', expect.any(Error));
-    expect(sectionTitles()).toEqual(['Pokémon · 3', 'Trainer · 4', 'Energy · 9']);
+    expect(sectionTitles()).toEqual([
+      'Pokémon · 3',
+      'Trainer · 4',
+      'Energy · 9',
+      "Couldn't be read · 1",
+    ]);
+    // Still editable.
+    expect(
+      query('[data-testid="deck-card-intl:sv01-300"] [data-testid="add-copy"]')
+    ).not.toBeNull();
+    expect(query('[data-testid="cards-read-failed"]')).not.toBeNull();
+
+    (query('[data-testid="cards-retry"]') as HTMLElement).click();
+    await settle();
+
+    expect(sectionTitles()).toEqual(['Pokémon · 3', 'Trainer · 4', 'Energy · 9', 'Other · 1']);
+    expect(query('[data-testid="cards-read-failed"]')).toBeNull();
+    error.mockRestore();
+  });
+
+  it('lists every card by ID when the first read fails, rather than a blank page', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    engine.getCatalogCardsByKey.mockRejectedValueOnce(new Error('broken'));
+
+    await create();
+
+    expect(sectionTitles()).toEqual(["Couldn't be read · 16"]);
+    expect(query('[data-testid="cards-retry"]')).not.toBeNull();
+    error.mockRestore();
+  });
+
+  it('ignores a failed read superseded by a newer one', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await create();
+    let failSlow: (reason: Error) => void = () => undefined;
+    engine.getCatalogCardsByKey.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          failSlow = reject;
+        })
+    );
+
+    current.set(makeDeck({ cards: [{ region: 'intl', cardId: 'sv01-300', count: 1 }] }));
+    fixture.detectChanges();
+    current.set(makeDeck({ cards: [{ region: 'intl', cardId: 'sv01-258', count: 1 }] }));
+    fixture.detectChanges();
+    await settle();
+    failSlow(new Error('late'));
+    await settle();
+
+    expect(fixture.componentInstance.readFailed()).toBe(false);
+    expect(sectionTitles()).toEqual(['Energy · 1']);
     error.mockRestore();
   });
 });

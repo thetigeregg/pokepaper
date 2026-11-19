@@ -16,7 +16,7 @@
 </ion-header>
 
 <ion-content>
-  @if (loaded() && !deck()) {
+  @if (loaded() && !deck() && !deleting()) {
     <ion-text color="medium">
       <p class="ion-padding" data-testid="deck-missing">This deck isn't on this device.</p>
     </ion-text>
@@ -42,6 +42,20 @@
           <ion-note slot="end" data-testid="deck-total">{{ total() }}</ion-note>
         </ion-item>
       </ion-list>
+
+      @if (readFailed()) {
+        <ion-list>
+          <ion-item data-testid="cards-read-failed">
+            <ion-label>
+              Some cards couldn't be read
+              <p class="hint">They're listed by ID until they can be</p>
+            </ion-label>
+          </ion-item>
+          <ion-item button="true" [detail]="false" (click)="retryCards()" data-testid="cards-retry">
+            <ion-label color="primary">Try again</ion-label>
+          </ion-item>
+        </ion-list>
+      }
 
       @for (section of sections(); track section.id) {
         <ion-list-header>

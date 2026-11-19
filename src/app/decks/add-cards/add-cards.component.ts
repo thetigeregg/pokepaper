@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, ElementRef, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, effect, inject } from '@angular/core';
 import {
   IonButton,
   IonButtons,
@@ -101,6 +101,15 @@ export class AddCardsComponent {
     pick: (card) => void this.add(card),
   };
 
+  constructor() {
+    // The deck was deleted (on another device, synced): nothing to add to.
+    effect(() => {
+      if (this.deckIdProp && this.decks.loaded() && !this.decks.deck(this.deckIdProp)) {
+        this.done();
+      }
+    });
+  }
+
   /** Copies of `card` in the deck. */
   count(card: CatalogCard): number {
     const key = catalogKey(card.region, card.id);
@@ -109,10 +118,11 @@ export class AddCardsComponent {
     );
   }
 
-  /** Adds a copy of `card` (none past `MAX_DECK_CARD_COUNT`). */
+  /** Adds a copy of `card` (none past `MAX_DECK_CARD_COUNT`, saying so). */
   async add(card: CatalogCard): Promise<void> {
     const count = this.count(card);
     if (count >= MAX_DECK_CARD_COUNT) {
+      await this.dialogs.showCopyLimit();
       return;
     }
     try {
