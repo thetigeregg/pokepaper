@@ -1,4 +1,6 @@
-import { rarityIcon, rarityIconUrl } from './rarity';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
+import { RARITY_ICON_HEIGHT, RARITY_ICON_WIDTHS, rarityIcon, rarityIconUrl } from './rarity';
 
 describe('rarityIcon', () => {
   const name = (...args: Parameters<typeof rarityIcon>) => rarityIcon(...args)?.name ?? null;
@@ -33,9 +35,12 @@ describe('rarityIcon', () => {
     expect(name('Mega Hyper Rare', 'asia', 'SV')).toBe('jp/ur');
   });
 
-  it('uses modern letter codes for Asian rarities without a series', () => {
+  it('gives Asian rarities without a series their most common symbol', () => {
     expect(name('Rare', 'asia')).toBe('jp/r');
     expect(name('Mega Hyper Rare', 'asia')).toBe('jp/ur');
+    // Almost all on pre-Black & White cards, which print ★.
+    expect(name('Holo Rare', 'asia')).toBe('rare');
+    expect(name('Shiny rare', 'asia')).toBe('rare');
   });
 
   it('gives older Asian sets the international symbols, every rare as a star', () => {
@@ -44,13 +49,23 @@ describe('rarityIcon', () => {
     expect(name('Holo Rare', 'asia', 'PMCG')).toBe('rare');
     expect(name('Shiny rare', 'asia', 'PCG')).toBe('rare');
     expect(name('None', 'asia', 'PCG')).toBeNull();
+    expect(name('Promo', 'asia', 'PCG')).toBeNull(); // Not in the table: text only.
   });
 
   it("repeats TCG Pocket's symbols in any region", () => {
-    expect(rarityIcon('Three Diamond', 'intl')).toEqual({ name: 'pocket/diamond', count: 3 });
-    expect(rarityIcon('Two Star', 'intl')).toEqual({ name: 'pocket/star', count: 2 });
-    expect(rarityIcon('Two Shiny', 'asia')).toEqual({ name: 'pocket/shiny', count: 2 });
-    expect(rarityIcon('Crown', 'intl')).toEqual({ name: 'pocket/crown', count: 1 });
+    expect(rarityIcon('Three Diamond', 'intl')).toEqual({
+      name: 'pocket/diamond',
+      count: 3,
+      width: 37,
+    });
+    expect(rarityIcon('Two Star', 'intl')).toMatchObject({ name: 'pocket/star', count: 2 });
+    expect(rarityIcon('Two Shiny', 'asia')).toMatchObject({ name: 'pocket/shiny', count: 2 });
+    expect(rarityIcon('Crown', 'intl')).toMatchObject({ name: 'pocket/crown', count: 1 });
+  });
+
+  it("gives each symbol its image's width", () => {
+    expect(rarityIcon('Double rare', 'intl')).toEqual({ name: 'double-rare', count: 1, width: 72 });
+    expect(rarityIcon('Common', 'asia', 'SV')).toEqual({ name: 'jp/c', count: 1, width: 43 });
   });
 
   it('has no symbol for None, a missing rarity, or one without a symbol', () => {
@@ -65,5 +80,41 @@ describe('rarityIcon', () => {
 
   it('builds the asset URL', () => {
     expect(rarityIconUrl('jp/rr')).toBe('assets/rarity/jp/rr.png');
+  });
+});
+
+describe('RARITY_ICON_WIDTHS', () => {
+  const root = join(process.cwd(), 'src/assets/rarity');
+
+  function pngs(dir: string): string[] {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+      entry.isDirectory()
+        ? pngs(join(dir, entry.name))
+        : entry.name.endsWith('.png')
+          ? [join(dir, entry.name)]
+          : []
+    );
+  }
+
+  it('lists every image in assets/rarity with its size', () => {
+    const sizes = Object.fromEntries(
+      pngs(root).map((file) => {
+        const png = readFileSync(file);
+        // PNG header: width and height are the IHDR chunk's first two fields.
+        const name = relative(root, file)
+          .replace(/\\/g, '/')
+          .replace(/\.png$/, '');
+        return [name, [png.readUInt32BE(16), png.readUInt32BE(20)]];
+      })
+    );
+
+    expect(sizes).toEqual(
+      Object.fromEntries(
+        Object.entries(RARITY_ICON_WIDTHS).map(([name, width]) => [
+          name,
+          [width, RARITY_ICON_HEIGHT],
+        ])
+      )
+    );
   });
 });

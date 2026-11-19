@@ -32,6 +32,8 @@ describe('RarityIconComponent', () => {
     expect(img.getAttribute('src')).toBe('assets/rarity/jp/rr.png');
     expect(img.getAttribute('alt')).toBe('');
     expect(img.getAttribute('aria-hidden')).toBe('true');
+    // Its size reserves the space before it loads.
+    expect([img.getAttribute('width'), img.getAttribute('height')]).toEqual(['73', '48']);
     expect(element(fixture).classList).toContain('shown');
   });
 

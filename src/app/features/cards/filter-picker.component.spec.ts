@@ -73,6 +73,7 @@ describe('FilterPickerComponent', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     filters.set(NO_FILTERS);
+    browse.region.set('intl');
     TestBed.configureTestingModule({
       providers: [
         { provide: CatalogSearchService, useValue: search },
@@ -199,7 +200,6 @@ describe('FilterPickerComponent', () => {
     browse.region.set('asia');
     fixture.detectChanges();
     expect(icon()?.getAttribute('src')).toBe('assets/rarity/jp/c.png');
-    browse.region.set('intl');
   });
 
   it('ignores whole-group picks for filters without groups', () => {
