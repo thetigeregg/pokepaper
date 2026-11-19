@@ -121,3 +121,7 @@
 ## v0.17.2 - 2026-11-19
 
 - 9f93cd6 chore(ios): add a temporary OTA test marker to Settings (#38)
+
+## v0.17.3 - 2026-11-19
+
+- ab78004 chore(ios): remove the temporary OTA test marker (#39)
