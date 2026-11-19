@@ -17,7 +17,7 @@ Layout and components: [`ui.md`](ui.md) → Decks.
 
 - **Decks tab:** every deck, most recently changed first, with its format and card total. The add button names a new deck, which starts as Standard and opens.
 - **Deck page:** the deck's format (a choice row) and card total, then its cards by category (Pokémon, Trainer, Energy) in the order they were added, each with a − count + stepper. Rename and Delete are in the header.
-- **Add cards:** card search with its own query and filters (`CatalogSearchService` provided by the modal, see [`catalog.md`](catalog.md) → Search). Tapping a card adds a copy and its badge shows the copies in the deck. There's no cap at the format's limit yet; that's for the format rules.
+- **Add cards:** card search with its own query and filters (`CatalogSearchService` provided by the modal, see [`catalog.md`](catalog.md) → Search). Tapping a card adds a copy, and its badge (red, bottom right, like the owned badge it replaces there) shows the copies in the deck. There's no cap at the format's limit yet; that's for the format rules.
 
 ## Data model
 

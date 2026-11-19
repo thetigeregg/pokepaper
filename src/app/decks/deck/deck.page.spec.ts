@@ -175,6 +175,29 @@ describe('DeckPage', () => {
     expect(present).toHaveBeenCalled();
   });
 
+  it('shows no empty state while a deck with cards is still being read', async () => {
+    // The deck arrives after the page read the catalog for no cards.
+    current.set(undefined);
+    await create();
+    let finish: (cards: CatalogCard[]) => void = () => undefined;
+    engine.getCatalogCardsByKey.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+
+    current.set(makeDeck());
+    fixture.detectChanges();
+    await settle();
+    expect(query('[data-testid="deck-empty"]')).toBeNull();
+    expect(sectionTitles()).toEqual([]);
+
+    finish([pokemon, trainer, energy]);
+    await settle();
+    expect(sectionTitles()).toEqual(['Pokémon · 3', 'Trainer · 4', 'Energy · 9']);
+  });
+
   it('says when the deck isn’t on this device', async () => {
     await create('another');
 

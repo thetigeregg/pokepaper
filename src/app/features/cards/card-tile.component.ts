@@ -12,8 +12,9 @@ import { CardImageComponent } from './card-image.component';
  * cards get an IonBadge with the copies owned in `language`.
  *
  * In a deck's Add cards (`adding`), tapping the image adds the card instead
- * (the host decides), a primary badge shows the copies in the deck, and an
- * info button after the caption opens the card.
+ * (the host decides), the badge shows the copies in the deck rather than
+ * those owned (same place and color), and an info button after the caption
+ * opens the card.
  */
 @Component({
   selector: 'app-card-tile',
@@ -28,15 +29,10 @@ import { CardImageComponent } from './card-image.component';
         background: none;
         cursor: pointer;
       }
-      .owned {
+      .count {
         position: absolute;
         right: 6%;
         bottom: 6%;
-      }
-      .in-deck {
-        position: absolute;
-        left: 6%;
-        top: 6%;
       }
       /* The caption with the info button after it, centered together. */
       .caption-row {
@@ -61,13 +57,14 @@ import { CardImageComponent } from './card-image.component';
   template: `
     <button class="card-button" type="button" (click)="opened.emit()" [attr.aria-label]="label()">
       <app-card-image [card]="card()" [language]="language()" [setLine]="setLine()" />
-      @if (inDeck()) {
-        <ion-badge class="in-deck" color="primary" aria-hidden="true" data-testid="in-deck-badge">
-          {{ inDeck() }}
-        </ion-badge>
-      }
-      @if (owned()) {
-        <ion-badge class="owned" color="danger" aria-hidden="true" data-testid="owned-badge">
+      @if (adding()) {
+        @if (inDeck()) {
+          <ion-badge class="count" color="danger" aria-hidden="true" data-testid="in-deck-badge">
+            {{ inDeck() }}
+          </ion-badge>
+        }
+      } @else if (owned()) {
+        <ion-badge class="count" color="danger" aria-hidden="true" data-testid="owned-badge">
           {{ owned() }}
         </ion-badge>
       }
@@ -104,7 +101,7 @@ export class CardTileComponent {
   readonly setLine = input.required<string>();
   /** In a deck's Add cards: tapping adds the card, and the info button opens it. */
   readonly adding = input(false);
-  /** Copies in the deck being built (`adding`), shown in a badge. */
+  /** Copies in the deck being built (`adding`), shown in the badge instead of those owned. */
   readonly inDeck = input(0);
   readonly opened = output();
   /** The info button (`adding`): open the card rather than add it. */
@@ -115,14 +112,12 @@ export class CardTileComponent {
     this.collection.cardTotal(this.card().region, this.card().id, this.language())
   );
   readonly label = computed(() => {
-    const parts = [this.adding() ? `Add ${this.name()}` : this.name()];
-    if (this.inDeck()) {
-      parts.push(`${String(this.inDeck())} in deck`);
+    if (this.adding()) {
+      return this.inDeck()
+        ? `Add ${this.name()}, ${String(this.inDeck())} in deck`
+        : `Add ${this.name()}`;
     }
-    if (this.owned()) {
-      parts.push(`${String(this.owned())} owned`);
-    }
-    return parts.join(', ');
+    return this.owned() ? `${this.name()}, ${String(this.owned())} owned` : this.name();
   });
 
   constructor() {

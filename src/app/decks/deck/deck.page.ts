@@ -204,8 +204,6 @@ export class DeckPage {
     cards: ReadonlyMap<string, CatalogCard>;
     sets: ReadonlyMap<string, CatalogSet>;
   }>({ keys: new Set(), cards: new Map(), sets: new Map() });
-  /** Whether the deck's cards have been read (so missing ones can be told apart). */
-  readonly cardsLoaded = signal(false);
 
   /** The printings in the deck, as one string: changes when cards are added or removed. */
   private readonly cardKeys = computed(() => (this.deck()?.cards ?? []).map(deckCardKey));
@@ -390,7 +388,6 @@ export class DeckPage {
           )
         ),
       });
-      this.cardsLoaded.set(true);
     } catch (error: unknown) {
       console.error('deck.cards_load_failed', error);
     }

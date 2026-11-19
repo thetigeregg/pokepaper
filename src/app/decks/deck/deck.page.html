@@ -100,7 +100,8 @@
           }
         </ion-list>
       } @empty {
-        @if (cardsLoaded() || deck.cards.length === 0) {
+        <!-- Only for an empty deck: cards still being read show once they are. -->
+        @if (deck.cards.length === 0) {
           <ion-list>
             <ion-item data-testid="deck-empty">
               <ion-label>

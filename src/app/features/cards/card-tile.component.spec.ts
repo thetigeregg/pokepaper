@@ -104,15 +104,26 @@ describe('CardTileComponent', () => {
       );
     });
 
-    it('badges the copies in the deck beside the owned badge, and says both', () => {
+    it('badges the copies in the deck where the owned badge goes, instead of it', () => {
       owned.set({ 'sv01-001:en': 1 });
       const fixture = createAdding(2);
 
-      expect(inDeckBadge(fixture)?.textContent.trim()).toBe('2');
-      expect(badge(fixture)?.textContent.trim()).toBe('1');
+      const deckBadge = inDeckBadge(fixture);
+      expect(deckBadge?.textContent.trim()).toBe('2');
+      expect(deckBadge?.getAttribute('color')).toBe('danger');
+      expect(deckBadge?.classList).toContain('count');
+      expect(badge(fixture)).toBeNull();
       expect(element(fixture).querySelector('button')?.getAttribute('aria-label')).toBe(
-        'Add Pineco, 2 in deck, 1 owned'
+        'Add Pineco, 2 in deck'
       );
+    });
+
+    it('shows no badge for a card the deck doesn’t have, even if owned', () => {
+      owned.set({ 'sv01-001:en': 1 });
+      const fixture = createAdding(0);
+
+      expect(inDeckBadge(fixture)).toBeNull();
+      expect(badge(fixture)).toBeNull();
     });
 
     it('opens the card from the info button, without the tap that adds', () => {
