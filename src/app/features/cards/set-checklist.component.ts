@@ -46,7 +46,7 @@ interface ChecklistRow {
       }
       /* The rarity (symbol and name), set apart from the name and the toggles. */
       .rarity {
-        margin: 10px 0 14px;
+        margin: 6px 0 0;
       }
       /* One toggle per variant, side by side under the name and rarity. */
       .variants {
