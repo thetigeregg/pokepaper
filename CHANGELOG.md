@@ -125,3 +125,7 @@
 ## v0.17.3 - 2026-11-19
 
 - ab78004 chore(ios): remove the temporary OTA test marker (#39)
+
+## v0.18.0 - 2026-11-19
+
+- 99040aa feat(cards): show rarity symbols in checklist, details and filter (#40)
