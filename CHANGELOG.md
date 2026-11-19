@@ -141,3 +141,7 @@
 ## v0.20.0 - 2026-11-19
 
 - 2649537 feat(decks): add the deck list, deck page and Add cards (#43)
+
+## v0.21.0 - 2026-11-19
+
+- 4d3e09d feat(decks): check decks against their format's rules (#44)
