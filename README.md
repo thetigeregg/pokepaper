@@ -9,7 +9,7 @@ PokePaper is a one-user Ionic + Angular app for the Pokémon Trading Card Game:
 
 It runs as a web app and as a native iOS app (Capacitor). It works offline: data lives on the device and syncs when online. It's served on the public internet behind passkey-only authentication ([`docs/auth.md`](docs/auth.md)).
 
-> **Status:** early scaffolding. This repo is being built in phases: tooling → app shell → server → passkey auth → Docker/deploy → CI/CD → iOS. iOS is in progress: the native shell, native passkey sign-in and TestFlight delivery are in place ([`docs/ios.md`](docs/ios.md)).
+> **Status:** early scaffolding. This repo is being built in phases: tooling → app shell → server → passkey auth → Docker/deploy → CI/CD → iOS. iOS is in progress: the native shell, native passkey sign-in and TestFlight delivery are in place, and OTA web updates are under way ([`docs/ios.md`](docs/ios.md)).
 
 ## Repository Structure
 
@@ -20,7 +20,7 @@ It runs as a web app and as a native iOS app (Capacitor). It works offline: data
 - `server/`: Fastify API with SQLite storage: passkey auth, sync, health, card catalog, and image cache (npm workspace)
 - `edge/`: Caddy container serving the web app, proxying `/api` to `server`, serving the iOS app-association file, and setting security headers (CSP, HSTS, …)
 - `ios/`: Capacitor iOS project with App DEV / App PROD targets ([`docs/ios.md`](docs/ios.md))
-- `docs/`: [`auth.md`](docs/auth.md) (passkeys, sessions, setup, recovery), [`sync.md`](docs/sync.md) (sync rules), [`collection.md`](docs/collection.md) (collection tracking), [`nas-deployment.md`](docs/nas-deployment.md) (Docker, Nginx Proxy Manager, Cloudflare), [`ios.md`](docs/ios.md) (Xcode targets, iOS builds, native passkeys)
+- `docs/`: [`auth.md`](docs/auth.md) (passkeys, sessions, setup, recovery), [`sync.md`](docs/sync.md) (sync rules), [`collection.md`](docs/collection.md) (collection tracking), [`nas-deployment.md`](docs/nas-deployment.md) (Docker, Nginx Proxy Manager, Cloudflare), [`ios.md`](docs/ios.md) (Xcode targets, iOS builds, native passkeys, TestFlight, OTA updates)
 - `.github/`: CI, release/publish, CodeQL, secret-scanning, and Claude workflows; PR/issue templates; Dependabot
 
 ## Prerequisites

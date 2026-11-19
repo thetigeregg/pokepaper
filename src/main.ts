@@ -22,6 +22,7 @@ import { StorageEngineFactory } from './app/core/data/storage-engine.factory';
 import { SYNC_ENTITY_APPLIERS } from './app/core/data/sync-entity-applier';
 import { SYNC_OUTBOX_WRITER } from './app/core/data/sync-outbox-writer';
 import { CatalogSyncService } from './app/core/services/catalog-sync.service';
+import { LiveUpdateService } from './app/core/services/live-update.service';
 import { SyncService } from './app/core/services/sync.service';
 import { isNativePlatform } from './app/core/utils/native-platform.util';
 import { environment } from './environments/environment';
@@ -62,6 +63,13 @@ bootstrapApplication(AppComponent, {
         // startup; the app works with whatever is already on the device.
         catalogSync.initialize();
       });
+    }),
+    // OTA web updates (iOS App PROD only; a no-op elsewhere). Independent of
+    // the chain above, and voided rather than returned: the native bridge
+    // calls behind it have no timeout, so awaiting them could hang startup on
+    // a white screen (a bug go-gather hit).
+    provideAppInitializer(() => {
+      void inject(LiveUpdateService).start();
     }),
     {
       provide: STORAGE_ENGINE,

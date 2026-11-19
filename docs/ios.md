@@ -2,7 +2,7 @@
 
 PokePaper ships as a native iOS app through [Capacitor](https://capacitorjs.com/) 8. The same Angular build runs in the app's web view, with on-device SQLite storage (`SqliteStorageEngine`) in place of IndexedDB.
 
-Status: the native shell, both Xcode targets, native passkey sign-in and TestFlight delivery are in place. Over-the-air web updates may come later.
+Status: the native shell, both Xcode targets, native passkey sign-in and TestFlight delivery are in place. Over-the-air web updates are in progress: the app side is done, publishing bundles comes next ([OTA updates](#ota-updates)).
 
 ## Targets
 
@@ -102,6 +102,19 @@ After each release, the `iOS TestFlight` workflow (`.github/workflows/ios-testfl
    - `MATCH_GIT_BASIC_AUTHORIZATION`: `base64("<github-user>:<token>")` for a token that can read the match repo. Fastlane passes it verbatim into an HTTP Basic header.
    - `IOS_BACKEND_ORIGIN_PROD`: the public origin, the same value as in your `.env`. It also sets the passkey domain, so it lives only in secrets, never in the repo.
 4. Run the workflow once with **workflow_dispatch** to check everything. Its `validate_asc_app` and `validate_match` steps fail fast with a clear error if the app record or profile is missing.
+
+## OTA updates
+
+Web-only changes can reach the installed app without a new TestFlight build, through signed over-the-air (OTA) bundles ([`@capawesome/capacitor-live-update`](https://capawesome.io/docs/plugins/live-update/), as in go-gather). Only App PROD builds check for them (native and production). App DEV and the web app never do.
+
+- **Manifest:** each native build has `<apiUrl>/ota/ios/<build number>/manifest.json`, holding `bundleId`, `semver`, `nativeBuildNumber`, `url`, `checksum` and `signature`. The bundle must be https on the same origin.
+- **When:** `LiveUpdateService` checks on launch, then when the app returns to the foreground, at most every 15 minutes. It never blocks startup: it's started without being awaited, and every failure is only logged.
+- **Staging:** a bundle built for this exact native build, and not already active or staged, is downloaded. The plugin verifies its RSA-SHA256 signature against `config/ios-live-update-public.pem`, set in `capacitor.config.ts`. The bundle is then staged as the next bundle, and the app shows **Update Ready: "A new version (x.y.z) is ready. Reload now to apply it?"**. **Reload** applies it immediately. **Later** applies it on the next cold start.
+- **Rollback:** the very first thing the app does at startup is call `LiveUpdate.ready()` (`LiveUpdateService.start()`, before slower work such as storage migrations). A newly applied bundle that doesn't get that far within 10 seconds (`readyTimeout`) is rolled back to the previous one and blocked (`autoBlockRolledBackBundles`), so it's never staged again; the next published bundle replaces it. Old bundles are deleted once a new one is confirmed (`autoDeleteBundles`).
+- **No manifest:** a 404 means no update for this build. That's the normal state until a bundle is published.
+- **Signing key:** the private key that signs bundles lives in `~/.config/pokepaper/ios/live-update-private.pem` (and, for CI, a secret). It never enters the repository. Changing the key pair means shipping the new public key in a TestFlight build first.
+
+Publishing bundles (built into the `edge` image, served by Caddy, and gated by the release workflow) lands in a follow-up.
 
 ## How the build fits together
 
