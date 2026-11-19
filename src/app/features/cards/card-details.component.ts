@@ -20,6 +20,7 @@ import { addIcons } from 'ionicons';
 import { addCircleOutline, removeCircleOutline } from 'ionicons/icons';
 import { LANGUAGE_LABELS } from '../../core/services/catalog-language.service';
 import { CollectionService } from '../../core/services/collection.service';
+import { displayImage } from '../../core/utils/catalog-image.util';
 import {
   cardSubtitle,
   cardText,
@@ -85,6 +86,10 @@ export class CardDetailsComponent {
   readonly text = computed(() => cardText(this.card(), this.language()));
   readonly subtitle = computed(() => cardSubtitle(this.card()));
   readonly setLine = computed(() => setLine(this.set(), this.card()));
+  /** Whether the scan shown is another printing's (basic Energy; docs/catalog.md). */
+  readonly borrowedScan = computed(
+    () => displayImage(this.card(), this.language(), 'high')?.borrowed ?? false
+  );
   /** Attacks: costs and damage from the card, names and effects in the language. */
   readonly attacks = computed(() =>
     this.card().attacks.map((attack, index) => ({

@@ -67,12 +67,20 @@ export class CardImageComponent {
   readonly src = signal<string | null>(null);
 
   readonly image = computed(() => displayImage(this.card(), this.language(), this.quality()));
-  /** The scan's language when it isn't the requested one (shown as a badge). */
+  /**
+   * The badge on the scan: its language when it isn't the requested one,
+   * and "Alt" when it's another printing's scan (basic Energy), e.g. "EN · Alt".
+   */
   readonly fallbackLabel = computed(() => {
     const image = this.image();
-    return image && image.language !== this.language()
-      ? LANGUAGE_LABELS[image.language].short
-      : null;
+    if (!image) {
+      return null;
+    }
+    const parts = [
+      ...(image.language !== this.language() ? [LANGUAGE_LABELS[image.language].short] : []),
+      ...(image.borrowed ? ['Alt'] : []),
+    ];
+    return parts.length > 0 ? parts.join(' · ') : null;
   });
   readonly name = computed(() => cardText(this.card(), this.language())?.name ?? this.card().id);
   readonly subtitle = computed(() => cardSubtitle(this.card()));

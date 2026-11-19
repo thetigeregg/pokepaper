@@ -1,5 +1,6 @@
 import {
   CATALOG_LANGUAGES,
+  basicEnergyType,
   MAX_DECK_CARD_COUNT,
   deckCardKey,
   type CatalogCard,
@@ -131,8 +132,16 @@ const BW_ACE_SPECS: ReadonlySet<string> = new Set(
 );
 
 /** Whether a card is basic Energy (no copy limit; always legal). */
+/**
+ * Whether a card is basic Energy (no copy limit; always legal): by its
+ * English name, since TCGdex marks some special Energy (Prism Energy) as
+ * basic. A card without English text (Japan & Asia) goes by `energyType`.
+ */
 export function isBasicEnergy(card: CatalogCard): boolean {
-  return card.category === 'Energy' && card.energyType === 'Normal';
+  if (card.category !== 'Energy') {
+    return false;
+  }
+  return card.text.en ? basicEnergyType(card.text.en.name) !== null : card.energyType === 'Normal';
 }
 
 export function isBasicPokemon(card: CatalogCard): boolean {

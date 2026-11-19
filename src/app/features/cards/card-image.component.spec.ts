@@ -89,6 +89,21 @@ describe('CardImageComponent', () => {
     expect(query(fixture, '.fallback')?.textContent.trim()).toBe('EN');
   });
 
+  it('badges another printing’s scan as Alt, with its language when that differs', async () => {
+    const borrowed: CatalogCard = {
+      ...base,
+      text: { en: { ...(base.text.en as CatalogCardText), imageFrom: 'sve-2' } },
+    };
+    const english = create(borrowed, { quality: 'high' });
+    await settle(english);
+    expect(resolve).toHaveBeenCalledWith(catalogCardImageUrl(borrowed, 'en', 'high'));
+    expect(query(english, '.fallback')?.textContent.trim()).toBe('Alt');
+
+    const german = create(borrowed, { language: 'de', quality: 'high' });
+    await settle(german);
+    expect(query(german, '.fallback')?.textContent.trim()).toBe('EN · Alt');
+  });
+
   it('shows a tinted text card when no language has a scan', async () => {
     const card: CatalogCard = {
       ...base,

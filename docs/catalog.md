@@ -68,6 +68,16 @@ A path counts only when both sizes (`low.webp` and `high.webp`) exist. A hit bec
 
 Checks are best effort. The first one that fails cancels the set's remaining checks, which are retried next run (the run ends `partial`, logged as `catalog.image_checks_failed`). After 3 sets in a row with failed checks, checking pauses for the rest of the run (`catalog.image_checks_paused`), so an outage of TCGdex's image server can't stall the import. Remembered hits always apply. The first run with this feature made 25,705 checks in about 15 minutes and found 4,505 scans; later runs only check new cards and expired misses.
 
+### Basic Energy scans
+
+TCGdex has no scan for many basic Energy printings: all 16 cards of Mega Evolution Energy, and about half of the 344 international basic Energy printings in November 2026. Basic Energy art barely changes between printings, so after each region's sets are imported (`borrowEnergyScans`, `energy-scans.ts`):
+
+- **Borrowed:** each basic Energy language without a scan of its own gets a scan of the same Energy type in that language from a regular printing: Common (or no rarity) first, then Uncommon, never the gold and full-art ones (Hyper rare, Secret Rare, …) whose art doesn't stand in for a regular card; then the newest set, then the card ID. `imageFrom` names the printing it came from. In November 2026 that fills 415 card languages, mostly from Sun & Moon and Evolutions printings. A language with no such scan anywhere gets none; the app then shows another language's scan, as for any card.
+- **Basic Energy is recognized by its English name** ("Fire Energy", "Basic Fire Energy"; `basicEnergyType` in `shared/`), since TCGdex marks some special Energy (Prism Energy, Ignition Energy) as basic and many basic Energy have no types. Japan & Asia printings have no English name, so they don't borrow.
+- **Kept current:** a borrowed scan moves to a better source when one appears (a plainer or newer printing), and is dropped if its source disappears. Sets whose cards change are rewritten, so the app downloads them again.
+- **Never in the way of the real scan:** the unlinked-scan check treats a borrowed scan as none (it's never used to build another language's path), so the card's own path is still checked, and a hit replaces the borrowed scan.
+- **In the app:** a borrowed scan is badged "Alt" (with its language too when that differs, "EN · Alt"), and the card's Details say "Scan: From another printing". Its image URL ends in `?from=<source>`, so the app's image cache, which is keyed by URL, fetches it anew when the source changes or the card gets its own scan; the server ignores the query, and every other card's URL is unchanged.
+
 ### Running it by hand
 
 ```bash

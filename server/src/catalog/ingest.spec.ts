@@ -390,7 +390,7 @@ describe('runCatalogIngest', () => {
     expect(card(store, 'intl', '2019sm-fr', '2019sm-fr-1')?.text.fr?.image).toBe(
       'fr/misc/2019sm-fr/1'
     );
-    expect(stats.images).toEqual({ probed: 1, found: 1, failed: 0 });
+    expect(stats.images).toEqual({ probed: 1, found: 1, failed: 0, borrowed: 0 });
     expect(store.getImageProbe('fr/misc/2019sm-fr/1')?.found).toBe(true);
 
     fake.calls.length = 0;
@@ -446,6 +446,93 @@ describe('runCatalogIngest', () => {
     expect(card(store, 'intl', '2019sm-fr', '2019sm-fr-1')?.text.fr?.image).toBe(
       'fr/misc/2019sm-fr/1'
     );
+  });
+
+  describe('basic Energy scans', () => {
+    const ASSETS = 'https://assets.tcgdex.net';
+    /** Adds an English Energy set (one Fire Energy, scanned or not) to the fake. */
+    function energySet(
+      fake: FakeTcgdex,
+      setId: string,
+      serie: string,
+      date: string,
+      scanned: boolean
+    ) {
+      const cardId = `${setId}-2`;
+      const image = scanned ? { image: `${ASSETS}/en/${serie}/${setId}/2` } : {};
+      fake.routes.set(`/en/sets/${setId}`, {
+        id: setId,
+        name: setId,
+        serie: { id: serie, name: serie },
+        releaseDate: date,
+        cardCount: { total: 1, official: 1 },
+        cards: [{ id: cardId, localId: '2', name: 'Fire Energy', ...image }],
+      });
+      fake.routes.set(`/en/cards/${cardId}`, {
+        id: cardId,
+        localId: '2',
+        name: 'Fire Energy',
+        category: 'Energy',
+        energyType: 'Normal',
+        ...image,
+      });
+    }
+
+    it('borrows the newest scan of the type, until the card has its own', async () => {
+      const store = memoryCatalogStore();
+      const fake = fakeTcgdex();
+      fake.routes.set('/en/series', [
+        { id: 'sv', name: 'Scarlet & Violet' },
+        { id: 'me', name: 'Mega Evolution' },
+      ]);
+      fake.routes.set('/en/sets', [{ id: 'sv01' }, { id: 'mee' }, { id: 'sve' }]);
+      energySet(fake, 'sve', 'sv', '2023-03-31', true);
+      energySet(fake, 'mee', 'me', '2025-09-26', false);
+
+      const first = await ingest(store, fake);
+
+      expect(card(store, 'intl', 'mee', 'mee-2')?.text.en).toMatchObject({
+        image: 'en/sv/sve/2',
+        imageFrom: 'sve-2',
+      });
+      expect(card(store, 'intl', 'sve', 'sve-2')?.text.en).not.toHaveProperty('imageFrom');
+      expect(first.images.borrowed).toBe(1);
+      // The card's own path was checked first (and missed).
+      expect(store.getImageProbe('en/me/mee/2')?.found).toBe(false);
+
+      // Unchanged on the next run.
+      const second = await ingest(store, fake, { kind: 'light' });
+      expect(second.images.borrowed).toBe(0);
+
+      // TCGdex gets the card's own scan: it replaces the borrowed one.
+      store.saveImageProbe('en/me/mee/2', false, new Date(Date.now() - 31 * 24 * 3600 * 1000));
+      hostScan(fake, 'en/me/mee/2');
+      await ingest(store, fake, { kind: 'light' });
+      const own = card(store, 'intl', 'mee', 'mee-2')?.text.en;
+      expect(own?.image).toBe('en/me/mee/2');
+      expect(own).not.toHaveProperty('imageFrom');
+    });
+
+    it('drops a borrowed scan once its source is gone', async () => {
+      const store = memoryCatalogStore();
+      const fake = fakeTcgdex();
+      fake.routes.set('/en/series', [
+        { id: 'sv', name: 'Scarlet & Violet' },
+        { id: 'me', name: 'Mega Evolution' },
+      ]);
+      fake.routes.set('/en/sets', [{ id: 'sv01' }, { id: 'mee' }, { id: 'sve' }]);
+      energySet(fake, 'sve', 'sv', '2023-03-31', true);
+      energySet(fake, 'mee', 'me', '2025-09-26', false);
+      await ingest(store, fake);
+
+      fake.routes.set('/en/sets', [{ id: 'sv01' }, { id: 'mee' }]);
+      // A light run keeps the stored card, borrowed scan and all (a full run
+      // refetches it without one).
+      const after = await ingest(store, fake, { kind: 'light' });
+
+      expect(card(store, 'intl', 'mee', 'mee-2')?.text.en?.image).toBeNull();
+      expect(after.images.borrowed).toBe(1);
+    });
   });
 
   it('links an unlinked scan only when both sizes exist', async () => {

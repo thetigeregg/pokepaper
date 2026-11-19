@@ -1,4 +1,6 @@
 import {
+  basicEnergyType,
+  catalogCardImageUrl,
   DEFAULT_SETTINGS,
   isSyncEntityType,
   isUserSettings,
@@ -67,6 +69,54 @@ describe('isUserSettings', () => {
     expect(knownCatalogLanguages(settings)).toEqual({ intl: 'de' });
     expect(knownCatalogLanguages({ cardLanguage: 'en', catalogLanguages: { intl: 'ja' } })).toEqual(
       {}
+    );
+  });
+});
+
+describe('basicEnergyType', () => {
+  it('reads the type from a basic Energy’s English name', () => {
+    expect(basicEnergyType('Fire Energy')).toBe('Fire');
+    expect(basicEnergyType('Basic Metal Energy')).toBe('Metal');
+    expect(basicEnergyType(' Fairy  Energy ')).toBe('Fairy');
+  });
+
+  it('is null for special Energy and anything else', () => {
+    for (const name of [
+      'Prism Energy',
+      'Ignition Energy',
+      'Double Colorless Energy',
+      'Fire',
+      'Energy Search',
+      'δ Rainbow Energy',
+    ]) {
+      expect(basicEnergyType(name)).toBeNull();
+    }
+  });
+});
+
+describe('catalogCardImageUrl', () => {
+  it('names a borrowed scan’s source, and nothing for a card’s own', () => {
+    const own = { region: 'intl' as const, id: 'sv01-001' };
+    expect(catalogCardImageUrl(own, 'en', 'low')).toBe(
+      '/images/catalog/cards/intl/sv01-001/en/low.webp'
+    );
+    const borrowed = {
+      ...own,
+      text: {
+        en: {
+          name: 'Fire Energy',
+          description: null,
+          effect: null,
+          evolveFrom: null,
+          attacks: [],
+          abilities: [],
+          image: 'en/sv/sve/2',
+          imageFrom: 'sve 2',
+        },
+      },
+    };
+    expect(catalogCardImageUrl(borrowed, 'en', 'high')).toBe(
+      '/images/catalog/cards/intl/sv01-001/en/high.webp?from=sve%202'
     );
   });
 });

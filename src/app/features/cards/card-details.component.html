@@ -186,6 +186,12 @@
         </ion-note>
       </ion-item>
     }
+    @if (borrowedScan()) {
+      <ion-item>
+        <ion-label>Scan</ion-label>
+        <ion-note slot="end" data-testid="detail-scan">From another printing</ion-note>
+      </ion-item>
+    }
     <ion-item>
       <ion-label>Legal in</ion-label>
       <ion-note slot="end" data-testid="detail-legal">{{ legal() || 'Not legal' }}</ion-note>
