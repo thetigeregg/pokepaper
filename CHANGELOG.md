@@ -149,3 +149,7 @@
 ## v0.22.0 - 2026-11-19
 
 - 5dbdbef feat(decks): show what the collection covers of each deck (#45)
+
+## v0.23.0 - 2026-11-19
+
+- 042b199 feat(decks): add deck covers and borrowed basic Energy scans (#46)
