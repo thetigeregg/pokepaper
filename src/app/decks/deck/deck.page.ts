@@ -46,15 +46,18 @@ import { addIcons } from 'ionicons';
 import {
   addCircleOutline,
   addOutline,
+  checkmarkCircleOutline,
   createOutline,
   removeCircleOutline,
   trashOutline,
+  warningOutline,
 } from 'ionicons/icons';
 import { debounceTime } from 'rxjs';
 import { catalogKey, type StorageEngine } from '../../core/data/storage-engine';
 import { StorageEngineFactory } from '../../core/data/storage-engine.factory';
 import { CatalogLanguageService } from '../../core/services/catalog-language.service';
 import { CatalogSyncService } from '../../core/services/catalog-sync.service';
+import { DeckChecksService } from '../../features/decks/deck-checks.service';
 import { DeckService } from '../../core/services/deck.service';
 import { LayoutService } from '../../core/services/layout.service';
 import { CardDetailComponent } from '../../features/cards/card-detail.component';
@@ -131,6 +134,16 @@ function isCatalogRegion(value: string): value is CatalogRegion {
         display: flex;
         align-items: center;
       }
+      /* A rule the card breaks, under its set and number. */
+      .rule-note {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .rule-note ion-icon,
+      .rule ion-icon {
+        flex-shrink: 0;
+      }
       .count {
         min-width: 2.5ch;
         font-variant-numeric: tabular-nums;
@@ -170,6 +183,7 @@ function isCatalogRegion(value: string): value is CatalogRegion {
 })
 export class DeckPage {
   private readonly decks = inject(DeckService);
+  private readonly checks = inject(DeckChecksService);
   private readonly dialogs = inject(DeckDialogsService);
   private readonly storageEngineFactory = inject(StorageEngineFactory);
   private readonly catalogLanguage = inject(CatalogLanguageService);
@@ -194,7 +208,9 @@ export class DeckPage {
     const deck = this.deck();
     return deck ? deckCardTotal(deck) : 0;
   });
-  readonly maxCount = MAX_DECK_CARD_COUNT;
+  /** The deck checked against its format, once its cards have been looked up. */
+  readonly check = computed(() => this.checks.check(this.id()));
+  readonly rulesTitle = computed(() => `${DECK_FORMAT_LABELS[this.format()]} rules`);
 
   /**
    * The deck's cards and their sets, from the catalog on this device, and
@@ -274,6 +290,29 @@ export class DeckPage {
     },
   ]);
 
+  /** Stepper taps, applied in order (see `step`). */
+  private steps: Promise<void> = Promise.resolve();
+
+  /**
+   * One step from the deck as it is now. Returns once the change shows (the
+   * deck service applies it at once), with its save still running.
+   */
+  private async applyStep(row: DeckRow, delta: 1 | -1): Promise<{ saving: Promise<void> } | null> {
+    const count = this.deck()?.cards.find((slot) => deckCardKey(slot) === row.key)?.count ?? 0;
+    if (count + delta < 0) {
+      return null;
+    }
+    if (delta > 0 && row.card) {
+      const limit = await this.checks.copyLimit(this.id(), row.card);
+      if (limit.total >= limit.limit) {
+        void this.dialogs.showCopyLimit(limit);
+        return null;
+      }
+    }
+    const card = { region: row.slot.region, cardId: row.slot.cardId };
+    return { saving: this.decks.setCardCount(this.id(), card, count + delta) };
+  }
+
   /** Bumped by each catalog read, so an older one finishing late is dropped. */
   private reads = 0;
 
@@ -282,7 +321,15 @@ export class DeckPage {
   }
 
   constructor() {
-    addIcons({ addOutline, addCircleOutline, removeCircleOutline, createOutline, trashOutline });
+    addIcons({
+      addOutline,
+      addCircleOutline,
+      removeCircleOutline,
+      createOutline,
+      trashOutline,
+      warningOutline,
+      checkmarkCircleOutline,
+    });
     effect(() => {
       this.cardKeysJoined();
       untracked(() => void this.loadCards());
@@ -293,10 +340,36 @@ export class DeckPage {
       .subscribe(() => void this.loadCards());
   }
 
-  /** Sets the copies of a card in the deck (0 removes it). */
-  async setCount(row: DeckRow, count: number): Promise<void> {
+  /** The notes for a card's row: the rules it breaks. */
+  notes(row: DeckRow): readonly string[] {
+    return this.check()?.cardNotes.get(row.key) ?? [];
+  }
+
+  /**
+   * Whether the deck holds as many copies of the card as it may: 4 with its
+   * name (across printings), or 99 of a printing.
+   */
+  atLimit(row: DeckRow): boolean {
+    const limit = this.check()?.limits.get(row.key);
+    return row.slot.count >= MAX_DECK_CARD_COUNT || (!!limit && limit.total >= limit.limit);
+  }
+
+  /**
+   * Adds or removes one copy of a card (none past its copy limit, saying
+   * so). Steps run one at a time, each from the deck as the previous one
+   * left it, so quick taps neither get lost nor pass the limit. Resolves
+   * once saved (or the failure has been reported).
+   */
+  async step(row: DeckRow, delta: 1 | -1): Promise<void> {
+    const applied = this.steps.then(() => this.applyStep(row, delta));
+    this.steps = applied.then(
+      () => undefined,
+      () => undefined
+    );
     try {
-      await this.decks.setCardCount(this.id(), row.slot, count);
+      await (
+        await applied
+      )?.saving;
     } catch (error: unknown) {
       await this.dialogs.showSaveError(error);
     }

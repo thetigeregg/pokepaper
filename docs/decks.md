@@ -7,17 +7,68 @@ Status: storage, sync and the Decks tab screens (deck list, deck page, Add cards
 ## Design
 
 - **Slots are exact printings.** A deck lists catalog cards (region + card ID, e.g. `intl` `sv03-125`), like a printed decklist, so it shows that printing's art and can match your collection.
-- **Each deck has a format:** Standard, Expanded or Unlimited. Breaking a format's rules will be a **warning, not an error**: a deck in progress always saves. Nothing checks format rules yet.
-- **Format rules and legality are still to be sourced.** Before they're built, the deck-construction rules (deck size, copy limits and their exceptions, ban lists) will be taken from the official Play! Pokémon rules and written up here with sources. The catalog has TCGdex's `legal.standard` / `legal.expanded` flags for every international card, but they aren't verified yet: one G-mark card (`sv04-266`) is flagged Standard-legal, and it's unknown whether the flags follow ban lists and rotations promptly.
+- **Each deck has a format:** Standard, Expanded or Unlimited, checked against the rules below. The copy limit is enforced as you add cards; everything else is a **warning, not an error**: a deck in progress always saves.
 - **Owned vs. needed counts copies in any language.** An English and a German copy of a printing both count toward a deck.
+
+## Format rules
+
+The rules come from the official documents, not from memory or the catalog:
+
+- **Handbook:** [Play! Pokémon TCG Tournament Handbook](https://www.pokemon.com/static-assets/content-assets/cms2/pdf/play-pokemon/rules/play-pokemon-tcg-tournament-handbook-en.pdf), revised August 26, 2026 (§2.3 languages, §4 Constructed formats).
+- **Rulebook:** [Pokémon TCG rulebook](https://www.pokemon.com/static-assets/content-assets/cms2/pdf/trading-card-game/rulebook/dlr_rulebook_en.pdf), last updated November 2026 (Deck Building, card names, and the ACE SPEC, Radiant Pokémon and Prism Star appendices).
+- **Banned list:** [Pokémon TCG Banned Card List](https://www.pokemon.com/us/play-pokemon/about/pokemon-tcg-banned-card-list), checked November 19, 2026.
+
+### Every format
+
+These apply to Standard, Expanded and Unlimited alike (handbook §4, rulebook Deck Building):
+
+- **Exactly 60 cards.**
+- **At most 4 cards with the same name**, by the card's English name, across printings. **Basic Energy is exempt.** What counts as the same name (rulebook):
+  - Different attacks don't matter: 4 "Pignite" in total, whatever the printing.
+  - Suffixes are part of the name: Miraidon and Miraidon ex are different, as are ex, EX, GX and V. So are owner and region names (Meowth, Alolan Meowth, Rocket's Meowth, Iono's Tadbulb) and "Radiant" (4 Greninja and 1 Radiant Greninja is fine).
+  - Levels aren't part of the name (Gengar, Gengar LV. 43 and Gengar LV.X are all "Gengar"), and neither is δ (Delta Species).
+  - Both halves of a Legendary Stadium, and all four pieces of a V-UNION, share one name.
+- **At least one Basic Pokémon.**
+- **One ACE SPEC card in total**, not one of each (rulebook appendix 4).
+- **One Radiant Pokémon in total** (rulebook appendix 9).
+- **One copy of each Prism Star (◇) card**; different Prism Star cards may be combined (rulebook appendix 18).
+
+### Standard and Expanded
+
+- **Standard:** cards with regulation marks **H, I and J** (G left Standard in April 2026).
+- **Expanded:** regulation marks **D to J**, plus the Black & White, XY and Sun & Moon series expansions, the McDonald's Collections 2011–2021, the Black & White, XY and Sun & Moon trainer kits, Detective Pikachu, and Black Star promos BW01+, XY01+ and SM158+ (handbook §4.1.1).
+- **New sets** become legal on the second Friday after their US release (§4.1.2). The catalog doesn't know release schedules, so a set is treated as legal once its mark is.
+- **Reprints** (§4.1.3): any printing of a card is legal if a legal printing has an identical name and functionally identical text. So a G-mark Ultra Ball is Standard-legal because I-mark reprints exist.
+- **Banned:** nothing in Standard. Expanded bans 26 cards, listed by printing (set and number): 27 entries, since two Lost Thunder Unown are listed separately and no other Unown is banned. That's 48 printings in the catalog (Reset Stamp 206a/236 isn't in it).
+- **Languages** (§2.1, §2.3): Japanese cards count as marked, because their backs differ from every other language, so they aren't tournament-legal. Europe allows English, French, German, Italian, Portuguese and Spanish.
+
+### Unlimited
+
+Any card released in the US, with no bans (handbook §4.2). The deck rules above still apply.
+
+### How PokePaper applies them
+
+- **Legality is worked out by PokePaper,** not taken from TCGdex's `legal` flags. Those follow each printing's mark only: they don't apply the reprint rule (G-mark Ultra Ball is flagged not Standard-legal), and they have errors (`sv04-266` Reversal Energy, G-mark, is flagged Standard-legal).
+- **Reprints are matched by English name and rules text:** a printing is legal if one with a legal mark (or set) has the same English name and the same English rules text (attacks, abilities, effect, HP, types and so on). Reworded but functionally identical reprints, like the handbook's Copycat example, aren't recognized and get a warning.
+- **Basic Energy is always legal:** most printings have no regulation mark, and the handbook doesn't say otherwise.
+- **A missing mark in a series that prints them** (Sword & Shield, Scarlet & Violet, Mega Evolution) is a gap in TCGdex's data, typically a set that just came out, so that printing's TCGdex flags are used. In November 2026 that covers Delta Reign (released November 6, legal from November 20 by §4.1.2: TCGdex says not yet Standard-legal) and a few promos.
+- **SM Black Star promos below SM158** aren't Expanded-legal (§4.1.1), though TCGdex flags them legal.
+- **TCG Pocket cards** (the digital game, TCGdex series `tcgp`) are never legal and never count as reprints; a deck holding one gets a "digital only" warning in every format.
+- **ACE SPEC and Radiant cards** are recognized by TCGdex's rarity ("ACE SPEC Rare", "Radiant Rare"). Black & White-era ACE SPEC cards are labeled plain "Rare" by TCGdex, so they're listed explicitly: Computer Search, Crystal Edge, Crystal Wall, Gold Potion (Boundaries Crossed), Dowsing Machine, Scramble Switch, Victory Piece (Plasma Storm), Life Dew, Rock Guard (Plasma Freeze), G Booster, G Scope, Master Ball, Scoop Up Cyclone (Plasma Blast). That list isn't from an official document (the rulebook names none, and Bulbapedia refused the fetch); it matches where ACE SPEC cards sit in each set, after the Uncommons and before the Ultra Rares. Prism Star cards are recognized by the ◇ in their name.
+- **Names** are compared as TCGdex writes them, with ’ and ' treated alike, and δ (with or without "(Delta Species)") removed wherever it appears ("δ Rainbow Energy" counts as "Rainbow Energy").
+- **Japan & Asia printings have no English names** in the catalog, so they're counted by their own name (Japanese first, then Chinese) and can't be matched with international printings of the same card: 4 English and 4 Japanese Pikachu aren't flagged. In Standard and Expanded they're warned about anyway; in Unlimited this is a known gap.
+- **Prism Star cards** are capped at 1 copy when adding, like the 4-copy limit.
+- **Japan & Asia catalog printings** get a "not tournament-legal" warning in Standard and Expanded decks, not in Unlimited.
+- **The 4-copy limit is enforced** when adding (Add cards and the deck page's +), with a message ("A deck holds at most 4 cards named Iono."). A deck that already breaks it (e.g. synced from an older build) shows a warning. Everything else is a warning.
+- **Checks** run on the device (`DeckChecksService`): it reads the catalog cards of every deck's printings, works out their legality (searching for reprints only when a printing's own mark or set isn't legal, by English name through the search rows), and checks each deck (`checkDeck` in `deck-rules.ts`) as it changes. A deck's check appears once all its cards have been looked up; a catalog update looks them up again.
 
 ## Screens
 
 Layout and components: [`ui.md`](ui.md) → Decks.
 
-- **Decks tab:** every deck, most recently changed first, with its format and card total. The add button names a new deck, which starts as Standard and opens.
-- **Deck page:** the deck's format (a choice row) and card total, then its cards by category (Pokémon, Trainer, Energy) in the order they were added, each with a − count + stepper. Rename and Delete are in the header.
-- **Add cards:** card search with its own query and filters (`CatalogSearchService` provided by the modal, see [`catalog.md`](catalog.md) → Search). Tapping a card adds a copy, and its badge (red, bottom right, like the owned badge it replaces there) shows the copies in the deck. There's no cap at the format's limit yet; that's for the format rules.
+- **Decks tab:** every deck, most recently changed first, with its format and card total, and a warning with the number of rules it breaks. The add button names a new deck, which starts as Standard and opens.
+- **Deck page:** the deck's format (a choice row) and card total, then the format's rules (what the deck breaks, or that it follows them), then its cards by category (Pokémon, Trainer, Energy) in the order they were added, each with a − count + stepper and notes for any rule it breaks. Rename and Delete are in the header.
+- **Add cards:** card search with its own query and filters (`CatalogSearchService` provided by the modal, see [`catalog.md`](catalog.md) → Search). Tapping a card adds a copy, and its badge (red, bottom right, like the owned badge it replaces there) shows the copies in the deck. Once the deck has 4 cards with that name, a tap says so instead.
 
 ## Data model
 

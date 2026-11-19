@@ -8,7 +8,9 @@ import { makeContractCard, makeContractPack } from '../../core/data/storage-engi
 import { StorageEngineFactory } from '../../core/data/storage-engine.factory';
 import { CatalogLanguageService } from '../../core/services/catalog-language.service';
 import { CatalogSyncService } from '../../core/services/catalog-sync.service';
+import { DeckChecksService } from '../../features/decks/deck-checks.service';
 import { DeckService } from '../../core/services/deck.service';
+import type { DeckCheck, NameLimit } from '../../features/decks/deck-rules';
 import { ImageCacheService } from '../../core/services/image-cache.service';
 import { LayoutService } from '../../core/services/layout.service';
 import { VisibilityService } from '../../core/services/visibility.service';
@@ -77,9 +79,16 @@ describe('DeckPage', () => {
     askRename: vi.fn(() => Promise.resolve<string | null>('Zard')),
     confirmDelete: vi.fn(() => Promise.resolve(true)),
     showSaveError: vi.fn(() => Promise.resolve()),
+    showCopyLimit: vi.fn((_limit: NameLimit) => Promise.resolve()),
   };
   const present = vi.fn(() => Promise.resolve());
   const createModal = vi.fn((_options: Record<string, unknown>) => Promise.resolve({ present }));
+  const checks = {
+    check: vi.fn((_id: string): DeckCheck | undefined => undefined),
+    copyLimit: vi.fn((_id: string, _card: CatalogCard): Promise<NameLimit> =>
+      Promise.resolve({ name: 'x', total: 0, limit: 4 })
+    ),
+  };
   const nav = { navigateBack: vi.fn((_url: string) => Promise.resolve(true)) };
   const changed = new Subject<void>();
   const wide = signal(false);
@@ -115,6 +124,7 @@ describe('DeckPage', () => {
       providers: [
         { provide: DeckService, useValue: decks },
         { provide: DeckDialogsService, useValue: dialogs },
+        { provide: DeckChecksService, useValue: checks },
         { provide: StorageEngineFactory, useValue: { getEngine: () => engine } },
         { provide: CatalogLanguageService, useValue: { forSet: () => 'en' } },
         { provide: CatalogSyncService, useValue: { changed$: changed.asObservable() } },
@@ -210,20 +220,155 @@ describe('DeckPage', () => {
     const row = query('[data-testid="deck-card-intl:sv01-001"]');
 
     (row?.querySelector('[data-testid="add-copy"]') as HTMLElement).click();
+    await vi.waitFor(() => {
+      expect(decks.setCardCount).toHaveBeenCalledTimes(1);
+    });
     (row?.querySelector('[data-testid="remove-copy"]') as HTMLElement).click();
+    await vi.waitFor(() => {
+      expect(decks.setCardCount).toHaveBeenCalledTimes(2);
+    });
 
+    expect(checks.copyLimit).toHaveBeenCalledTimes(1); // Only when adding.
+    // Each from the deck as it is (the mock doesn't change it): 3 + 1, 3 − 1.
     expect(decks.setCardCount).toHaveBeenNthCalledWith(
       1,
       'deck-1',
-      { region: 'intl', cardId: 'sv01-001', count: 3 },
+      { region: 'intl', cardId: 'sv01-001' },
       4
     );
     expect(decks.setCardCount).toHaveBeenNthCalledWith(
       2,
       'deck-1',
-      { region: 'intl', cardId: 'sv01-001', count: 3 },
+      { region: 'intl', cardId: 'sv01-001' },
       2
     );
+  });
+
+  it('adds one copy per tap of +, however fast, and stops at the limit', async () => {
+    current.set(makeDeck({ cards: [{ region: 'intl', cardId: 'sv01-001', count: 1 }] }));
+    checks.copyLimit.mockImplementation(() =>
+      Promise.resolve({ name: 'sv01-001', total: current()?.cards[0]?.count ?? 0, limit: 4 })
+    );
+    decks.setCardCount.mockImplementation((_id: string, _slot: unknown, count: number) => {
+      current.set(makeDeck({ cards: [{ region: 'intl', cardId: 'sv01-001', count }] }));
+      return Promise.resolve();
+    });
+    await create();
+    const plus = () => {
+      (query('[data-testid="add-copy"]') as HTMLElement).click();
+    };
+
+    // Five taps before any of them finishes: 1 → 4, then the limit.
+    for (let tap = 0; tap < 5; tap++) {
+      plus();
+    }
+    await vi.waitFor(() => {
+      expect(dialogs.showCopyLimit).toHaveBeenCalledTimes(2);
+    });
+
+    expect(current()?.cards[0]?.count).toBe(4);
+    checks.copyLimit.mockReset();
+    checks.copyLimit.mockResolvedValue({ name: 'x', total: 0, limit: 4 });
+    decks.setCardCount.mockReset();
+    decks.setCardCount.mockResolvedValue(undefined);
+  });
+
+  it('removes one copy per tap of −, however fast', async () => {
+    current.set(makeDeck({ cards: [{ region: 'intl', cardId: 'sv01-001', count: 3 }] }));
+    decks.setCardCount.mockImplementation((_id: string, _slot: unknown, count: number) => {
+      current.set(
+        makeDeck({ cards: count ? [{ region: 'intl', cardId: 'sv01-001', count }] : [] })
+      );
+      return Promise.resolve();
+    });
+    await create();
+    const minus = query('[data-testid="remove-copy"]') as HTMLElement;
+
+    minus.click();
+    minus.click();
+    await settle();
+
+    expect(current()?.cards[0]?.count).toBe(1);
+    decks.setCardCount.mockReset();
+    decks.setCardCount.mockResolvedValue(undefined);
+  });
+
+  it('reports a step that fails before saving (the limit check)', async () => {
+    const error = new Error('broken');
+    checks.copyLimit.mockRejectedValueOnce(error);
+    const page = await create();
+
+    await page.step(page.sections()[0].rows[0], 1);
+
+    expect(decks.setCardCount).not.toHaveBeenCalled();
+    expect(dialogs.showSaveError).toHaveBeenCalledWith(error);
+    // Later steps still run.
+    await page.step(page.sections()[0].rows[0], 1);
+    expect(decks.setCardCount).toHaveBeenCalledTimes(1);
+  });
+
+  it('adds nothing once the deck holds 4 with the name, saying so', async () => {
+    const limit = { name: 'sv01-001', total: 4, limit: 4 };
+    checks.copyLimit.mockResolvedValueOnce(limit);
+    const page = await create();
+
+    await page.step(page.sections()[0].rows[0], 1);
+
+    expect(checks.copyLimit).toHaveBeenCalledWith('deck-1', pokemon);
+    expect(decks.setCardCount).not.toHaveBeenCalled();
+    expect(dialogs.showCopyLimit).toHaveBeenCalledWith(limit);
+  });
+
+  it('shows the rules section, notes on problem cards, and disables + at the name limit', async () => {
+    const check: DeckCheck = {
+      format: 'standard',
+      issues: [
+        { id: 'size', text: '16 of 60 cards' },
+        { id: 'legal', text: '3 cards not legal in Standard' },
+      ],
+      cardNotes: new Map([['intl:sv01-001', ['Not legal in Standard']]]),
+      limits: new Map([
+        ['intl:sv01-001', { name: 'sv01-001', total: 4, limit: 4 }],
+        ['intl:sv01-166', { name: 'sv01-166', total: 4, limit: 4 }],
+        ['intl:sv01-258', { name: 'sv01-258', total: 9, limit: 99 }],
+      ]),
+    };
+    checks.check.mockImplementation((id) => (id === 'deck-1' ? check : undefined));
+    await create();
+
+    expect(root().textContent).toContain('Standard rules');
+    expect(
+      [...root().querySelectorAll('[data-testid="deck-rules"] ion-item')].map((item) =>
+        item.textContent.trim()
+      )
+    ).toEqual(['16 of 60 cards', '3 cards not legal in Standard']);
+    expect(
+      query('[data-testid="deck-card-intl:sv01-001"] [data-testid="rule-note"]')?.textContent.trim()
+    ).toBe('Not legal in Standard');
+    const plus = (key: string) =>
+      (query(`[data-testid="deck-card-${key}"] [data-testid="add-copy"]`) as HTMLIonButtonElement)
+        .disabled;
+    expect(plus('intl:sv01-166')).toBe(true);
+    expect(plus('intl:sv01-258')).toBe(false);
+    checks.check.mockReset();
+    checks.check.mockReturnValue(undefined);
+  });
+
+  it('says the deck follows its rules when nothing is broken, and shows nothing until checked', async () => {
+    await create();
+    expect(query('[data-testid="deck-rules"]')).toBeNull();
+
+    checks.check.mockReturnValue({
+      format: 'expanded',
+      issues: [],
+      cardNotes: new Map(),
+      limits: new Map(),
+    });
+    current.set(makeDeck({ format: 'expanded' }));
+    await create();
+
+    expect(query('[data-testid="rules-ok"]')?.textContent.trim()).toBe('Follows Expanded rules');
+    checks.check.mockReturnValue(undefined);
   });
 
   it('disables adding past the most copies a slot holds', async () => {
@@ -239,7 +384,7 @@ describe('DeckPage', () => {
     decks.setCardCount.mockRejectedValueOnce(error);
     const page = await create();
 
-    await page.setCount(page.sections()[0].rows[0], 4);
+    await page.step(page.sections()[0].rows[0], 1);
 
     expect(dialogs.showSaveError).toHaveBeenCalledWith(error);
   });

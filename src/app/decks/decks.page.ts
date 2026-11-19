@@ -14,7 +14,8 @@ import {
 } from '@ionic/angular';
 import type { Deck } from '@pokepaper/shared';
 import { addIcons } from 'ionicons';
-import { addOutline } from 'ionicons/icons';
+import { addOutline, warningOutline } from 'ionicons/icons';
+import { DeckChecksService } from '../features/decks/deck-checks.service';
 import { DeckService } from '../core/services/deck.service';
 import { DeckDialogsService } from '../features/decks/deck-dialogs.service';
 import { deckSummary } from '../features/decks/deck-display';
@@ -44,17 +45,27 @@ import { deckSummary } from '../features/decks/deck-display';
 export class DecksPage {
   readonly decks = inject(DeckService);
   private readonly dialogs = inject(DeckDialogsService);
+  private readonly checks = inject(DeckChecksService);
   private readonly nav = inject(NavController);
 
   /** A new deck is being named or saved. */
   readonly busy = signal(false);
 
   constructor() {
-    addIcons({ addOutline });
+    addIcons({ addOutline, warningOutline });
   }
 
+  /** "Standard · 47 cards", plus "· 3 issues" once checked and it breaks its rules. */
   summary(deck: Deck): string {
-    return deckSummary(deck);
+    const count = this.issues(deck);
+    return count === 0
+      ? deckSummary(deck)
+      : `${deckSummary(deck)} · ${String(count)} ${count === 1 ? 'issue' : 'issues'}`;
+  }
+
+  /** Rules the deck breaks (0 until it has been checked). */
+  issues(deck: Deck): number {
+    return this.checks.check(deck.id)?.issues.length ?? 0;
   }
 
   open(id: string): void {

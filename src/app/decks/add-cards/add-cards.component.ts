@@ -9,9 +9,10 @@ import {
   IonToolbar,
   ModalController,
 } from '@ionic/angular';
-import { MAX_DECK_CARD_COUNT, deckCardKey, type CatalogCard } from '@pokepaper/shared';
+import { deckCardKey, type CatalogCard } from '@pokepaper/shared';
 import { catalogKey } from '../../core/data/storage-engine';
 import { CatalogSearchService } from '../../core/services/catalog-search.service';
+import { DeckChecksService } from '../../features/decks/deck-checks.service';
 import { DeckService } from '../../core/services/deck.service';
 import { LayoutService } from '../../core/services/layout.service';
 import { CatalogSegmentComponent } from '../../features/cards/catalog-segment.component';
@@ -89,12 +90,16 @@ export class AddCardsComponent {
   readonly layout = inject(LayoutService);
   private readonly decks = inject(DeckService);
   private readonly dialogs = inject(DeckDialogsService);
+  private readonly checks = inject(DeckChecksService);
   private readonly modals = inject(ModalController);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   // Set through ModalController componentProps, which assigns plain
   // properties (docs/ui.md → Tests).
   deckIdProp = '';
+
+  /** Taps, applied in order (see `add`). */
+  private adds: Promise<void> = Promise.resolve();
 
   readonly picker: CardPicker = {
     count: (card) => this.count(card),
@@ -118,22 +123,41 @@ export class AddCardsComponent {
     );
   }
 
-  /** Adds a copy of `card` (none past `MAX_DECK_CARD_COUNT`, saying so). */
+  /**
+   * Adds a copy of `card`, unless the deck holds as many as it may (4 with
+   * its name, or 99 of a basic Energy printing; docs/decks.md), saying so.
+   * Taps run one at a time, each from the deck as the previous one left it,
+   * so quick taps neither get lost nor pass the limit. Resolves once saved
+   * (or the failure has been reported).
+   */
   async add(card: CatalogCard): Promise<void> {
-    const count = this.count(card);
-    if (count >= MAX_DECK_CARD_COUNT) {
-      await this.dialogs.showCopyLimit();
-      return;
-    }
+    const applied = this.adds.then(() => this.applyAdd(card));
+    this.adds = applied.then(
+      () => undefined,
+      () => undefined
+    );
     try {
-      await this.decks.setCardCount(
-        this.deckIdProp,
-        { region: card.region, cardId: card.id },
-        count + 1
-      );
+      await (
+        await applied
+      )?.saving;
     } catch (error: unknown) {
       await this.dialogs.showSaveError(error);
     }
+  }
+
+  /** One tap from the deck as it is now; returns once the change shows, its save still running. */
+  private async applyAdd(card: CatalogCard): Promise<{ saving: Promise<void> } | null> {
+    const limit = await this.checks.copyLimit(this.deckIdProp, card);
+    if (limit.total >= limit.limit) {
+      void this.dialogs.showCopyLimit(limit);
+      return null;
+    }
+    const saving = this.decks.setCardCount(
+      this.deckIdProp,
+      { region: card.region, cardId: card.id },
+      this.count(card) + 1
+    );
+    return { saving };
   }
 
   /** Enter: search for what's typed now, remember it, and put the phone keyboard away. */

@@ -3,7 +3,9 @@ import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { NavController } from '@ionic/angular';
 import type { Deck } from '@pokepaper/shared';
 import { vi } from 'vitest';
+import { DeckChecksService } from '../features/decks/deck-checks.service';
 import { DeckService } from '../core/services/deck.service';
+import type { DeckCheck } from '../features/decks/deck-rules';
 import { DeckDialogsService } from '../features/decks/deck-dialogs.service';
 import { DecksPage } from './decks.page';
 
@@ -29,6 +31,8 @@ describe('DecksPage', () => {
     showSaveError: vi.fn(() => Promise.resolve()),
   };
   const nav = { navigateForward: vi.fn() };
+  const checked = signal<Record<string, DeckCheck>>({});
+  const checks = { check: (id: string): DeckCheck | undefined => checked()[id] };
   let fixture: ComponentFixture<DecksPage>;
 
   function create(): DecksPage {
@@ -43,11 +47,13 @@ describe('DecksPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     list.set([]);
+    checked.set({});
     decks.loaded.set(true);
     TestBed.configureTestingModule({
       providers: [
         { provide: DeckService, useValue: decks },
         { provide: DeckDialogsService, useValue: dialogs },
+        { provide: DeckChecksService, useValue: checks },
         { provide: NavController, useValue: nav },
       ],
     });
@@ -67,6 +73,31 @@ describe('DecksPage', () => {
 
     (query('[data-testid="deck-b"]') as HTMLElement).click();
     expect(nav.navigateForward).toHaveBeenCalledWith(['/tabs/decks/deck', 'b']);
+  });
+
+  it('counts the rules a deck breaks, with a warning icon, once checked', () => {
+    list.set([deck('a', 'Charizard ex'), deck('b', 'Lugia VSTAR'), deck('c', 'Unchecked')]);
+    const issue = { id: 'size', text: '0 of 60 cards' };
+    checked.set({
+      a: {
+        format: 'standard',
+        issues: [issue, { id: 'basic', text: 'x' }],
+        cardNotes: new Map(),
+        limits: new Map(),
+      },
+      b: { format: 'standard', issues: [issue], cardNotes: new Map(), limits: new Map() },
+    });
+    create();
+
+    expect(query('[data-testid="deck-a"] .hint')?.textContent.trim()).toBe(
+      'Standard · 0 cards · 2 issues'
+    );
+    expect(query('[data-testid="deck-b"] .hint')?.textContent.trim()).toBe(
+      'Standard · 0 cards · 1 issue'
+    );
+    expect(query('[data-testid="deck-a"] [data-testid="deck-issues"]')).not.toBeNull();
+    expect(query('[data-testid="deck-c"] .hint')?.textContent.trim()).toBe('Standard · 0 cards');
+    expect(query('[data-testid="deck-c"] [data-testid="deck-issues"]')).toBeNull();
   });
 
   it('offers a New deck row when there are none', () => {

@@ -35,6 +35,15 @@
               {{ deck.name }}
               <p class="hint">{{ summary(deck) }}</p>
             </ion-label>
+            @if (issues(deck) > 0) {
+              <ion-icon
+                slot="end"
+                name="warning-outline"
+                color="warning"
+                aria-hidden="true"
+                data-testid="deck-issues"
+              ></ion-icon>
+            }
           </ion-item>
         } @empty {
           <ion-item data-testid="no-decks">
