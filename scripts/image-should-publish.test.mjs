@@ -34,6 +34,8 @@ test('edge image inputs', () => {
     'package-lock.json',
     '.browserslistrc',
     'server/package.json',
+    'scripts/build-ios-live-update-artifacts.mjs',
+    'scripts/write-environment-ios.mjs',
   ]) {
     assert.equal(matchesImagePath('edge', path), true, path);
   }

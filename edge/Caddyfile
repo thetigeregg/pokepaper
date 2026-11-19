@@ -48,6 +48,20 @@
 		}
 	}
 
+	# iOS OTA bundles (docs/ios.md -> OTA updates), built into the image.
+	# Ahead of the SPA handler, so a missing manifest is a real 404 (the app
+	# reads that as "no update") rather than index.html. The manifest must
+	# never be cached; each zip's name is unique per release and native
+	# build, so zips are immutable.
+	handle_path /ota/* {
+		root * /srv-ota
+		@manifest path */manifest.json
+		header @manifest Cache-Control "no-store"
+		@bundle path *.zip
+		header @bundle Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
 	# Passkeys in the iOS app: Apple fetches this (via its CDN) to verify
 	# the app may use passkeys for this domain. Must be JSON, at this exact
 	# path, with no redirect.

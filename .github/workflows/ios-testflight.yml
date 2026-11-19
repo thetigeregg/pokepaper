@@ -1,9 +1,10 @@
 name: iOS TestFlight
 
 # Builds App PROD and uploads it to TestFlight after a release that changed
-# the app (docs/ios.md -> TestFlight). Ported from go-gather's workflow,
-# without its Firebase and OTA steps. PokePaper has no over-the-air updates,
-# so web changes ship through TestFlight too (scripts/ios-testflight-should-deploy.mjs).
+# native code (docs/ios.md -> TestFlight). Ported from go-gather's workflow,
+# without its Firebase step. Web-only changes ship as OTA bundles instead
+# (release-publish.yml); scripts/ios-release-gate.mjs routes each release.
+# After an upload, it records the build as the one OTA bundles target.
 
 on:
   workflow_run:
@@ -21,9 +22,11 @@ permissions:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
+# Runs queue instead of overlapping: each run decides against the build the
+# previous one recorded, so a native change is built once, never skipped.
 concurrency:
-  group: pokepaper-ios-testflight-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
-  cancel-in-progress: true
+  group: pokepaper-ios-testflight
+  cancel-in-progress: false
 
 jobs:
   detect_changes:
@@ -33,8 +36,8 @@ jobs:
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     outputs:
-      should_deploy: ${{ steps.check.outputs.should_deploy }}
-      matched_paths: ${{ steps.check.outputs.matched_paths }}
+      should_deploy: ${{ steps.check.outputs.testflight }}
+      matched_paths: ${{ steps.check.outputs.testflight_paths }}
       release_tag: ${{ steps.check.outputs.release_tag }}
 
     steps:
@@ -49,10 +52,11 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          NATIVE_BUILD: ${{ vars.IOS_OTA_NATIVE_BUILD }}
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            { echo "should_deploy=true"; echo "matched_paths=workflow_dispatch"; echo "release_tag="; } >> "$GITHUB_OUTPUT"
+            { echo "testflight=true"; echo "testflight_paths=workflow_dispatch"; echo "release_tag="; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -67,11 +71,13 @@ jobs:
             || ! git merge-base --is-ancestor "$HEAD_SHA" "$CURRENT" \
             || [ "$(git rev-list -n 1 "$CURRENT")" = "$HEAD_SHA" ]; then
             echo "This run released nothing new (newest tag: ${CURRENT:-none}); nothing to deploy."
-            { echo "should_deploy=false"; echo "matched_paths="; echo "release_tag="; } >> "$GITHUB_OUTPUT"
+            { echo "testflight=false"; echo "testflight_paths="; echo "release_tag="; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          node scripts/ios-testflight-should-deploy.mjs --head "$CURRENT" --github-output "$GITHUB_OUTPUT"
+          # Native changes since the last recorded build, not just since the
+          # previous tag: a quick follow-up release can't hide one.
+          node scripts/ios-release-gate.mjs --head "$CURRENT" --native-build "$NATIVE_BUILD" --github-output "$GITHUB_OUTPUT"
           echo "release_tag=$CURRENT" >> "$GITHUB_OUTPUT"
 
   skip_summary:
@@ -86,7 +92,7 @@ jobs:
           {
             echo "## iOS TestFlight skipped"
             echo
-            echo "This release doesn't change the iOS app (server, edge, docs, or CI only), or nothing was released."
+            echo "This release doesn't change native code (web-only changes ship as OTA bundles), or nothing was released."
             echo
             echo "Use **workflow_dispatch** on iOS TestFlight to force a build when needed (for example signing retries)."
           } >> "$GITHUB_STEP_SUMMARY"
@@ -194,6 +200,33 @@ jobs:
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
           MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
         run: bundle exec fastlane deploy_testflight
+
+      # OTA bundles must match the installed native code, so the release
+      # workflow builds them for this build, and only while nothing native
+      # has changed since this commit (scripts/ios-release-gate.mjs). Only
+      # builds of main (a release, or a manual run on main) are recorded,
+      # never a branch build. One variable, so build and commit always match.
+      # Repo variables need the release GitHub App (Variables: write).
+      - name: Create GitHub App token
+        if: needs.detect_changes.outputs.release_tag != '' || github.ref == 'refs/heads/main'
+        id: app_token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.AUTOCOMMIT_CLIENT_ID }}
+          private-key: ${{ secrets.AUTOCOMMIT_APP_PRIVATE_KEY }}
+
+      - name: Record this build for OTA updates
+        if: needs.detect_changes.outputs.release_tag != '' || github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          BUILD_NUMBER: ${{ steps.testflight_upload.outputs.ios_native_build_number }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BUILD_NUMBER" ]; then
+            echo "::error::deploy_testflight didn't report a build number" >&2
+            exit 1
+          fi
+          gh variable set IOS_OTA_NATIVE_BUILD --body "${BUILD_NUMBER}@$(git rev-parse HEAD)"
 
       - name: Write upload summary
         env:
