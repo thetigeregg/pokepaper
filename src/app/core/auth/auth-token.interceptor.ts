@@ -1,4 +1,4 @@
-import { HttpErrorResponse, type HttpInterceptorFn } from '@angular/common/http';
+import { HttpContextToken, HttpErrorResponse, type HttpInterceptorFn } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { catchError, from, switchMap, throwError } from 'rxjs';
 import { environment } from '../../../environments/environment';
@@ -16,8 +16,15 @@ import { AuthTokenStore } from './auth-token.store';
  * (status 0): sync then waits and retries, where a request without the token
  * would get a 401 and sign the user out.
  */
+/**
+ * Set on requests for public static files (the OTA manifest), so they never
+ * carry the session token or wait on the Keychain.
+ */
+export const WITHOUT_SESSION_TOKEN = new HttpContextToken<boolean>(() => false);
+
 export const authTokenInterceptor: HttpInterceptorFn = (request, next) => {
   if (
+    request.context.get(WITHOUT_SESSION_TOKEN) ||
     !environment.apiUrl ||
     !request.url.startsWith(`${environment.apiUrl}/`) ||
     request.headers.has('Authorization')

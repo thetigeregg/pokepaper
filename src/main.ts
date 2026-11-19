@@ -69,9 +69,7 @@ bootstrapApplication(AppComponent, {
     // calls behind it have no timeout, so awaiting them could hang startup on
     // a white screen (a bug go-gather hit).
     provideAppInitializer(() => {
-      const liveUpdate = inject(LiveUpdateService);
-      liveUpdate.initializeResumeChecks();
-      void liveUpdate.checkAndStageUpdate(true);
+      void inject(LiveUpdateService).start();
     }),
     {
       provide: STORAGE_ENGINE,

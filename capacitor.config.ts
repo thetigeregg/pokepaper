@@ -7,7 +7,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
  * Verifies OTA web bundles (docs/ios.md -> OTA updates). The matching private
  * key signs bundles in CI and never enters the repository.
  */
-const LIVE_UPDATE_PUBLIC_KEY_PATH = resolve(process.cwd(), 'config/ios-live-update-public.pem');
+const LIVE_UPDATE_PUBLIC_KEY_PATH = resolve(__dirname, 'config/ios-live-update-public.pem');
 
 function readLiveUpdatePublicKey(): string {
   return readFileSync(LIVE_UPDATE_PUBLIC_KEY_PATH, 'utf8').trim();
@@ -38,11 +38,14 @@ const config: CapacitorConfig = {
     },
     // OTA web updates: the app checks for, downloads and stages bundles
     // itself (LiveUpdateService), so the plugin's own strategy is off. A
-    // staged bundle that doesn't call ready() within readyTimeout ms is
-    // rolled back to the previous one.
+    // newly applied bundle that doesn't call ready() within readyTimeout ms
+    // is rolled back and blocked, so it's never staged again. Bundles other
+    // than the current and staged ones are deleted once the app is ready.
     LiveUpdate: {
       autoUpdateStrategy: 'none',
       readyTimeout: 10000,
+      autoBlockRolledBackBundles: true,
+      autoDeleteBundles: true,
       publicKey: readLiveUpdatePublicKey(),
     },
   },

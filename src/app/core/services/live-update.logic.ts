@@ -20,6 +20,7 @@ export type LiveUpdateStageDecisionReason =
   | 'missing_native_build_number'
   | 'native_build_mismatch'
   | 'already_staged_or_active'
+  | 'rolled_back'
   | 'update_available';
 
 export interface LiveUpdateStageDecision {
@@ -54,15 +55,8 @@ export function parseIosLiveUpdateManifest(
     signature: field('signature'),
   };
 
-  const fields: string[] = [
-    manifest.bundleId,
-    manifest.semver,
-    manifest.nativeBuildNumber,
-    manifest.url,
-    manifest.checksum,
-    manifest.signature,
-  ];
-  if (fields.some((entry) => entry.length === 0)) {
+  const keys = Object.keys(manifest) as (keyof IosLiveUpdateManifest)[];
+  if (keys.some((key) => manifest[key].length === 0)) {
     return null;
   }
 
@@ -83,6 +77,8 @@ export function shouldStageLiveUpdateManifest(options: {
   nativeBuildNumber: string | null;
   currentBundleId: string | null;
   nextBundleId: string | null;
+  /** Bundles the plugin blocked after rolling them back. */
+  blockedBundleIds?: readonly string[];
 }): LiveUpdateStageDecision {
   const { manifest, nativeBuildNumber, currentBundleId, nextBundleId } = options;
 
@@ -101,6 +97,12 @@ export function shouldStageLiveUpdateManifest(options: {
 
   if (manifest.bundleId === currentBundleId || manifest.bundleId === nextBundleId) {
     return { shouldStage: false, reason: 'already_staged_or_active' };
+  }
+
+  // A bundle that failed to start was rolled back; staging it again would
+  // loop (prompt, reload, white screen, rollback) until a new one ships.
+  if (options.blockedBundleIds?.includes(manifest.bundleId)) {
+    return { shouldStage: false, reason: 'rolled_back' };
   }
 
   return { shouldStage: true, reason: 'update_available' };

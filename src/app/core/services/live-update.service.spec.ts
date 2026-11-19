@@ -3,6 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
 import { environment } from '../../../environments/environment';
+import { WITHOUT_SESSION_TOKEN } from '../auth/auth-token.interceptor';
 import { LiveUpdateService } from './live-update.service';
 
 const isNativePlatformMock = vi.fn<() => boolean>();
@@ -18,6 +19,7 @@ const live = {
   getVersionCode: vi.fn<() => Promise<{ versionCode: string }>>(),
   getCurrentBundle: vi.fn<() => Promise<{ bundleId: string | null }>>(),
   getNextBundle: vi.fn<() => Promise<{ bundleId: string | null }>>(),
+  getBlockedBundles: vi.fn<() => Promise<{ bundleIds: string[] }>>(),
   downloadBundle: vi.fn<(options: unknown) => Promise<void>>(),
   setNextBundle: vi.fn<(options: { bundleId: string }) => Promise<void>>(),
   reload: vi.fn<() => Promise<void>>(),
@@ -28,6 +30,7 @@ vi.mock('@capawesome/capacitor-live-update', () => ({
     getVersionCode: () => live.getVersionCode(),
     getCurrentBundle: () => live.getCurrentBundle(),
     getNextBundle: () => live.getNextBundle(),
+    getBlockedBundles: () => live.getBlockedBundles(),
     downloadBundle: (options: unknown) => live.downloadBundle(options),
     setNextBundle: (options: { bundleId: string }) => live.setNextBundle(options),
     reload: () => live.reload(),
@@ -71,6 +74,7 @@ describe('LiveUpdateService', () => {
     live.getVersionCode.mockResolvedValue({ versionCode: '3' });
     live.getCurrentBundle.mockResolvedValue({ bundleId: null });
     live.getNextBundle.mockResolvedValue({ bundleId: null });
+    live.getBlockedBundles.mockResolvedValue({ bundleIds: [] });
     live.downloadBundle.mockResolvedValue();
     live.setNextBundle.mockResolvedValue();
     live.reload.mockResolvedValue();
@@ -94,6 +98,7 @@ describe('LiveUpdateService', () => {
   async function answerManifest(body: unknown, init?: { status: number; statusText: string }) {
     await flush();
     const request = http.expectOne((req) => req.url.startsWith(`${MANIFEST_URL}?t=`));
+    expect(request.request.context.get(WITHOUT_SESSION_TOKEN)).toBe(true);
     request.flush(body, init);
     await flush();
   }
@@ -227,6 +232,70 @@ describe('LiveUpdateService', () => {
     listener({ isActive: true });
     await answerManifest('Not Found', { status: 404, statusText: 'Not Found' });
 
+    expect(live.getVersionCode).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts by confirming the bundle, then checks for an update and watches resumes', async () => {
+    const order: string[] = [];
+    live.ready.mockImplementation(() => {
+      order.push('ready');
+      return Promise.resolve({ rollback: false });
+    });
+    live.getVersionCode.mockImplementation(() => {
+      order.push('check');
+      return Promise.resolve({ versionCode: '3' });
+    });
+
+    const started = service.start();
+    await answerManifest('Not Found', { status: 404, statusText: 'Not Found' });
+    await started;
+
+    expect(order).toEqual(['ready', 'check']);
+    expect(addListener).toHaveBeenCalledTimes(1);
+  });
+
+  it('never re-stages a bundle the plugin rolled back and blocked', async () => {
+    live.ready.mockResolvedValue({
+      currentBundleId: undefined,
+      previousBundleId: 'v0.17.0-b3',
+      rollback: true,
+    });
+    live.getBlockedBundles.mockResolvedValue({ bundleIds: ['v0.17.0-b3'] });
+
+    const started = service.start();
+    await answerManifest(manifest);
+    await started;
+
+    expect(console.error).toHaveBeenCalledWith(
+      'live_update.rolled_back',
+      expect.objectContaining({ previousBundleId: 'v0.17.0-b3', rollback: true })
+    );
+    expect(live.downloadBundle).not.toHaveBeenCalled();
+  });
+
+  it('replays a staged update to late subscribers', async () => {
+    const done = service.checkAndStageUpdate(true);
+    await answerManifest(manifest);
+    await done;
+
+    const staged: { semver: string }[] = [];
+    service.staged$.subscribe((value) => staged.push(value));
+    expect(staged).toEqual([{ semver: '0.17.0' }]);
+  });
+
+  it('retries on the next resume after a failed check, and reads the version code once', async () => {
+    const offline = service.checkAndStageUpdate(true);
+    await flush();
+    http
+      .expectOne((req) => req.url.startsWith(`${MANIFEST_URL}?t=`))
+      .error(new ProgressEvent('offline'));
+    await offline;
+
+    const retry = service.checkAndStageUpdate();
+    await answerManifest('Not Found', { status: 404, statusText: 'Not Found' });
+    await retry;
+
+    await service.checkAndStageUpdate();
     expect(live.getVersionCode).toHaveBeenCalledTimes(1);
   });
 

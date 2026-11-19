@@ -10,7 +10,7 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe('AppComponent', () => {
   let staged: Subject<{ semver: string }>;
-  let liveUpdate: { markReady: Mock; reload: Mock; staged$: Subject<{ semver: string }> };
+  let liveUpdate: { reload: Mock; staged$: Subject<{ semver: string }> };
   let alertCreate: Mock;
   let dismissRole: string;
   let dismiss: () => void;
@@ -18,7 +18,6 @@ describe('AppComponent', () => {
   beforeEach(async () => {
     staged = new Subject();
     liveUpdate = {
-      markReady: vi.fn(() => Promise.resolve()),
       reload: vi.fn(() => Promise.resolve()),
       staged$: staged,
     };
@@ -53,9 +52,9 @@ describe('AppComponent', () => {
     return fixture.componentInstance;
   }
 
-  it('marks the running bundle ready on startup', () => {
+  it('creates', () => {
     expect(createApp()).toBeTruthy();
-    expect(liveUpdate.markReady).toHaveBeenCalled();
+    expect(alertCreate).not.toHaveBeenCalled();
   });
 
   it('offers to reload when an update is staged, and reloads on confirm', async () => {

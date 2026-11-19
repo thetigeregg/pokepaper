@@ -1,5 +1,6 @@
 import {
   HttpClient,
+  HttpContext,
   HttpErrorResponse,
   provideHttpClient,
   withInterceptors,
@@ -8,7 +9,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../environments/environment';
-import { authTokenInterceptor } from './auth-token.interceptor';
+import { authTokenInterceptor, WITHOUT_SESSION_TOKEN } from './auth-token.interceptor';
 import { AuthTokenStore, KeychainUnavailableError } from './auth-token.store';
 
 describe('authTokenInterceptor', () => {
@@ -105,6 +106,21 @@ describe('authTokenInterceptor', () => {
     await expect(failure).rejects.toMatchObject({ status: 0, statusText: 'Keychain unavailable' });
     await expect(failure).rejects.toBeInstanceOf(HttpErrorResponse);
     controller.expectNone('https://pokepaper.example.com/api/sync/pull');
+  });
+
+  it('never sends the token, or waits on the Keychain, for requests that opt out', async () => {
+    environment.apiUrl = 'https://pokepaper.example.com';
+    keychainLocked = true;
+    const url = 'https://pokepaper.example.com/ota/ios/3/manifest.json';
+
+    const response = firstValueFrom(
+      http.get(url, { context: new HttpContext().set(WITHOUT_SESSION_TOKEN, true) })
+    );
+    const request = controller.expectOne(url);
+    request.flush({});
+    await response;
+
+    expect(request.request.headers.get('Authorization')).toBeNull();
   });
 
   it('leaves same-origin web requests alone (cookie sessions)', async () => {

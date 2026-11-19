@@ -1,10 +1,11 @@
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpClient, HttpContext, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { App } from '@capacitor/app';
 import { LiveUpdate } from '@capawesome/capacitor-live-update';
-import { firstValueFrom, Subject, timeout, type Observable } from 'rxjs';
+import { firstValueFrom, ReplaySubject, timeout, type Observable } from 'rxjs';
 
 import { environment } from '../../../environments/environment';
+import { WITHOUT_SESSION_TOKEN } from '../auth/auth-token.interceptor';
 import { isNativePlatform } from '../utils/native-platform.util';
 import {
   buildLiveUpdateManifestUrl,
@@ -28,22 +29,42 @@ const RESUME_CHECK_INTERVAL_MS = 15 * 60 * 1000;
  * app offer to reload now. Otherwise it applies on the next cold start.
  *
  * Nothing here may block startup or throw: the native bridge calls have no
- * timeout of their own, and the app must open offline.
+ * timeout of their own, and the app must open offline. `start()` runs from an
+ * app initializer without being awaited.
  */
 @Injectable({ providedIn: 'root' })
 export class LiveUpdateService {
   private readonly http = inject(HttpClient);
 
   private resumeListenerAttached = false;
+  /** When a check last reached the server (a manifest or a 404). */
   private lastCheckAt = 0;
   private checkInFlight: Promise<void> | null = null;
+  /** CFBundleVersion: constant while the app runs. */
+  private versionCode: string | null = null;
 
-  private readonly stagedSubject = new Subject<{ semver: string }>();
+  // Replays: the launch check can stage a bundle before AppComponent subscribes.
+  private readonly stagedSubject = new ReplaySubject<{ semver: string }>(1);
   /** Emits after a new bundle has been downloaded and staged. */
   readonly staged$: Observable<{ semver: string }> = this.stagedSubject.asObservable();
 
   isEnabled(): boolean {
     return isNativePlatform() && environment.production;
+  }
+
+  /**
+   * Startup: confirms this bundle first, before slower startup work (storage
+   * migrations, the Keychain) can run past the rollback timeout, and so a
+   * rollback is recorded before the first check could re-stage that bundle.
+   * Then checks for an update and watches for resumes.
+   */
+  async start(): Promise<void> {
+    if (!this.isEnabled()) {
+      return;
+    }
+    await this.markReady();
+    this.initializeResumeChecks();
+    await this.checkAndStageUpdate(true);
   }
 
   /**
@@ -73,7 +94,8 @@ export class LiveUpdateService {
 
   /**
    * Tells the plugin this bundle started fine. Without it, a newly applied
-   * bundle is rolled back after `readyTimeout` (capacitor.config.ts).
+   * bundle is rolled back after `readyTimeout` and blocked
+   * (capacitor.config.ts).
    */
   async markReady(): Promise<void> {
     if (!this.isEnabled()) {
@@ -81,11 +103,17 @@ export class LiveUpdateService {
     }
     try {
       const result = await LiveUpdate.ready();
-      console.info('live_update.ready', {
+      const details = {
         currentBundleId: result.currentBundleId ?? null,
         previousBundleId: result.previousBundleId ?? null,
         rollback: result.rollback,
-      });
+      };
+      if (result.rollback) {
+        // The previous bundle failed to start; the plugin has blocked it.
+        console.error('live_update.rolled_back', details);
+      } else {
+        console.info('live_update.ready', details);
+      }
     } catch (error: unknown) {
       console.error('live_update.ready_failed', describe(error));
     }
@@ -120,14 +148,13 @@ export class LiveUpdateService {
   }
 
   private async runCheckAndStageUpdate(force: boolean): Promise<void> {
-    const now = Date.now();
-    if (!force && now - this.lastCheckAt < RESUME_CHECK_INTERVAL_MS) {
+    if (!force && Date.now() - this.lastCheckAt < RESUME_CHECK_INTERVAL_MS) {
       return;
     }
-    this.lastCheckAt = now;
 
     try {
-      const versionCode = (await LiveUpdate.getVersionCode()).versionCode.trim();
+      this.versionCode ??= (await LiveUpdate.getVersionCode()).versionCode.trim();
+      const versionCode = this.versionCode;
       const backendOrigin = resolveBackendOriginFromApiUrl(environment.apiUrl);
       if (versionCode.length === 0 || backendOrigin === null) {
         console.info('live_update.skip_unconfigured', {
@@ -138,19 +165,24 @@ export class LiveUpdateService {
       }
 
       const manifest = await this.fetchManifest(backendOrigin, versionCode);
+      // Throttle only checks that reached the server: after a failure
+      // (offline, timeout) the next resume tries again.
+      this.lastCheckAt = Date.now();
       if (manifest === null) {
         return;
       }
 
-      const [current, next] = await Promise.all([
+      const [current, next, blocked] = await Promise.all([
         LiveUpdate.getCurrentBundle(),
         LiveUpdate.getNextBundle(),
+        LiveUpdate.getBlockedBundles(),
       ]);
       const decision = shouldStageLiveUpdateManifest({
         manifest,
         nativeBuildNumber: versionCode,
         currentBundleId: current.bundleId ?? null,
         nextBundleId: next.bundleId ?? null,
+        blockedBundleIds: blocked.bundleIds,
       });
       if (!decision.shouldStage) {
         console.info('live_update.skip', { reason: decision.reason });
@@ -196,7 +228,12 @@ export class LiveUpdateService {
     let payload: unknown;
     try {
       payload = await firstValueFrom(
-        this.http.get<unknown>(manifestUrl).pipe(timeout(MANIFEST_FETCH_TIMEOUT_MS))
+        this.http
+          // A public static file: no session token, no wait on the Keychain.
+          .get<unknown>(manifestUrl, {
+            context: new HttpContext().set(WITHOUT_SESSION_TOKEN, true),
+          })
+          .pipe(timeout(MANIFEST_FETCH_TIMEOUT_MS))
       );
     } catch (error: unknown) {
       if (error instanceof HttpErrorResponse && error.status === 404) {

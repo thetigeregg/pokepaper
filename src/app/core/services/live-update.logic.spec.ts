@@ -74,6 +74,10 @@ describe('live-update logic', () => {
       expect(shouldStageLiveUpdateManifest({ ...base, nextBundleId: 'v0.17.0-b3' }).reason).toBe(
         'already_staged_or_active'
       );
+      expect(
+        shouldStageLiveUpdateManifest({ ...base, blockedBundleIds: ['v0.16.0-b3', 'v0.17.0-b3'] })
+          .reason
+      ).toBe('rolled_back');
     });
   });
 

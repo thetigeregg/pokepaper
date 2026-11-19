@@ -16,9 +16,6 @@ export class AppComponent implements OnInit {
   private updateAlertOpen = false;
 
   ngOnInit(): void {
-    // Confirms this web bundle started, so an OTA update isn't rolled back.
-    void this.liveUpdate.markReady();
-
     this.liveUpdate.staged$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(({ semver }) => {
       void this.presentUpdateReadyAlert(semver);
     });
