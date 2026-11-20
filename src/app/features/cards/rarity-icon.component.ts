@@ -7,7 +7,8 @@ import { RARITY_ICON_HEIGHT, rarityIcon, rarityIconUrl } from './rarity';
  * `assets/rarity/` images, repeated for TCG Pocket's counts. Decorative,
  * since the name is always shown too; renders nothing for a rarity without
  * a symbol or an image that fails to load. The image's size attributes
- * reserve its space before it loads, so the name doesn't shift.
+ * reserve its space before it loads, so the name doesn't shift. A host
+ * can scale the symbol with `--rarity-icon-height` (default 1.25em).
  */
 @Component({
   selector: 'app-rarity-icon',
@@ -38,7 +39,7 @@ import { RARITY_ICON_HEIGHT, rarityIcon, rarityIconUrl } from './rarity';
         margin-inline-end: 0.3em;
       }
       .rarity {
-        height: 1.25em;
+        height: var(--rarity-icon-height, 1.25em);
         width: auto;
       }
     `,
