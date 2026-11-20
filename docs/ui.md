@@ -15,6 +15,7 @@ Standards for PokePaper's screens, so new pages look and behave like existing on
 
 - **iOS phone and desktop web are equal targets.** Design every page, modal and component for both, and check both before calling UI work done: a phone viewport (about 390×844) and a desktop one (about 1440×900).
 - Prefer one responsive layout (Ionic breakpoints, `ion-split-pane`, adaptive modals) over separate code paths.
+- **Sheets clear the home indicator.** Ionic pads the tab bar, footers, action sheets, toasts, popovers and full-screen modals for the iPhone's bottom safe area, but not sheet modals (any `IonModal` with breakpoints). A global rule in `global.scss` does it for them: a sheet's `ion-content` gets `--padding-bottom: var(--ion-safe-area-bottom)` (it scrolls behind the indicator and ends above it), and an auto-height sheet's page is padded by the same amount. A sheet's `ion-content` that needs its own bottom padding must add the safe area to it. Browsers report a zero safe area, so check sheets on a device.
 
 ## Language
 

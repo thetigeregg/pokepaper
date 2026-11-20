@@ -181,8 +181,17 @@ ion-popover.header-actions-menu {
   }
 }
 
+/* Sheets clear the iPhone's home indicator (docs/ui.md → Sheets). Ionic pads
+   full-screen modals' content for the bottom safe area but leaves sheets
+   (`modal-sheet`, any modal with breakpoints) to the app. A sheet's content
+   scrolls behind the indicator and ends above it. Zero on web and desktop. */
+ion-modal.modal-sheet ion-content {
+  --padding-bottom: var(--ion-safe-area-bottom, 0px);
+}
+
 /* A sheet as tall as its content (Ionic's auto-height sheet), up to the
-   screen's height, where its own list scrolls (e.g. the filter pickers). */
+   screen's height, where its own list scrolls (e.g. the filter pickers).
+   No ion-content, so it reserves the bottom safe area itself. */
 ion-modal.auto-height-sheet {
   --height: auto;
 
@@ -191,6 +200,8 @@ ion-modal.auto-height-sheet {
     display: flex;
     flex-direction: column;
     contain: content;
+    box-sizing: border-box;
     max-height: calc(100dvh - var(--ion-safe-area-top, 0px) - 16px);
+    padding-bottom: var(--ion-safe-area-bottom, 0px);
   }
 }
