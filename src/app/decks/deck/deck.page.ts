@@ -10,6 +10,7 @@ import {
   signal,
   untracked,
 } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   IonBackButton,
@@ -48,6 +49,8 @@ import { addIcons } from 'ionicons';
 import {
   addCircleOutline,
   addOutline,
+  arrowDownCircleOutline,
+  arrowUpCircleOutline,
   checkmarkCircleOutline,
   createOutline,
   imageOutline,
@@ -62,7 +65,7 @@ import { CatalogLanguageService } from '../../core/services/catalog-language.ser
 import { CatalogSyncService } from '../../core/services/catalog-sync.service';
 import { DeckChecksService } from '../../features/decks/deck-checks.service';
 import type { DeckOwned } from '../../features/decks/deck-owned';
-import { DeckService } from '../../core/services/deck.service';
+import { DeckService, type DeckList } from '../../core/services/deck.service';
 import { LayoutService } from '../../core/services/layout.service';
 import { CardDetailComponent } from '../../features/cards/card-detail.component';
 import { cardText, setLine } from '../../features/cards/card-display';
@@ -95,6 +98,8 @@ const SECTION_ORDER: readonly SectionId[] = ['Pokemon', 'Trainer', 'Energy', 'ot
 /** A card in the deck, with what its row shows. */
 export interface DeckRow {
   key: string;
+  /** The list the row is in: the deck, or its Considering pile. */
+  list: DeckList;
   slot: DeckCard;
   /** Null when the card isn't in the catalog on this device. */
   card: CatalogCard | null;
@@ -118,8 +123,9 @@ function isCatalogRegion(value: string): value is CatalogRegion {
 
 /**
  * One deck (docs/ui.md → Decks): its format and card total, then its cards
- * by category with a stepper each. The header adds cards (the Add cards
- * modal) and renames or deletes the deck.
+ * by category with a stepper each, then its Considering pile (cards being
+ * tried out), with buttons moving copies between the two. The header adds
+ * cards (the Add cards modal) and renames or deletes the deck.
  */
 @Component({
   selector: 'app-deck',
@@ -191,6 +197,7 @@ function isCatalogRegion(value: string): value is CatalogRegion {
     IonSelectOption,
     IonText,
     IonToggle,
+    NgTemplateOutlet,
     CardImageComponent,
     HeaderActionsComponent,
   ],
@@ -283,8 +290,14 @@ export class DeckPage {
   /** The page is going back after deleting its deck: don't say the deck is missing. */
   readonly deleting = signal(false);
 
-  /** The printings in the deck, as one string: changes when cards are added or removed. */
-  private readonly cardKeys = computed(() => (this.deck()?.cards ?? []).map(deckCardKey));
+  /**
+   * The printings in the deck and its pile, as one string: changes when
+   * cards are added or removed.
+   */
+  private readonly cardKeys = computed(() => {
+    const deck = this.deck();
+    return [...new Set([...(deck?.cards ?? []), ...(deck?.considering ?? [])].map(deckCardKey))];
+  });
   private readonly cardKeysJoined = computed(() => this.cardKeys().join('\n'));
 
   readonly sections = computed<DeckSection[]>(() => {
@@ -292,20 +305,14 @@ export class DeckPage {
     if (!deck) {
       return [];
     }
-    const { keys, cards, sets } = this.catalog();
     const sections = new Map<SectionId, DeckSection>();
     for (const slot of deck.cards) {
-      const key = deckCardKey(slot);
-      const card = cards.get(key) ?? null;
+      const row = this.rowOf(slot, 'cards');
       // Not read yet (just added): listed once it has been.
-      if (!card && !keys.has(key)) {
+      if (!row) {
         continue;
       }
-      const id = sectionOf(card);
-      const set = card ? (sets.get(catalogKey(card.region, card.setId)) ?? null) : null;
-      const language = card
-        ? this.catalogLanguage.forSet(card.region, set?.languages ?? [])
-        : this.fallbackLanguage(slot.region);
+      const id = sectionOf(row.card);
       let section = sections.get(id);
       if (!section) {
         const title = id === 'missing' && this.readFailed() ? UNREAD_TITLE : SECTION_TITLES[id];
@@ -313,19 +320,29 @@ export class DeckPage {
         sections.set(id, section);
       }
       section.count += slot.count;
-      section.rows.push({
-        key,
-        slot,
-        card,
-        language,
-        name: card ? (cardText(card, language)?.name ?? card.id) : slot.cardId,
-        line: card && set ? setLine(set, card) : slot.cardId,
-      });
+      section.rows.push(row);
     }
     return SECTION_ORDER.flatMap((id) => {
       const section = sections.get(id);
       return section ? [section] : [];
     });
+  });
+
+  /** The Considering pile's cards (once read), in the order they were added. */
+  readonly consideringRows = computed<DeckRow[]>(() =>
+    (this.deck()?.considering ?? []).flatMap((slot) => this.rowOf(slot, 'considering') ?? [])
+  );
+  /** Copies in the Considering pile. */
+  readonly consideringCount = computed(() =>
+    (this.deck()?.considering ?? []).reduce((total, slot) => total + slot.count, 0)
+  );
+  /**
+   * Whether the Considering section shows: not for an empty deck with an
+   * empty pile (the deck's own empty state shows), nor with missing only on.
+   */
+  readonly showConsidering = computed(() => {
+    const deck = this.deck();
+    return !!deck && (deck.cards.length > 0 || this.consideringCount() > 0) && !this.missingOnly();
   });
 
   /** The header's actions after Add cards (in a More menu on phones). */
@@ -361,9 +378,16 @@ export class DeckPage {
    * deck service applies it at once), with its save still running.
    */
   private async applyStep(row: DeckRow, delta: 1 | -1): Promise<{ saving: Promise<void> } | null> {
-    const count = this.deck()?.cards.find((slot) => deckCardKey(slot) === row.key)?.count ?? 0;
+    const count = this.countIn(row.list, row.key);
     if (count + delta < 0) {
       return null;
+    }
+    const card = { region: row.slot.region, cardId: row.slot.cardId };
+    if (row.list === 'considering') {
+      if (count + delta > MAX_DECK_CARD_COUNT) {
+        return null;
+      }
+      return { saving: this.decks.setConsideringCount(this.id(), card, count + delta) };
     }
     if (delta > 0 && row.card) {
       const limit = await this.checks.copyLimit(this.id(), row.card);
@@ -372,8 +396,33 @@ export class DeckPage {
         return null;
       }
     }
-    const card = { region: row.slot.region, cardId: row.slot.cardId };
     return { saving: this.decks.setCardCount(this.id(), card, count + delta) };
+  }
+
+  /**
+   * Moves one copy of the row's card to the other list, from the deck as it
+   * is now: into the deck only within its copy limit (saying so), and never
+   * past 99 of a printing. Returns once the change shows, its save running.
+   */
+  private async applyMove(row: DeckRow): Promise<{ saving: Promise<void> } | null> {
+    const to: DeckList = row.list === 'cards' ? 'considering' : 'cards';
+    if (this.countIn(row.list, row.key) === 0 || this.countIn(to, row.key) >= MAX_DECK_CARD_COUNT) {
+      return null;
+    }
+    if (to === 'cards' && row.card) {
+      const limit = await this.checks.copyLimit(this.id(), row.card);
+      if (limit.total >= limit.limit) {
+        void this.dialogs.showCopyLimit(limit);
+        return null;
+      }
+    }
+    const card = { region: row.slot.region, cardId: row.slot.cardId };
+    return { saving: this.decks.moveCopy(this.id(), card, to) };
+  }
+
+  /** Copies of a printing (by key) in one of the deck's lists now. */
+  private countIn(list: DeckList, key: string): number {
+    return (this.deck()?.[list] ?? []).find((slot) => deckCardKey(slot) === key)?.count ?? 0;
   }
 
   /** Bumped by each catalog read, so an older one finishing late is dropped. */
@@ -387,6 +436,8 @@ export class DeckPage {
     addIcons({
       addOutline,
       addCircleOutline,
+      arrowDownCircleOutline,
+      arrowUpCircleOutline,
       removeCircleOutline,
       createOutline,
       imageOutline,
@@ -409,12 +460,15 @@ export class DeckPage {
    * noting copies from other printings. Null until known.
    */
   ownedLine(row: DeckRow): { text: string; short: boolean } | null {
-    const slot = this.owned()?.slots.get(row.key);
+    const owned = this.owned();
+    const slot = (row.list === 'cards' ? owned?.slots : owned?.considering)?.get(row.key);
     if (!slot) {
       return null;
     }
+    // The pile is covered by copies the deck doesn't use.
+    const spare = row.list === 'considering' ? ' spare' : '';
     const base =
-      slot.missing > 0 ? `Own ${String(slot.owned)} of ${String(row.slot.count)}` : 'Owned';
+      slot.missing > 0 ? `Own ${String(slot.owned)} of ${String(row.slot.count)}${spare}` : 'Owned';
     const other = slot.fromOther > 0 ? ` · ${String(slot.fromOther)} from another printing` : '';
     return { text: base + other, short: slot.missing > 0 };
   }
@@ -438,7 +492,7 @@ export class DeckPage {
 
   /** The notes for a card's row: the rules it breaks. */
   notes(row: DeckRow): readonly string[] {
-    return this.check()?.cardNotes.get(row.key) ?? [];
+    return row.list === 'cards' ? (this.check()?.cardNotes.get(row.key) ?? []) : [];
   }
 
   /**
@@ -446,6 +500,9 @@ export class DeckPage {
    * name (across printings), or 99 of a printing.
    */
   atLimit(row: DeckRow): boolean {
+    if (row.list === 'considering') {
+      return row.slot.count >= MAX_DECK_CARD_COUNT; // The pile has no rules.
+    }
     const limit = this.check()?.limits.get(row.key);
     return row.slot.count >= MAX_DECK_CARD_COUNT || (!!limit && limit.total >= limit.limit);
   }
@@ -458,6 +515,34 @@ export class DeckPage {
    */
   async step(row: DeckRow, delta: 1 | -1): Promise<void> {
     const applied = this.steps.then(() => this.applyStep(row, delta));
+    this.steps = applied.then(
+      () => undefined,
+      () => undefined
+    );
+    try {
+      await (
+        await applied
+      )?.saving;
+    } catch (error: unknown) {
+      await this.dialogs.showSaveError(error);
+    }
+  }
+
+  /**
+   * Whether the list the row's move button moves to already holds 99 copies
+   * of the printing. (Moving into the deck past its copy limit says so instead.)
+   */
+  moveBlocked(row: DeckRow): boolean {
+    const to: DeckList = row.list === 'cards' ? 'considering' : 'cards';
+    return this.countIn(to, row.key) >= MAX_DECK_CARD_COUNT;
+  }
+
+  /**
+   * Moves one copy of the row's card between the deck and its Considering
+   * pile. Runs in turn with stepper taps, from the deck as they left it.
+   */
+  async move(row: DeckRow): Promise<void> {
+    const applied = this.steps.then(() => this.applyMove(row));
     this.steps = applied.then(
       () => undefined,
       () => undefined
@@ -550,21 +635,29 @@ export class DeckPage {
     }
   }
 
-  /** Opens the Add cards modal: full screen on phones, a large dialog on desktop. */
-  async addCards(): Promise<void> {
+  /**
+   * Opens the Add cards modal, adding to the deck or its Considering pile:
+   * full screen on phones, a large dialog on desktop.
+   */
+  async addCards(list: DeckList = 'cards'): Promise<void> {
     const modal = await this.modals.create({
       component: AddCardsComponent,
-      componentProps: { deckIdProp: this.id() },
+      componentProps: { deckIdProp: this.id(), listProp: list },
       cssClass: 'add-cards-modal',
     });
     await modal.present();
   }
 
-  /** Opens a card in the card modal, paging through the deck's cards in their listed order. */
+  /**
+   * Opens a card in the card modal, paging through the cards of its list (the
+   * deck, or the pile) in their listed order.
+   */
   async openCard(row: DeckRow): Promise<void> {
-    const cards = this.sections().flatMap((section) =>
-      section.rows.flatMap((entry) => (entry.card ? [entry.card] : []))
-    );
+    const rows =
+      row.list === 'cards'
+        ? this.sections().flatMap((section) => section.rows)
+        : this.consideringRows();
+    const cards = rows.flatMap((entry) => (entry.card ? [entry.card] : []));
     const index = cards.findIndex((card) => catalogKey(card.region, card.id) === row.key);
     if (index < 0) {
       return;
@@ -619,6 +712,29 @@ export class DeckPage {
       this.readFailed.set(true);
       this.catalog.update((catalog) => ({ ...catalog, keys: new Set(keys) }));
     }
+  }
+
+  /** A slot's row, from the catalog read; null while it hasn't been read (just added). */
+  private rowOf(slot: DeckCard, list: DeckList): DeckRow | null {
+    const { keys, cards, sets } = this.catalog();
+    const key = deckCardKey(slot);
+    const card = cards.get(key) ?? null;
+    if (!card && !keys.has(key)) {
+      return null;
+    }
+    const set = card ? (sets.get(catalogKey(card.region, card.setId)) ?? null) : null;
+    const language = card
+      ? this.catalogLanguage.forSet(card.region, set?.languages ?? [])
+      : this.fallbackLanguage(slot.region);
+    return {
+      key,
+      list,
+      slot,
+      card,
+      language,
+      name: card ? (cardText(card, language)?.name ?? card.id) : slot.cardId,
+      line: card && set ? setLine(set, card) : slot.cardId,
+    };
   }
 
   /** The language a card not on this device is named in (its ID shows instead). */

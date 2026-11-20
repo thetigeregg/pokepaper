@@ -105,6 +105,17 @@ describe('validateOperation: deck', () => {
     );
   });
 
+  it('accepts a Considering pile, and rejects an invalid one', () => {
+    const considering = [{ region: 'intl', cardId: 'sv03-125', count: 1 }];
+    expect(validateOperation(deckOp({ payload: { ...deck, considering } }))).toMatchObject({
+      ok: true,
+      op: { payload: { considering } },
+    });
+    expect(
+      message(deckOp({ payload: { ...deck, considering: [...considering, ...considering] } }))
+    ).toBe('Invalid deck payload');
+  });
+
   it('rejects an entity ID with a colon, for deletes too', () => {
     expect(message(deckOp({ entityId: 'a:b', operation: 'delete', payload: null }))).toBe(
       'Invalid entityId "a:b" for deck'

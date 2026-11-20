@@ -44,6 +44,14 @@ export interface Deck {
    * Without one (or once it's no longer in the deck), the first Pokémon is.
    */
   cover?: DeckCover;
+  /**
+   * Cards being tried out (docs/decks.md → Considering), apart from the deck:
+   * not counted, checked against the format or compared with the
+   * collection's needs. At most `MAX_DECK_SLOTS`, each printing at most
+   * once, and left out when there are none. A printing may be both here and
+   * in `cards`.
+   */
+  considering?: DeckCard[];
 }
 
 /** A deck's chosen cover: one of its printings. */
@@ -115,33 +123,42 @@ export function isDeck(value: unknown): value is Deck {
   if (!isRecord(value)) {
     return false;
   }
-  const { id, name, format, cards, createdAt, updatedAt, cover } = value;
-  if (
-    (cover !== undefined && !isDeckCover(cover)) ||
-    !isDeckId(id) ||
-    !isDeckName(name) ||
-    !isTag(format) ||
-    !isTimestamp(createdAt) ||
-    !isTimestamp(updatedAt) ||
-    !Array.isArray(cards) ||
-    cards.length > MAX_DECK_SLOTS ||
-    !cards.every(isDeckCard)
-  ) {
-    return false;
-  }
-  return new Set(cards.map(deckCardKey)).size === cards.length;
+  const { id, name, format, cards, createdAt, updatedAt, cover, considering } = value;
+  return (
+    (cover === undefined || isDeckCover(cover)) &&
+    (considering === undefined || isDeckCardList(considering)) &&
+    isDeckId(id) &&
+    isDeckName(name) &&
+    isTag(format) &&
+    isTimestamp(createdAt) &&
+    isTimestamp(updatedAt) &&
+    isDeckCardList(cards)
+  );
+}
+
+/** At most `MAX_DECK_SLOTS` valid slots, each printing at most once. */
+function isDeckCardList(value: unknown): value is DeckCard[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= MAX_DECK_SLOTS &&
+    value.every(isDeckCard) &&
+    new Set(value.map(deckCardKey)).size === value.length
+  );
 }
 
 /** A copy of `value` carrying only deck fields (drops anything else a payload had). */
 export function deck(value: Deck): Deck {
+  const slots = (list: DeckCard[]) =>
+    list.map(({ region, cardId, count }) => ({ region, cardId, count }));
   return {
     id: value.id,
     name: value.name,
     format: value.format,
-    cards: value.cards.map(({ region, cardId, count }) => ({ region, cardId, count })),
+    cards: slots(value.cards),
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
     ...(value.cover ? { cover: { region: value.cover.region, cardId: value.cover.cardId } } : {}),
+    ...(value.considering?.length ? { considering: slots(value.considering) } : {}),
   };
 }
 

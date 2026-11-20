@@ -126,4 +126,59 @@ describe('ownedCoverage', () => {
     expect(owned.slots.get('intl:a-1')).toEqual({ owned: 1, fromOther: 1, missing: 0 });
     expect(owned.slots.get('intl:c-1')).toEqual({ owned: 1, fromOther: 0, missing: 0 });
   });
+
+  it('covers the Considering pile with what the deck leaves, apart from its counts', () => {
+    // 5 balls in all (1 + 4): the deck takes 3, leaving 2 for the pile's 3.
+    const owned = ownedCoverage(
+      {
+        ...deckOf([['sv01-196', 3]]),
+        considering: [
+          { region: 'intl', cardId: 'sv01-196', count: 1 },
+          { region: 'intl', cardId: 'sv04-091', count: 2 },
+          { region: 'intl', cardId: 'zz-001', count: 2 },
+        ],
+      },
+      cards,
+      (key) => (key === 'intl:sv01-196' ? 1 : key === 'intl:sv04-091' ? 4 : 0)
+    );
+
+    expect(owned.slots.get('intl:sv01-196')).toEqual({ owned: 3, fromOther: 2, missing: 0 });
+    expect(owned.missing).toBe(0);
+    // The deck used the one sv01-196 and two sv04-091: two sv04-091 are spare.
+    expect(owned.considering.get('intl:sv01-196')).toEqual({ owned: 0, fromOther: 0, missing: 1 });
+    expect(owned.considering.get('intl:sv04-091')).toEqual({ owned: 2, fromOther: 0, missing: 0 });
+    // Not on this device: left out, and not counted as unknown (only the deck's are).
+    expect(owned.considering.has('intl:zz-001')).toBe(false);
+    expect(owned.unknown).toBe(0);
+  });
+
+  it('counts a pile card’s own copies only if the deck didn’t take them', () => {
+    // The deck's sv01-196 takes the only sv04-091 copy (another printing), so
+    // the pile's sv04-091 is covered by the me01-131 copy instead.
+    const owned = ownedCoverage(
+      {
+        ...deckOf([['sv01-196', 1]]),
+        considering: [{ region: 'intl', cardId: 'sv04-091', count: 1 }],
+      },
+      cards,
+      (key) => (key === 'intl:sv04-091' || key === 'intl:me01-131' ? 1 : 0)
+    );
+
+    expect(owned.slots.get('intl:sv01-196')).toEqual({ owned: 1, fromOther: 1, missing: 0 });
+    expect(owned.considering.get('intl:sv04-091')).toEqual({ owned: 1, fromOther: 1, missing: 0 });
+  });
+
+  it('never lets the pile take copies the deck needs', () => {
+    const owned = ownedCoverage(
+      {
+        ...deckOf([['sv03-125', 2]]),
+        considering: [{ region: 'intl', cardId: 'sv03-125', count: 1 }],
+      },
+      cards,
+      () => 2
+    );
+
+    expect(owned.slots.get('intl:sv03-125')).toEqual({ owned: 2, fromOther: 0, missing: 0 });
+    expect(owned.considering.get('intl:sv03-125')).toEqual({ owned: 0, fromOther: 0, missing: 1 });
+  });
 });

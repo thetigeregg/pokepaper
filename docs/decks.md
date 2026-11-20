@@ -2,7 +2,7 @@
 
 PokePaper lets you build decks from the catalog: named lists of card printings, each with a copy count, checked against a format.
 
-Status: storage, sync and the Decks tab screens (deck list, deck page, Add cards) are implemented. Format checks and "owned vs. needed" are next.
+Status: storage, sync, the Decks tab screens (deck list, deck page, Add cards), format checks, owned vs. needed, cover cards and the Considering pile are implemented.
 
 ## Design
 
@@ -78,8 +78,17 @@ The deck page compares each card with your collection ([`collection.md`](collect
 Layout and components: [`ui.md`](ui.md) → Decks.
 
 - **Decks tab:** every deck, most recently changed first, led by its cover's scan, with its format and card total, how many copies you're missing, and a warning with the number of rules it breaks. The add button names a new deck, which starts as Standard and opens.
-- **Deck page:** the deck's format (a choice row) and card total, then the format's rules (what the deck breaks, or that it follows them), then its cards by category (Pokémon, Trainer, Energy) in the order they were added, each with a − count + stepper, what you own of it, and notes for any rule it breaks. A toggle shows only the cards you're missing, as a shopping list. Rename and Delete are in the header.
-- **Add cards:** card search with its own query and filters (`CatalogSearchService` provided by the modal, see [`catalog.md`](catalog.md) → Search). Tapping a card adds a copy, and its badge (red, bottom right, like the owned badge it replaces there) shows the copies in the deck. Once the deck has 4 cards with that name, a tap says so instead.
+- **Deck page:** the deck's format (a choice row) and card total, then the format's rules (what the deck breaks, or that it follows them), then its cards by category (Pokémon, Trainer, Energy) in the order they were added, each with a − count + stepper, what you own of it, and notes for any rule it breaks. Then its Considering pile (see Considering). A toggle shows only the cards you're missing, as a shopping list. Rename and Delete are in the header.
+- **Add cards:** card search with its own query and filters (`CatalogSearchService` provided by the modal, see [`catalog.md`](catalog.md) → Search). Tapping a card adds a copy, and its badge (red, bottom right, like the owned badge it replaces there) shows the copies in the deck. Once the deck has 4 cards with that name, a tap says so instead. Opened from the Considering section, it's titled "Add to Considering" and adds to the pile instead, with no copy limit.
+
+## Considering
+
+Each deck has a Considering pile: cards you're trying out, kept apart from the deck so you can swap cards in and out without losing track of them (like a "maybeboard"). The Pokémon TCG has no sideboard in tournament play, so the pile is only a deck-building aid.
+
+- **Apart from the deck:** its cards don't count toward the 60, aren't checked against the format, and don't add to what you're missing (in the deck page or the Decks list). A printing can be both in the deck and in the pile ("3 Nest Ball, maybe a 4th").
+- **Moving copies:** each deck row has a button moving one copy to the pile, and each pile row one moving a copy into the deck (`DeckService.moveCopy`, one save). A copy moves into the deck only within its copy limit (4 with the name), saying so like +. In the pile, a printing has at most 99 copies, as in the deck.
+- **Owned:** a pile card is covered by spare copies, ones the deck doesn't use ("Own 1 of 2 spare"), worked out by `ownedCoverage` after covering the deck.
+- **Synced with the deck** (`considering`, optional, left out when empty); like `cover`, an older build that saves the deck drops it.
 
 ## Cover card
 
@@ -89,15 +98,16 @@ Each deck is shown in the Decks list with a cover: the printing chosen with the 
 
 A **deck** syncs whole:
 
-| Field       | Example                       | Notes                                                                          |
-| ----------- | ----------------------------- | ------------------------------------------------------------------------------ |
-| `id`        | `6f1c2c1e-…`                  | Client-generated UUID, also the sync entity ID                                 |
-| `name`      | `Charizard ex`                | 1 to 100 characters, not blank (trimmed by the app)                            |
-| `format`    | `standard`                    | `standard`, `expanded` or `unlimited`. Unknown values sync, shown as Unlimited |
-| `cards`     | `[{ region, cardId, count }]` | Up to 200 slots, in the order they were added; each printing at most once      |
-| `createdAt` | `2026-11-19T10:00:00.000Z`    | UTC, as `toISOString()` writes it                                              |
-| `updatedAt` | `2026-11-19T10:05:00.000Z`    | Moves forward with every change (the deck list sorts by it)                    |
-| `cover`     | `{ region, cardId }`          | Optional: the printing shown for the deck in the Decks list (see Cover card)   |
+| Field         | Example                       | Notes                                                                          |
+| ------------- | ----------------------------- | ------------------------------------------------------------------------------ |
+| `id`          | `6f1c2c1e-…`                  | Client-generated UUID, also the sync entity ID                                 |
+| `name`        | `Charizard ex`                | 1 to 100 characters, not blank (trimmed by the app)                            |
+| `format`      | `standard`                    | `standard`, `expanded` or `unlimited`. Unknown values sync, shown as Unlimited |
+| `cards`       | `[{ region, cardId, count }]` | Up to 200 slots, in the order they were added; each printing at most once      |
+| `createdAt`   | `2026-11-19T10:00:00.000Z`    | UTC, as `toISOString()` writes it                                              |
+| `updatedAt`   | `2026-11-19T10:05:00.000Z`    | Moves forward with every change (the deck list sorts by it)                    |
+| `cover`       | `{ region, cardId }`          | Optional: the printing shown for the deck in the Decks list (see Cover card)   |
+| `considering` | `[{ region, cardId, count }]` | Optional: the Considering pile, bounded like `cards`; left out when empty      |
 
 These bounds only keep synced data sane; they aren't game rules. A slot's `count` is 1 to 99, well above any format's copy limit, since rule breaks will only be warnings. A count of 0 removes the slot.
 

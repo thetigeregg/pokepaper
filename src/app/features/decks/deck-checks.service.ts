@@ -1,6 +1,6 @@
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { deckCardKey, type CatalogCard, type CatalogRegion } from '@pokepaper/shared';
+import { deckCardKey, type CatalogCard, type CatalogRegion, type Deck } from '@pokepaper/shared';
 import { debounceTime } from 'rxjs';
 import { catalogKey, type StorageEngine } from '../../core/data/storage-engine';
 import { StorageEngineFactory } from '../../core/data/storage-engine.factory';
@@ -74,7 +74,7 @@ export class DeckChecksService {
 
   constructor() {
     effect(() => {
-      const keys = this.decks.decks().flatMap((deck) => deck.cards.map(deckCardKey));
+      const keys = this.decks.decks().flatMap(allKeys);
       untracked(() => void this.ensure(keys));
     });
     inject(CatalogSyncService)
@@ -98,7 +98,7 @@ export class DeckChecksService {
     const previous = this.previous();
     const owned = new Map<string, DeckOwned>();
     for (const deck of this.decks.decks()) {
-      const keys = deck.cards.map(deckCardKey);
+      const keys = allKeys(deck); // The pile's too: it's covered from what the deck leaves.
       if (keys.every((key) => looked.has(key))) {
         owned.set(deck.id, ownedCoverage(deck, cards, copies));
       } else if (previous && keys.every((key) => previous.looked.has(key))) {
@@ -315,7 +315,7 @@ export class DeckChecksService {
     }
     this.looked.set(new Set());
     this.cards.set(new Map());
-    const refresh = this.ensure(this.decks.decks().flatMap((deck) => deck.cards.map(deckCardKey)));
+    const refresh = this.ensure(this.decks.decks().flatMap(allKeys));
     const generation = this.generation;
     void refresh.then(() => {
       if (generation === this.generation) {
@@ -327,4 +327,9 @@ export class DeckChecksService {
   private get engine(): StorageEngine {
     return this.storageEngineFactory.getEngine();
   }
+}
+
+/** The printings in a deck and its Considering pile. */
+function allKeys(deck: Deck): string[] {
+  return [...deck.cards, ...(deck.considering ?? [])].map(deckCardKey);
 }

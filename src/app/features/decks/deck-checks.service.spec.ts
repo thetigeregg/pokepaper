@@ -290,6 +290,31 @@ describe('DeckChecksService', () => {
     expect(service.ownedOf('a')?.missing).toBe(1);
   });
 
+  it('looks up the Considering pile, covering it with spare copies but never checking it', async () => {
+    list.set([
+      {
+        ...deckOf('a', [[pikachu, 1]]),
+        considering: [
+          { region: 'intl', cardId: oldBall.id, count: 4 },
+          { region: 'intl', cardId: pocketCandy.id, count: 1 },
+        ],
+      },
+    ]);
+    owned.set({ 'intl:me01-131': 3 });
+    const service = create();
+
+    await vi.waitFor(() => {
+      expect(service.ownedOf('a')?.considering.get('intl:sv01-196')).toEqual({
+        owned: 3,
+        fromOther: 3,
+        missing: 1,
+      });
+    });
+    // The pile's TCG Pocket card and its 4 balls aren't the deck's: only its size is an issue.
+    expect(service.ownedOf('a')?.missing).toBe(1);
+    expect(issueIds(service, 'a')).toEqual(['size']);
+  });
+
   it('knows nothing owned until the collection has loaded', async () => {
     collection.loaded.set(false);
     list.set([deckOf('a', [[pikachu, 1]])]);
@@ -302,6 +327,7 @@ describe('DeckChecksService', () => {
     collection.loaded.set(true);
     expect(service.ownedOf('a')).toEqual({
       slots: new Map([['intl:sv01-1', { owned: 0, fromOther: 0, missing: 1 }]]),
+      considering: new Map(),
       missing: 1,
       unknown: 0,
     });

@@ -221,6 +221,102 @@ describe('DeckService', () => {
     expect(repository.saveDeck).not.toHaveBeenCalled();
   });
 
+  it('keeps a Considering pile apart from the deck, leaving it out once empty', async () => {
+    seed(makeDeck());
+    const service = await create();
+
+    await service.setConsideringCount('deck-1', charizard, 1);
+    await service.setConsideringCount('deck-1', pidgeot, 2);
+    expect(service.deck('deck-1')).toMatchObject({
+      cards: [{ ...charizard, count: 3 }],
+      considering: [
+        { ...charizard, count: 1 },
+        { ...pidgeot, count: 2 },
+      ],
+    });
+
+    await service.setConsideringCount('deck-1', charizard, 0);
+    await service.setConsideringCount('deck-1', pidgeot, 0);
+    expect(stored.get('deck-1')).not.toHaveProperty('considering');
+    expect(stored.get('deck-1')?.cards).toEqual([{ ...charizard, count: 3 }]);
+  });
+
+  it('rejects an invalid Considering count without showing it', async () => {
+    seed(makeDeck());
+    const service = await create();
+
+    await expect(service.setConsideringCount('deck-1', charizard, 100)).rejects.toThrow(RangeError);
+    await expect(
+      service.setConsideringCount('deck-1', { region: 'a:b', cardId: 'x' }, 1)
+    ).rejects.toThrow(TypeError);
+    expect(repository.saveDeck).not.toHaveBeenCalled();
+  });
+
+  it('moves one copy at a time between the deck and its pile, in one save each', async () => {
+    seed(makeDeck({ cards: [{ ...charizard, count: 2 }] }));
+    const service = await create();
+
+    await service.moveCopy('deck-1', charizard, 'considering');
+    expect(service.deck('deck-1')).toMatchObject({
+      cards: [{ ...charizard, count: 1 }],
+      considering: [{ ...charizard, count: 1 }],
+    });
+
+    await service.moveCopy('deck-1', charizard, 'considering');
+    expect(service.deck('deck-1')).toMatchObject({
+      cards: [],
+      considering: [{ ...charizard, count: 2 }],
+    });
+
+    await service.moveCopy('deck-1', charizard, 'cards');
+    await service.moveCopy('deck-1', charizard, 'cards');
+    expect(stored.get('deck-1')?.cards).toEqual([{ ...charizard, count: 2 }]);
+    expect(stored.get('deck-1')).not.toHaveProperty('considering');
+    expect(repository.saveDeck).toHaveBeenCalledTimes(4);
+  });
+
+  it('rejects moving a copy the list doesn’t have, or past the count limit', async () => {
+    seed(
+      makeDeck({
+        cards: [{ ...charizard, count: 99 }],
+        considering: [{ ...charizard, count: 1 }],
+      })
+    );
+    const service = await create();
+
+    await expect(service.moveCopy('deck-1', pidgeot, 'cards')).rejects.toThrow(RangeError);
+    await expect(service.moveCopy('deck-1', charizard, 'cards')).rejects.toThrow(RangeError);
+    expect(repository.saveDeck).not.toHaveBeenCalled();
+  });
+
+  it('rejects moving a new printing into a full deck', async () => {
+    const cards = Array.from({ length: MAX_DECK_SLOTS }, (_, i) => ({
+      region: 'intl',
+      cardId: `c-${String(i)}`,
+      count: 1,
+    }));
+    seed(makeDeck({ cards, considering: [{ ...pidgeot, count: 1 }] }));
+    const service = await create();
+
+    await expect(service.moveCopy('deck-1', pidgeot, 'cards')).rejects.toThrow(DeckFullError);
+    expect(service.deck('deck-1')?.considering).toEqual([{ ...pidgeot, count: 1 }]);
+  });
+
+  it('names the Considering pile when it’s the one that’s full', async () => {
+    const considering = Array.from({ length: MAX_DECK_SLOTS }, (_, i) => ({
+      region: 'intl',
+      cardId: `c-${String(i)}`,
+      count: 1,
+    }));
+    seed(makeDeck({ considering }));
+    const service = await create();
+
+    const message = `The Considering pile holds at most ${String(MAX_DECK_SLOTS)} different printings`;
+    await expect(service.setConsideringCount('deck-1', pidgeot, 1)).rejects.toThrow(message);
+    await expect(service.moveCopy('deck-1', charizard, 'considering')).rejects.toThrow(message);
+    expect(service.deck('deck-1')?.cards).toEqual([{ ...charizard, count: 3 }]);
+  });
+
   it('rejects changes to a deck it doesn’t know', async () => {
     const service = await create();
 
