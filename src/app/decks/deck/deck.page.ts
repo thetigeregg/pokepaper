@@ -52,6 +52,7 @@ import {
   arrowDownCircleOutline,
   arrowUpCircleOutline,
   checkmarkCircleOutline,
+  copyOutline,
   createOutline,
   imageOutline,
   removeCircleOutline,
@@ -362,6 +363,13 @@ export class DeckPage {
       run: () => void this.chooseCover(),
     },
     {
+      id: 'duplicate',
+      label: 'Duplicate deck',
+      icon: 'copy-outline',
+      disabled: !this.deck(),
+      run: () => void this.duplicate(),
+    },
+    {
       id: 'delete',
       label: 'Delete deck',
       icon: 'trash-outline',
@@ -444,6 +452,7 @@ export class DeckPage {
       trashOutline,
       warningOutline,
       checkmarkCircleOutline,
+      copyOutline,
     });
     effect(() => {
       this.cardKeysJoined();
@@ -615,6 +624,27 @@ export class DeckPage {
     }
     try {
       await this.decks.update(deck.id, { name });
+    } catch {
+      await this.dialogs.showSaveError();
+    }
+  }
+
+  /**
+   * Names a copy of the deck, saves it and opens it in this page's place,
+   * so Back goes to the Decks list.
+   */
+  async duplicate(): Promise<void> {
+    const deck = this.deck();
+    if (!deck) {
+      return;
+    }
+    const name = await this.dialogs.askDuplicateName(deck);
+    if (name === null) {
+      return;
+    }
+    try {
+      const copy = await this.decks.duplicate(deck.id, name);
+      await this.nav.navigateForward(['/tabs/decks/deck', copy.id], { replaceUrl: true });
     } catch {
       await this.dialogs.showSaveError();
     }

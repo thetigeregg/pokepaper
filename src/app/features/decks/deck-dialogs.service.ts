@@ -29,6 +29,14 @@ export class DeckDialogsService {
     return name === deck.name ? null : name;
   }
 
+  /**
+   * Asks for the name of a copy of `deck`, starting from its name: the
+   * trimmed name, or null if canceled.
+   */
+  askDuplicateName(deck: Deck): Promise<string | null> {
+    return this.askName('Duplicate deck', 'Duplicate', deck.name);
+  }
+
   /** Whether the user confirms deleting `deck`. */
   async confirmDelete(deck: Deck): Promise<boolean> {
     const alert = await this.alerts.create({
@@ -105,8 +113,11 @@ export class DeckDialogsService {
       ],
     });
     await alert.present();
-    // Ready to type (and the phone keyboard up) without tapping the field first.
-    alert.querySelector('input')?.focus();
+    // Ready to type (and the phone keyboard up) without tapping the field
+    // first, after any name already there.
+    const input = alert.querySelector('input');
+    input?.focus();
+    input?.setSelectionRange(value.length, value.length);
     const { role, data } = await alert.onDidDismiss<{ values?: { name?: string } }>();
     const name = data?.values?.name?.trim() ?? '';
     return role === 'confirm' && isDeckName(name) ? name : null;

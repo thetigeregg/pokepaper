@@ -1,6 +1,7 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
+  deck,
   deckCardKey,
   isDeck,
   isDeckCard,
@@ -116,6 +117,24 @@ export class DeckService {
     };
     await this.save(created);
     return created;
+  }
+
+  /**
+   * Copies a deck under a new name: its cards, Considering pile, format and
+   * cover, as a new deck that's then edited on its own. Shown at once, then
+   * saved; resolves with the copy once saved.
+   */
+  async duplicate(id: string, name: string): Promise<Deck> {
+    const now = new Date().toISOString();
+    const copy: Deck = {
+      ...deck(this.require(id)),
+      id: crypto.randomUUID(),
+      name: name.trim(),
+      createdAt: now,
+      updatedAt: now,
+    };
+    await this.save(copy);
+    return copy;
   }
 
   /** Renames a deck or changes its format. */

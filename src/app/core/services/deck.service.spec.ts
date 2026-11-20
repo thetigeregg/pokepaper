@@ -127,6 +127,46 @@ describe('DeckService', () => {
     expect(repository.saveDeck).not.toHaveBeenCalled();
   });
 
+  it('duplicates a deck under a new name, as a new deck edited on its own', async () => {
+    const original = makeDeck({
+      format: 'expanded',
+      cards: [{ region: 'intl', cardId: 'swsh12-139', count: 3 }],
+      considering: [{ region: 'intl', cardId: 'swsh10-63', count: 2 }],
+      cover: { region: 'intl', cardId: 'swsh12-139' },
+    });
+    seed(original);
+    const service = await create();
+    vi.useFakeTimers({ now: new Date('2026-02-01T12:00:00.000Z'), toFake: ['Date'] });
+
+    const copy = await service.duplicate('deck-1', ' Lugia – Spiritomb ');
+
+    expect(copy).toEqual({
+      ...original,
+      id: expect.any(String) as string,
+      name: 'Lugia – Spiritomb',
+      createdAt: '2026-02-01T12:00:00.000Z',
+      updatedAt: '2026-02-01T12:00:00.000Z',
+    });
+    expect(copy.id).not.toBe('deck-1');
+    expect(service.decks().map((deck) => deck.id)).toEqual([copy.id, 'deck-1']);
+    expect(repository.saveDeck).toHaveBeenCalledTimes(1);
+    expect(repository.saveDeck).toHaveBeenCalledWith(copy);
+
+    // Editing the copy leaves the original as it was.
+    await service.setCardCount(copy.id, { region: 'intl', cardId: 'swsh12-139' }, 4);
+    expect(service.deck('deck-1')).toEqual(original);
+  });
+
+  it('keeps the original’s name when asked, and rejects a blank one', async () => {
+    seed(makeDeck({ name: 'Zard' }));
+    const service = await create();
+
+    expect((await service.duplicate('deck-1', 'Zard')).name).toBe('Zard');
+    await expect(service.duplicate('deck-1', '  ')).rejects.toThrow(TypeError);
+    await expect(service.duplicate('missing', 'Zard')).rejects.toThrow(RangeError);
+    expect(service.decks()).toHaveLength(2);
+  });
+
   it('chooses a cover, and goes back to the default', async () => {
     seed(makeDeck());
     const service = await create();

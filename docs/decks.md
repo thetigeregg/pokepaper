@@ -2,7 +2,7 @@
 
 PokePaper lets you build decks from the catalog: named lists of card printings, each with a copy count, checked against a format.
 
-Status: storage, sync, the Decks tab screens (deck list, deck page, Add cards), format checks, owned vs. needed, cover cards and the Considering pile are implemented.
+Status: storage, sync, the Decks tab screens (deck list, deck page, Add cards), format checks, owned vs. needed, cover cards, the Considering pile and Duplicate deck are implemented.
 
 ## Design
 
@@ -78,7 +78,7 @@ The deck page compares each card with your collection ([`collection.md`](collect
 Layout and components: [`ui.md`](ui.md) → Decks.
 
 - **Decks tab:** every deck, most recently changed first, led by its cover's scan, with its format and card total, how many copies you're missing, and a warning with the number of rules it breaks. The add button names a new deck, which starts as Standard and opens.
-- **Deck page:** the deck's format (a choice row) and card total, then the format's rules (what the deck breaks, or that it follows them), then its cards by category (Pokémon, Trainer, Energy) in the order they were added, each with a − count + stepper, what you own of it, and notes for any rule it breaks. Then its Considering pile (see Considering). A toggle shows only the cards you're missing, as a shopping list. Rename and Delete are in the header.
+- **Deck page:** the deck's format (a choice row) and card total, then the format's rules (what the deck breaks, or that it follows them), then its cards by category (Pokémon, Trainer, Energy) in the order they were added, each with a − count + stepper, what you own of it, and notes for any rule it breaks. Then its Considering pile (see Considering). A toggle shows only the cards you're missing, as a shopping list. Rename, Choose cover, Duplicate and Delete are in the header.
 - **Add cards:** card search with its own query and filters (`CatalogSearchService` provided by the modal, see [`catalog.md`](catalog.md) → Search). Tapping a card adds a copy, and its badge (red, bottom right, like the owned badge it replaces there) shows the copies in the deck. Once the deck has 4 cards with that name, a tap says so instead. Opened from the Considering section, it's titled "Add to Considering" and adds to the pile instead, with no copy limit.
 
 ## Considering
@@ -93,6 +93,10 @@ Each deck has a Considering pile: cards you're trying out, kept apart from the d
 ## Cover card
 
 Each deck is shown in the Decks list with a cover: the printing chosen with the deck page's "Choose cover" (`DeckService.setCover`), or by default its first Pokémon in deck order. A chosen cover that's no longer in the deck falls back to the default, and so does "First Pokémon" in the picker; a deck without a Pokémon has no cover. `DeckChecksService.coverOf` works it out from the cards it has looked up. The chosen cover syncs with the deck (`cover`, optional); an older build that saves the deck drops it, since a deck syncs whole.
+
+## Duplicate deck
+
+To try a variant without losing the original, the deck page's "Duplicate deck" asks for the copy's name, starting from the original's, and opens the copy. `DeckService.duplicate` saves it as a new deck: the same cards (printings, counts and order), Considering pile, format and cover, with a new ID and new created and updated times. From then on the two are separate decks, and nothing links them. The copy may keep the original's name, since deck names needn't be unique.
 
 ## Data model
 

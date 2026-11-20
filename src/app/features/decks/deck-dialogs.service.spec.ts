@@ -23,7 +23,7 @@ const deck: Deck = {
 
 describe('DeckDialogsService', () => {
   let dismissal: { role?: string; data?: unknown };
-  const input = { focus: vi.fn() };
+  const input = { focus: vi.fn(), setSelectionRange: vi.fn() };
   const alert = {
     present: vi.fn(() => Promise.resolve()),
     onDidDismiss: vi.fn(() => Promise.resolve(dismissal)),
@@ -60,6 +60,7 @@ describe('DeckDialogsService', () => {
       expect.objectContaining({ name: 'name', value: '', placeholder: 'Deck name' }),
     ]);
     expect(input.focus).toHaveBeenCalled();
+    expect(input.setSelectionRange).toHaveBeenCalledWith(0, 0);
   });
 
   it('keeps the alert open on a blank name', async () => {
@@ -92,6 +93,23 @@ describe('DeckDialogsService', () => {
 
     dismissal = { role: 'confirm', data: { values: { name: ' Charizard ex ' } } };
     expect(await dialogs.askRename(deck)).toBeNull();
+  });
+
+  it('asks for a copy’s name starting from the original’s, cursor at the end', async () => {
+    const dialogs = create();
+    dismissal = { role: 'confirm', data: { values: { name: ' Charizard ex – Pidgeot ' } } };
+    expect(await dialogs.askDuplicateName(deck)).toBe('Charizard ex – Pidgeot');
+    expect(options()).toMatchObject({ header: 'Duplicate deck' });
+    expect(options()['inputs']).toEqual([expect.objectContaining({ value: 'Charizard ex' })]);
+    expect(buttons().find((button) => button.role === 'confirm')?.text).toBe('Duplicate');
+    expect(input.setSelectionRange).toHaveBeenCalledWith(12, 12);
+
+    // The same name is a fine name for a copy.
+    dismissal = { role: 'confirm', data: { values: { name: 'Charizard ex' } } };
+    expect(await dialogs.askDuplicateName(deck)).toBe('Charizard ex');
+
+    dismissal = { role: 'cancel' };
+    expect(await dialogs.askDuplicateName(deck)).toBeNull();
   });
 
   it('confirms a delete with a red Delete button', async () => {
