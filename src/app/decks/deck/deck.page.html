@@ -216,6 +216,7 @@
     <div slot="end" class="stepper">
       <ion-button
         fill="clear"
+        [disabled]="moveBlocked(row)"
         (click)="move(row)"
         [attr.aria-label]="
           row.list === 'cards'

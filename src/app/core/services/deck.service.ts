@@ -38,12 +38,16 @@ export class DeckChangeDroppedError extends Error {
   }
 }
 
-/** Rejects adding a printing to a deck that already has `MAX_DECK_SLOTS` of them. */
+/**
+ * Rejects adding a printing to a deck (or its Considering pile) that already
+ * has `MAX_DECK_SLOTS` of them.
+ */
 export class DeckFullError extends RangeError {
   override readonly name = 'DeckFullError';
 
-  constructor() {
-    super(`A deck holds at most ${String(MAX_DECK_SLOTS)} different printings`);
+  constructor(list: DeckList = 'cards') {
+    const holder = list === 'considering' ? 'The Considering pile' : 'A deck';
+    super(`${holder} holds at most ${String(MAX_DECK_SLOTS)} different printings`);
   }
 }
 
@@ -178,8 +182,8 @@ export class DeckService {
     }
     await this.save(
       this.withLists(current, {
-        [from]: withCount(source, ref, have - 1),
-        [to]: withCount(target, ref, want),
+        [from]: withCount(source, ref, have - 1, from),
+        [to]: withCount(target, ref, want, to),
       })
     );
   }
@@ -200,7 +204,7 @@ export class DeckService {
     if ((slots.find((other) => deckCardKey(other) === key)?.count ?? 0) === count) {
       return;
     }
-    await this.save(this.withLists(current, { [list]: withCount(slots, ref, count) }));
+    await this.save(this.withLists(current, { [list]: withCount(slots, ref, count, list) }));
   }
 
   /** Deletes a deck: hidden at once, then deleted. */
@@ -323,10 +327,15 @@ function cardRef(card: DeckCardRef): DeckCardRef {
 }
 
 /**
- * `slots` with `count` copies of `card` (0 removes it); a new printing goes
- * at the end. Rejects adding one past `MAX_DECK_SLOTS`.
+ * `slots` (one of the deck's lists) with `count` copies of `card` (0 removes
+ * it); a new printing goes at the end. Rejects adding one past `MAX_DECK_SLOTS`.
  */
-function withCount(slots: readonly DeckCard[], card: DeckCardRef, count: number): DeckCard[] {
+function withCount(
+  slots: readonly DeckCard[],
+  card: DeckCardRef,
+  count: number,
+  list: DeckList
+): DeckCard[] {
   const key = deckCardKey(card);
   const slot: DeckCard = { region: card.region, cardId: card.cardId, count };
   if (count === 0) {
@@ -336,7 +345,7 @@ function withCount(slots: readonly DeckCard[], card: DeckCardRef, count: number)
     return slots.map((other) => (deckCardKey(other) === key ? slot : other));
   }
   if (slots.length >= MAX_DECK_SLOTS) {
-    throw new DeckFullError();
+    throw new DeckFullError(list);
   }
   return [...slots, slot];
 }

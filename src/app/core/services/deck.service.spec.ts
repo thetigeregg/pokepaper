@@ -302,6 +302,21 @@ describe('DeckService', () => {
     expect(service.deck('deck-1')?.considering).toEqual([{ ...pidgeot, count: 1 }]);
   });
 
+  it('names the Considering pile when it’s the one that’s full', async () => {
+    const considering = Array.from({ length: MAX_DECK_SLOTS }, (_, i) => ({
+      region: 'intl',
+      cardId: `c-${String(i)}`,
+      count: 1,
+    }));
+    seed(makeDeck({ considering }));
+    const service = await create();
+
+    const message = `The Considering pile holds at most ${String(MAX_DECK_SLOTS)} different printings`;
+    await expect(service.setConsideringCount('deck-1', pidgeot, 1)).rejects.toThrow(message);
+    await expect(service.moveCopy('deck-1', charizard, 'considering')).rejects.toThrow(message);
+    expect(service.deck('deck-1')?.cards).toEqual([{ ...charizard, count: 3 }]);
+  });
+
   it('rejects changes to a deck it doesn’t know', async () => {
     const service = await create();
 

@@ -106,24 +106,25 @@ export function ownedCoverage(
   const considering = new Map<string, SlotOwned>();
   let missing = 0;
   for (const group of groups.values()) {
-    let left = [...group.printings].reduce((total, printing) => total + copies(printing), 0);
-    /** Copies of each printing taken by the slot of that printing. */
-    const usedOwn = new Map<string, number>();
+    /** Copies of each printing still free to cover a slot. */
+    const free = new Map([...group.printings].map((printing) => [printing, copies(printing)]));
+    const take = (printing: string, wanted: number): number => {
+      const taken = Math.min(wanted, free.get(printing) ?? 0);
+      free.set(printing, (free.get(printing) ?? 0) - taken);
+      return taken;
+    };
     for (const tier of [0, 1] as const) {
       const tierSlots = group.slots.filter((slot) => slot.tier === tier);
-      const own = new Map<string, number>();
-      for (const { key, count } of tierSlots) {
-        // Never more than the pool holds: the deck may have taken this
-        // printing's copies for another of its cards.
-        const taken = Math.min(count, copies(key) - (usedOwn.get(key) ?? 0), left);
-        own.set(key, taken);
-        usedOwn.set(key, (usedOwn.get(key) ?? 0) + taken);
-        left -= taken;
-      }
+      const own = new Map(tierSlots.map(({ key, count }) => [key, take(key, count)]));
       for (const { key, count } of tierSlots) {
         const exact = own.get(key) ?? 0;
-        const fromOther = Math.min(count - exact, Math.max(left, 0));
-        left -= fromOther;
+        let fromOther = 0;
+        for (const printing of group.printings) {
+          if (exact + fromOther === count) {
+            break;
+          }
+          fromOther += take(printing, count - exact - fromOther);
+        }
         const owned = exact + fromOther;
         const result = { owned, fromOther, missing: count - owned };
         if (tier === 0) {

@@ -152,6 +152,22 @@ describe('ownedCoverage', () => {
     expect(owned.unknown).toBe(0);
   });
 
+  it('counts a pile card’s own copies only if the deck didn’t take them', () => {
+    // The deck's sv01-196 takes the only sv04-091 copy (another printing), so
+    // the pile's sv04-091 is covered by the me01-131 copy instead.
+    const owned = ownedCoverage(
+      {
+        ...deckOf([['sv01-196', 1]]),
+        considering: [{ region: 'intl', cardId: 'sv04-091', count: 1 }],
+      },
+      cards,
+      (key) => (key === 'intl:sv04-091' || key === 'intl:me01-131' ? 1 : 0)
+    );
+
+    expect(owned.slots.get('intl:sv01-196')).toEqual({ owned: 1, fromOther: 1, missing: 0 });
+    expect(owned.considering.get('intl:sv04-091')).toEqual({ owned: 1, fromOther: 1, missing: 0 });
+  });
+
   it('never lets the pile take copies the deck needs', () => {
     const owned = ownedCoverage(
       {

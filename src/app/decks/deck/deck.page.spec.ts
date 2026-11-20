@@ -661,6 +661,25 @@ describe('DeckPage', () => {
       expect(decks.moveCopy).toHaveBeenCalledTimes(1);
     });
 
+    it('disables a move into a list already holding 99 of the printing', async () => {
+      current.set(
+        makeDeck({
+          cards: [{ region: 'intl', cardId: 'sv01-258', count: 1 }],
+          considering: [
+            { region: 'intl', cardId: 'sv01-258', count: 99 },
+            { region: 'intl', cardId: 'sv01-166', count: 1 },
+          ],
+        })
+      );
+      await create();
+
+      const move = (row: Element | null) =>
+        row?.querySelector('[data-testid="move-copy"]') as HTMLIonButtonElement;
+      expect(move(query('[data-testid="deck-card-intl:sv01-258"]')).disabled).toBe(true);
+      expect(move(pileRow('intl:sv01-258')).disabled).toBe(false);
+      expect(move(pileRow('intl:sv01-166')).disabled).toBe(false);
+    });
+
     it('labels the move buttons by direction', async () => {
       current.set(withPile());
       await create();

@@ -529,6 +529,15 @@ export class DeckPage {
   }
 
   /**
+   * Whether the list the row's move button moves to already holds 99 copies
+   * of the printing. (Moving into the deck past its copy limit says so instead.)
+   */
+  moveBlocked(row: DeckRow): boolean {
+    const to: DeckList = row.list === 'cards' ? 'considering' : 'cards';
+    return this.countIn(to, row.key) >= MAX_DECK_CARD_COUNT;
+  }
+
+  /**
    * Moves one copy of the row's card between the deck and its Considering
    * pile. Runs in turn with stepper taps, from the deck as they left it.
    */
