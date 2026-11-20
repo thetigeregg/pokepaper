@@ -44,9 +44,11 @@ interface ChecklistRow {
         background: none;
         cursor: pointer;
       }
-      /* The rarity (symbol and name), set apart from the name and the toggles. */
+      /* The rarity (symbol and name) on its own line under the name, set apart
+         from it and the toggles; the symbol at 70% of its usual size. */
       .rarity {
         margin: 6px 0 0;
+        --rarity-icon-height: calc(1.25em * 0.7);
       }
       /* One toggle per variant, side by side under the name and rarity. */
       .variants {
@@ -98,13 +100,15 @@ interface ChecklistRow {
               <div class="media-row-text">
                 {{ row.card.localId }} · {{ row.name }}
                 @if (row.card.rarity) {
-                  <p class="rarity icon-text" data-testid="checklist-rarity">
-                    <app-rarity-icon
-                      [rarity]="row.card.rarity"
-                      [region]="set().region"
-                      [seriesId]="set().serieId"
-                    />
-                    {{ row.card.rarity }}
+                  <p class="rarity" data-testid="checklist-rarity">
+                    <span class="icon-text">
+                      <app-rarity-icon
+                        [rarity]="row.card.rarity"
+                        [region]="set().region"
+                        [seriesId]="set().serieId"
+                      />
+                      {{ row.card.rarity }}
+                    </span>
                   </p>
                 }
                 <div class="variants">
