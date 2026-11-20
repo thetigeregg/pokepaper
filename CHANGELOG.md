@@ -157,3 +157,7 @@
 ## v0.24.0 - 2026-11-20
 
 - c47fc3c feat(decks): add a Considering pile to each deck (#47)
+
+## v0.25.0 - 2026-11-20
+
+- 1e0304e feat(decks): duplicate a deck under a name you choose (#48)
