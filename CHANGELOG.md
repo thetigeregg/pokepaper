@@ -153,3 +153,7 @@
 ## v0.23.0 - 2026-11-19
 
 - 042b199 feat(decks): add deck covers and borrowed basic Energy scans (#46)
+
+## v0.24.0 - 2026-11-20
+
+- c47fc3c feat(decks): add a Considering pile to each deck (#47)
