@@ -184,8 +184,10 @@ ion-popover.header-actions-menu {
 /* Sheets clear the iPhone's home indicator (docs/ui.md → Sheets). Ionic pads
    full-screen modals' content for the bottom safe area but leaves sheets
    (`modal-sheet`, any modal with breakpoints) to the app. A sheet's content
-   scrolls behind the indicator and ends above it. Zero on web and desktop. */
-ion-modal.modal-sheet ion-content {
+   scrolls behind the indicator and ends above it. Zero on web and desktop.
+   `:where` keeps it at element specificity, so a sheet's own padding
+   (`.ion-padding`, a component rule) wins and must add the safe area itself. */
+:where(ion-modal.modal-sheet) ion-content {
   --padding-bottom: var(--ion-safe-area-bottom, 0px);
 }
 
