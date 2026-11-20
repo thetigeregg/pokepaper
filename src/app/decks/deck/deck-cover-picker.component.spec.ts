@@ -9,6 +9,7 @@ import type { DeckRow } from './deck.page';
 
 const row = (cardId: string, card = true): DeckRow => ({
   key: `intl:${cardId}`,
+  list: 'cards',
   slot: { region: 'intl', cardId, count: 1 },
   card: card ? makeContractCard('intl', 'sv01', cardId, 0) : null,
   language: 'en',

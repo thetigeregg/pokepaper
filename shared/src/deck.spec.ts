@@ -184,6 +184,43 @@ describe('deck covers', () => {
   });
 });
 
+describe('deck considering', () => {
+  const pile = [
+    { region: 'intl', cardId: 'sv03-125', count: 1 },
+    { region: 'intl', cardId: 'sv02-160', count: 2 },
+  ];
+
+  it('accepts a deck with or without a valid pile, sharing printings with its cards', () => {
+    expect(isDeck({ ...valid, considering: pile })).toBe(true);
+    expect(isDeck({ ...valid, considering: [] })).toBe(true);
+    expect(isDeck(valid)).toBe(true);
+  });
+
+  it.each([
+    ['null', null],
+    ['not an array', {}],
+    ['a bad slot', [{ region: 'intl', cardId: 'x', count: 0 }]],
+    ['a printing twice', [pile[0], { ...pile[0], count: 2 }]],
+    [
+      'too many printings',
+      Array.from({ length: MAX_DECK_SLOTS + 1 }, (_, i) => ({
+        region: 'intl',
+        cardId: `c${String(i)}`,
+        count: 1,
+      })),
+    ],
+  ])('rejects a pile that is %s', (_label, considering) => {
+    expect(isDeck({ ...valid, considering })).toBe(false);
+  });
+
+  it('copies a pile’s slot fields, and leaves out an empty or missing one', () => {
+    const extra = { ...valid, considering: [{ ...pile[0], extra: true }] };
+    expect(deck(extra).considering).toEqual([pile[0]]);
+    expect(deck({ ...valid, considering: [] })).not.toHaveProperty('considering');
+    expect(deck(valid)).not.toHaveProperty('considering');
+  });
+});
+
 describe('deck', () => {
   it('copies only deck fields', () => {
     const extra = {

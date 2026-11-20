@@ -113,116 +113,7 @@
         <!-- Two columns on desktop (global list-grid). -->
         <ion-list class="list-grid" [attr.data-testid]="'section-' + section.id">
           @for (row of section.rows; track row.key) {
-            <ion-item lines="inset" [attr.data-testid]="'deck-card-' + row.key">
-              <ion-label>
-                @if (row.card; as card) {
-                  <!-- The scan, name and number open the card; the stepper stays apart. -->
-                  <div
-                    class="media-row open-card"
-                    role="button"
-                    tabindex="0"
-                    (click)="openCard(row)"
-                    (keydown.enter)="openCard(row)"
-                    (keydown.space)="$event.preventDefault(); openCard(row)"
-                    [attr.aria-label]="'Show ' + row.name"
-                    data-testid="open-card"
-                  >
-                    <div class="thumb">
-                      <app-card-image
-                        [card]="card"
-                        [language]="row.language"
-                        [setLine]="row.line"
-                      />
-                    </div>
-                    <div class="media-row-text">
-                      {{ row.name }}
-                      <p class="hint">{{ row.line }}</p>
-                      @if (ownedLine(row); as owned) {
-                        <p
-                          class="hint owned-line"
-                          [class.short]="owned.short"
-                          data-testid="owned-line"
-                        >
-                          @if (!owned.short) {
-                            <ion-icon
-                              name="checkmark-circle-outline"
-                              color="success"
-                              aria-hidden="true"
-                            ></ion-icon>
-                          }
-                          {{ owned.text }}
-                        </p>
-                      }
-                      @for (note of notes(row); track note) {
-                        <p class="hint rule-note" data-testid="rule-note">
-                          <ion-icon
-                            name="warning-outline"
-                            color="warning"
-                            aria-hidden="true"
-                          ></ion-icon>
-                          {{ note }}
-                        </p>
-                      }
-                    </div>
-                  </div>
-                } @else {
-                  <div class="media-row">
-                    <div class="media-row-text">
-                      {{ row.name }}
-                      <p class="hint">{{ row.line }}</p>
-                      @if (ownedLine(row); as owned) {
-                        <p
-                          class="hint owned-line"
-                          [class.short]="owned.short"
-                          data-testid="owned-line"
-                        >
-                          @if (!owned.short) {
-                            <ion-icon
-                              name="checkmark-circle-outline"
-                              color="success"
-                              aria-hidden="true"
-                            ></ion-icon>
-                          }
-                          {{ owned.text }}
-                        </p>
-                      }
-                      @for (note of notes(row); track note) {
-                        <p class="hint rule-note" data-testid="rule-note">
-                          <ion-icon
-                            name="warning-outline"
-                            color="warning"
-                            aria-hidden="true"
-                          ></ion-icon>
-                          {{ note }}
-                        </p>
-                      }
-                    </div>
-                  </div>
-                }
-              </ion-label>
-              <div slot="end" class="stepper">
-                <ion-button
-                  fill="clear"
-                  (click)="step(row, -1)"
-                  [attr.aria-label]="'Remove a copy of ' + row.name"
-                  data-testid="remove-copy"
-                >
-                  <ion-icon slot="icon-only" name="remove-circle-outline"></ion-icon>
-                </ion-button>
-                <span class="count" aria-live="polite" data-testid="count">
-                  {{ row.slot.count }}
-                </span>
-                <ion-button
-                  fill="clear"
-                  [disabled]="atLimit(row)"
-                  (click)="step(row, 1)"
-                  [attr.aria-label]="'Add a copy of ' + row.name"
-                  data-testid="add-copy"
-                >
-                  <ion-icon slot="icon-only" name="add-circle-outline"></ion-icon>
-                </ion-button>
-              </div>
-            </ion-item>
+            <ng-container *ngTemplateOutlet="cardRow; context: { $implicit: row }" />
           }
         </ion-list>
       } @empty {
@@ -255,6 +146,131 @@
           </ion-list>
         }
       }
+
+      @if (showConsidering()) {
+        <ion-list-header>
+          <ion-label data-testid="considering-title">
+            Considering{{ consideringCount() > 0 ? ' · ' + consideringCount() : '' }}
+          </ion-label>
+        </ion-list-header>
+        @if (consideringRows().length > 0) {
+          <ion-list class="list-grid" data-testid="section-considering">
+            @for (row of consideringRows(); track row.key) {
+              <ng-container *ngTemplateOutlet="cardRow; context: { $implicit: row }" />
+            }
+          </ion-list>
+        }
+        <ion-list>
+          @if (consideringCount() === 0) {
+            <ion-item data-testid="considering-empty">
+              <ion-label class="ion-text-wrap">
+                No cards yet
+                <p class="hint">Cards you're trying out. They don't count toward the deck.</p>
+              </ion-label>
+            </ion-item>
+          }
+          <ion-item
+            button="true"
+            [detail]="false"
+            (click)="addCards('considering')"
+            data-testid="add-considering"
+          >
+            <ion-label color="primary">Add cards to Considering</ion-label>
+          </ion-item>
+        </ion-list>
+      }
     </div>
   }
 </ion-content>
+
+<!-- A card's row, in the deck or its Considering pile. -->
+<ng-template #cardRow let-row>
+  <ion-item
+    lines="inset"
+    [attr.data-testid]="(row.list === 'cards' ? 'deck-card-' : 'considering-card-') + row.key"
+  >
+    <ion-label>
+      @if (row.card; as card) {
+        <!-- The scan, name and number open the card; the buttons stay apart. -->
+        <div
+          class="media-row open-card"
+          role="button"
+          tabindex="0"
+          (click)="openCard(row)"
+          (keydown.enter)="openCard(row)"
+          (keydown.space)="$event.preventDefault(); openCard(row)"
+          [attr.aria-label]="'Show ' + row.name"
+          data-testid="open-card"
+        >
+          <div class="thumb">
+            <app-card-image [card]="card" [language]="row.language" [setLine]="row.line" />
+          </div>
+          <ng-container *ngTemplateOutlet="rowText; context: { $implicit: row }" />
+        </div>
+      } @else {
+        <div class="media-row">
+          <ng-container *ngTemplateOutlet="rowText; context: { $implicit: row }" />
+        </div>
+      }
+    </ion-label>
+    <div slot="end" class="stepper">
+      <ion-button
+        fill="clear"
+        (click)="move(row)"
+        [attr.aria-label]="
+          row.list === 'cards'
+            ? 'Move a copy of ' + row.name + ' to Considering'
+            : 'Move a copy of ' + row.name + ' to the deck'
+        "
+        data-testid="move-copy"
+      >
+        <ion-icon
+          slot="icon-only"
+          [name]="row.list === 'cards' ? 'arrow-down-circle-outline' : 'arrow-up-circle-outline'"
+        ></ion-icon>
+      </ion-button>
+      <ion-button
+        fill="clear"
+        (click)="step(row, -1)"
+        [attr.aria-label]="'Remove a copy of ' + row.name"
+        data-testid="remove-copy"
+      >
+        <ion-icon slot="icon-only" name="remove-circle-outline"></ion-icon>
+      </ion-button>
+      <span class="count" aria-live="polite" data-testid="count">
+        {{ row.slot.count }}
+      </span>
+      <ion-button
+        fill="clear"
+        [disabled]="atLimit(row)"
+        (click)="step(row, 1)"
+        [attr.aria-label]="'Add a copy of ' + row.name"
+        data-testid="add-copy"
+      >
+        <ion-icon slot="icon-only" name="add-circle-outline"></ion-icon>
+      </ion-button>
+    </div>
+  </ion-item>
+</ng-template>
+
+<!-- A row's name, set and number, then what you own of it and the rules it breaks. -->
+<ng-template #rowText let-row>
+  <div class="media-row-text">
+    {{ row.name }}
+    <p class="hint">{{ row.line }}</p>
+    @if (ownedLine(row); as owned) {
+      <p class="hint owned-line" [class.short]="owned.short" data-testid="owned-line">
+        @if (!owned.short) {
+          <ion-icon name="checkmark-circle-outline" color="success" aria-hidden="true"></ion-icon>
+        }
+        {{ owned.text }}
+      </p>
+    }
+    @for (note of notes(row); track note) {
+      <p class="hint rule-note" data-testid="rule-note">
+        <ion-icon name="warning-outline" color="warning" aria-hidden="true"></ion-icon>
+        {{ note }}
+      </p>
+    }
+  </div>
+</ng-template>

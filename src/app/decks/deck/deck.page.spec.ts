@@ -74,6 +74,8 @@ describe('DeckPage', () => {
     loaded: signal(true),
     deck: vi.fn((id: string) => (current()?.id === id ? current() : undefined)),
     setCardCount: vi.fn(() => Promise.resolve()),
+    setConsideringCount: vi.fn(() => Promise.resolve()),
+    moveCopy: vi.fn(() => Promise.resolve()),
     setCover: vi.fn(() => Promise.resolve()),
     update: vi.fn(() => Promise.resolve()),
     remove: vi.fn(() => Promise.resolve()),
@@ -189,7 +191,7 @@ describe('DeckPage', () => {
 
     expect(createModal).toHaveBeenCalledWith({
       component: AddCardsComponent,
-      componentProps: { deckIdProp: 'deck-1' },
+      componentProps: { deckIdProp: 'deck-1', listProp: 'cards' },
       cssClass: 'add-cards-modal',
     });
     expect(present).toHaveBeenCalled();
@@ -388,6 +390,7 @@ describe('DeckPage', () => {
         ['intl:sv01-166', { owned: 4, fromOther: 3, missing: 0 }],
         ['intl:sv01-258', { owned: 0, fromOther: 0, missing: 9 }],
       ]),
+      considering: new Map(),
       missing: 10,
       unknown: 0,
     };
@@ -471,6 +474,7 @@ describe('DeckPage', () => {
       );
       ownedNow.set({
         slots: new Map([['intl:sv01-001', { owned: 3, fromOther: 0, missing: 0 }]]),
+        considering: new Map(),
         missing: 0,
         unknown: 4,
       });
@@ -506,6 +510,7 @@ describe('DeckPage', () => {
       current.set(makeDeck({ cards: [{ region: 'intl', cardId: 'sv01-001', count: 3 }] }));
       ownedNow.set({
         slots: new Map([['intl:sv01-001', { owned: 3, fromOther: 0, missing: 0 }]]),
+        considering: new Map(),
         missing: 0,
         unknown: 0,
       });
@@ -519,6 +524,214 @@ describe('DeckPage', () => {
 
       expect(query('[data-testid="none-missing"]')).not.toBeNull();
       expect(toggle.disabled).toBe(false); // So it can be turned off again.
+    });
+  });
+
+  describe('Considering pile', () => {
+    const pileRow = (key: string) => query(`[data-testid="considering-card-${key}"]`);
+    const click = (row: Element | null, testId: string) => {
+      (row?.querySelector(`[data-testid="${testId}"]`) as HTMLElement).click();
+    };
+    const withPile = () =>
+      makeDeck({
+        considering: [
+          { region: 'intl', cardId: 'sv01-166', count: 1 },
+          { region: 'intl', cardId: 'sv01-300', count: 2 },
+        ],
+      });
+
+    afterEach(() => {
+      ownedNow.set(undefined);
+    });
+
+    it('lists the pile after the deck, in the order added, apart from the deck’s counts', async () => {
+      current.set(withPile());
+      await create();
+
+      expect(query('[data-testid="considering-title"]')?.textContent.trim()).toBe(
+        'Considering · 3'
+      );
+      const rows = [...root().querySelectorAll('[data-testid^="considering-card-"]')];
+      expect(rows.map((row) => row.getAttribute('data-testid'))).toEqual([
+        'considering-card-intl:sv01-166',
+        'considering-card-intl:sv01-300',
+      ]);
+      expect(
+        pileRow('intl:sv01-300')?.querySelector('[data-testid="count"]')?.textContent.trim()
+      ).toBe('2');
+      // The deck is unchanged: the pile's copies count nowhere else.
+      expect(query('[data-testid="deck-total"]')?.textContent.trim()).toBe('16');
+      expect(sectionTitles()).toEqual(['Pokémon · 3', 'Trainer · 4', 'Energy · 9']);
+      expect(query('[data-testid="considering-empty"]')).toBeNull();
+    });
+
+    it('explains an empty pile, and opens Add cards for it', async () => {
+      await create();
+
+      expect(query('[data-testid="considering-title"]')?.textContent.trim()).toBe('Considering');
+      expect(query('[data-testid="considering-empty"]')).not.toBeNull();
+      (query('[data-testid="add-considering"]') as HTMLElement).click();
+      await settle();
+
+      expect(createModal).toHaveBeenCalledWith({
+        component: AddCardsComponent,
+        componentProps: { deckIdProp: 'deck-1', listProp: 'considering' },
+        cssClass: 'add-cards-modal',
+      });
+    });
+
+    it('hides the pile for an empty deck without one, and while showing missing cards', async () => {
+      current.set(makeDeck({ cards: [] }));
+      await create();
+      expect(query('[data-testid="considering-title"]')).toBeNull();
+
+      current.set(withPile());
+      ownedNow.set({
+        slots: new Map([['intl:sv01-001', { owned: 0, fromOther: 0, missing: 3 }]]),
+        considering: new Map(),
+        missing: 3,
+        unknown: 0,
+      });
+      await settle();
+      expect(query('[data-testid="considering-title"]')).not.toBeNull();
+
+      fixture.componentInstance.showMissingOnly(true);
+      fixture.detectChanges();
+      expect(query('[data-testid="considering-title"]')).toBeNull();
+    });
+
+    it('steps a pile card without the deck’s copy limit', async () => {
+      current.set(withPile());
+      await create();
+
+      click(pileRow('intl:sv01-166'), 'add-copy');
+      await settle();
+      click(pileRow('intl:sv01-300'), 'remove-copy');
+      await settle();
+
+      expect(checks.copyLimit).not.toHaveBeenCalled();
+      expect(decks.setConsideringCount).toHaveBeenNthCalledWith(
+        1,
+        'deck-1',
+        { region: 'intl', cardId: 'sv01-166' },
+        2
+      );
+      expect(decks.setConsideringCount).toHaveBeenNthCalledWith(
+        2,
+        'deck-1',
+        { region: 'intl', cardId: 'sv01-300' },
+        1
+      );
+      expect(decks.setCardCount).not.toHaveBeenCalled();
+    });
+
+    it('moves a copy down to the pile without a limit check', async () => {
+      current.set(withPile());
+      await create();
+
+      click(query('[data-testid="deck-card-intl:sv01-001"]'), 'move-copy');
+      await settle();
+
+      expect(checks.copyLimit).not.toHaveBeenCalled();
+      expect(decks.moveCopy).toHaveBeenCalledWith(
+        'deck-1',
+        { region: 'intl', cardId: 'sv01-001' },
+        'considering'
+      );
+    });
+
+    it('moves a copy up to the deck within its copy limit, saying when it’s reached', async () => {
+      current.set(withPile());
+      await create();
+
+      click(pileRow('intl:sv01-300'), 'move-copy');
+      await settle();
+      expect(checks.copyLimit).toHaveBeenCalledWith('deck-1', odd);
+      expect(decks.moveCopy).toHaveBeenCalledWith(
+        'deck-1',
+        { region: 'intl', cardId: 'sv01-300' },
+        'cards'
+      );
+
+      const limit = { name: 'Professor', total: 4, limit: 4 };
+      checks.copyLimit.mockResolvedValueOnce(limit);
+      click(pileRow('intl:sv01-166'), 'move-copy');
+      await settle();
+      expect(dialogs.showCopyLimit).toHaveBeenCalledWith(limit);
+      expect(decks.moveCopy).toHaveBeenCalledTimes(1);
+    });
+
+    it('labels the move buttons by direction', async () => {
+      current.set(withPile());
+      await create();
+
+      // Ionic moves a button's aria-label onto its inner (shadow) button.
+      const label = (row: Element | null) =>
+        row
+          ?.querySelector('[data-testid="move-copy"]')
+          ?.shadowRoot?.querySelector('button')
+          ?.getAttribute('aria-label');
+      expect(label(query('[data-testid="deck-card-intl:sv01-166"]'))).toBe(
+        'Move a copy of sv01-166 to Considering'
+      );
+      expect(label(pileRow('intl:sv01-166'))).toBe('Move a copy of sv01-166 to the deck');
+    });
+
+    it('says when a move can’t be saved', async () => {
+      current.set(withPile());
+      const error = new Error('disk full');
+      decks.moveCopy.mockRejectedValueOnce(error);
+      await create();
+
+      click(query('[data-testid="deck-card-intl:sv01-001"]'), 'move-copy');
+      await settle();
+
+      expect(dialogs.showSaveError).toHaveBeenCalledWith(error);
+    });
+
+    it('says what spare copies cover pile cards, with no rule notes', async () => {
+      current.set(withPile());
+      checks.check.mockReturnValue({
+        format: 'standard',
+        issues: [],
+        cardNotes: new Map([['intl:sv01-166', ['Not legal in Standard']]]),
+        limits: new Map(),
+      } as unknown as DeckCheck);
+      ownedNow.set({
+        slots: new Map(),
+        considering: new Map([
+          ['intl:sv01-166', { owned: 1, fromOther: 0, missing: 0 }],
+          ['intl:sv01-300', { owned: 1, fromOther: 0, missing: 1 }],
+        ]),
+        missing: 0,
+        unknown: 0,
+      });
+      await create();
+
+      const owned = (key: string) =>
+        pileRow(key)?.querySelector('[data-testid="owned-line"]')?.textContent.trim();
+      expect(owned('intl:sv01-166')).toBe('Owned');
+      expect(owned('intl:sv01-300')).toBe('Own 1 of 2 spare');
+      expect(pileRow('intl:sv01-166')?.querySelector('[data-testid="rule-note"]')).toBeNull();
+      expect(
+        query('[data-testid="deck-card-intl:sv01-166"] [data-testid="rule-note"]')
+      ).not.toBeNull();
+      checks.check.mockReturnValue(undefined);
+    });
+
+    it('opens a pile card paging through the pile', async () => {
+      current.set(withPile());
+      await create();
+
+      click(pileRow('intl:sv01-300'), 'open-card');
+      await settle();
+
+      const [options] = createModal.mock.calls[0] ?? [{}];
+      expect(options['component']).toBe(CardDetailComponent);
+      expect(options['componentProps']).toMatchObject({
+        cardsProp: [trainer, odd],
+        startIndex: 1,
+      });
     });
   });
 

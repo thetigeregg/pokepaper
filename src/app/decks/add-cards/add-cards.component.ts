@@ -9,11 +9,11 @@ import {
   IonToolbar,
   ModalController,
 } from '@ionic/angular';
-import { deckCardKey, type CatalogCard } from '@pokepaper/shared';
+import { deckCardKey, MAX_DECK_CARD_COUNT, type CatalogCard } from '@pokepaper/shared';
 import { catalogKey } from '../../core/data/storage-engine';
 import { CatalogSearchService } from '../../core/services/catalog-search.service';
 import { DeckChecksService } from '../../features/decks/deck-checks.service';
-import { DeckService } from '../../core/services/deck.service';
+import { DeckService, type DeckList } from '../../core/services/deck.service';
 import { LayoutService } from '../../core/services/layout.service';
 import { CatalogSegmentComponent } from '../../features/cards/catalog-segment.component';
 import { FiltersButtonComponent } from '../../features/cards/filters-button.component';
@@ -28,7 +28,8 @@ import { DeckDialogsService } from '../../features/decks/deck-dialogs.service';
  * A deck's Add cards modal (docs/ui.md → Decks): card search with its own
  * query and filters (its own `CatalogSearchService`; recent searches and the
  * catalog are shared with the Cards tab). Tapping a card adds a copy to the
- * deck; its badge shows the copies in the deck, and its info button opens it.
+ * deck (or its Considering pile); its badge shows the copies there, and its
+ * info button opens it.
  */
 @Component({
   selector: 'app-add-cards',
@@ -36,7 +37,7 @@ import { DeckDialogsService } from '../../features/decks/deck-dialogs.service';
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-title>Add cards</ion-title>
+        <ion-title>{{ title }}</ion-title>
         <ion-buttons slot="end">
           @if (!layout.wide()) {
             <app-filters-button />
@@ -97,6 +98,12 @@ export class AddCardsComponent {
   // Set through ModalController componentProps, which assigns plain
   // properties (docs/ui.md → Tests).
   deckIdProp = '';
+  /** Where taps add copies: the deck, or its Considering pile. */
+  listProp: DeckList = 'cards';
+
+  get title(): string {
+    return this.listProp === 'considering' ? 'Add to Considering' : 'Add cards';
+  }
 
   /** Taps, applied in order (see `add`). */
   private adds: Promise<void> = Promise.resolve();
@@ -115,17 +122,17 @@ export class AddCardsComponent {
     });
   }
 
-  /** Copies of `card` in the deck. */
+  /** Copies of `card` in the deck (or its Considering pile). */
   count(card: CatalogCard): number {
     const key = catalogKey(card.region, card.id);
-    return (
-      this.decks.deck(this.deckIdProp)?.cards.find((slot) => deckCardKey(slot) === key)?.count ?? 0
-    );
+    const slots = this.decks.deck(this.deckIdProp)?.[this.listProp] ?? [];
+    return slots.find((slot) => deckCardKey(slot) === key)?.count ?? 0;
   }
 
   /**
    * Adds a copy of `card`, unless the deck holds as many as it may (4 with
    * its name, or 99 of a basic Energy printing; docs/decks.md), saying so.
+   * The Considering pile has no rules: just at most 99 of a printing.
    * Taps run one at a time, each from the deck as the previous one left it,
    * so quick taps neither get lost nor pass the limit. Resolves once saved
    * (or the failure has been reported).
@@ -147,17 +154,20 @@ export class AddCardsComponent {
 
   /** One tap from the deck as it is now; returns once the change shows, its save still running. */
   private async applyAdd(card: CatalogCard): Promise<{ saving: Promise<void> } | null> {
+    const ref = { region: card.region, cardId: card.id };
+    if (this.listProp === 'considering') {
+      const count = this.count(card);
+      if (count >= MAX_DECK_CARD_COUNT) {
+        return null;
+      }
+      return { saving: this.decks.setConsideringCount(this.deckIdProp, ref, count + 1) };
+    }
     const limit = await this.checks.copyLimit(this.deckIdProp, card);
     if (limit.total >= limit.limit) {
       void this.dialogs.showCopyLimit(limit);
       return null;
     }
-    const saving = this.decks.setCardCount(
-      this.deckIdProp,
-      { region: card.region, cardId: card.id },
-      this.count(card) + 1
-    );
-    return { saving };
+    return { saving: this.decks.setCardCount(this.deckIdProp, ref, this.count(card) + 1) };
   }
 
   /** Enter: search for what's typed now, remember it, and put the phone keyboard away. */

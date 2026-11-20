@@ -415,6 +415,7 @@ export function describeStorageEngineContract(
           name: 'Zard',
           format: 'expanded',
           cards: [{ region: 'intl', cardId: 'sv03-125', count: 4 }],
+          considering: [{ region: 'intl', cardId: 'sv03-125', count: 1 }],
           updatedAt: '2026-01-02T00:00:00.000Z',
         });
 

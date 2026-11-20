@@ -1,7 +1,7 @@
 import { signal } from '@angular/core';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { ModalController, type IonSearchbar } from '@ionic/angular';
-import type { CatalogCard, Deck } from '@pokepaper/shared';
+import { MAX_DECK_CARD_COUNT, type CatalogCard, type Deck } from '@pokepaper/shared';
 import { vi } from 'vitest';
 import { makeContractCard } from '../../core/data/storage-engine.contract';
 import { CatalogBrowseService } from '../../core/services/catalog-browse.service';
@@ -10,7 +10,7 @@ import { CatalogSearchIndexService } from '../../core/services/catalog-search-in
 import { CatalogSearchService } from '../../core/services/catalog-search.service';
 import { CollectionService } from '../../core/services/collection.service';
 import { DeckChecksService } from '../../features/decks/deck-checks.service';
-import { DeckFullError, DeckService } from '../../core/services/deck.service';
+import { DeckFullError, DeckService, type DeckList } from '../../core/services/deck.service';
 import type { DeckCheck, NameLimit } from '../../features/decks/deck-rules';
 import { LayoutService } from '../../core/services/layout.service';
 import { RecentSearchesService } from '../../core/services/recent-searches.service';
@@ -33,6 +33,7 @@ describe('AddCardsComponent', () => {
     loaded: signal(true),
     deck: vi.fn((id: string) => (id === current().id ? current() : undefined)),
     setCardCount: vi.fn(() => Promise.resolve()),
+    setConsideringCount: vi.fn(() => Promise.resolve()),
   };
   const checks = {
     check: vi.fn((_id: string): DeckCheck | undefined => undefined),
@@ -49,11 +50,12 @@ describe('AddCardsComponent', () => {
   const wide = signal(false);
   let fixture: ComponentFixture<AddCardsComponent>;
 
-  function create(): AddCardsComponent {
+  function create(list: DeckList = 'cards'): AddCardsComponent {
     // The template's search components have their own specs; this covers the modal's logic.
     TestBed.overrideComponent(AddCardsComponent, { set: { template: '<div></div>' } });
     fixture = TestBed.createComponent(AddCardsComponent);
     fixture.componentInstance.deckIdProp = 'deck-1';
+    fixture.componentInstance.listProp = list;
     fixture.detectChanges();
     return fixture.componentInstance;
   }
@@ -134,6 +136,68 @@ describe('AddCardsComponent', () => {
         { region: 'intl', cardId: 'sv01-063' },
         1
       );
+    });
+  });
+
+  describe('adding to the Considering pile', () => {
+    const base = current();
+
+    beforeEach(() => {
+      current.set({
+        ...base,
+        considering: [
+          { region: 'intl', cardId: 'sv01-063', count: 1 },
+          { region: 'intl', cardId: 'sv01-099', count: MAX_DECK_CARD_COUNT },
+        ],
+      });
+    });
+
+    afterEach(() => {
+      current.set(base);
+    });
+
+    it('is titled for the pile, and counts the pile’s copies', () => {
+      const modal = create('considering');
+
+      expect(modal.title).toBe('Add to Considering');
+      expect(modal.picker.count(pikachu)).toBe(1);
+      expect(modal.picker.count(pineco)).toBe(0);
+
+      modal.listProp = 'cards';
+      expect(modal.title).toBe('Add cards');
+    });
+
+    it('adds a copy to the pile, without the deck’s copy limit', async () => {
+      checks.copyLimit.mockResolvedValue({ name: 'x', total: 4, limit: 4 });
+      const modal = create('considering');
+
+      await modal.add(pikachu);
+      await modal.add(pineco);
+
+      expect(checks.copyLimit).not.toHaveBeenCalled();
+      expect(decks.setCardCount).not.toHaveBeenCalled();
+      expect(decks.setConsideringCount).toHaveBeenNthCalledWith(
+        1,
+        'deck-1',
+        { region: 'intl', cardId: 'sv01-063' },
+        2
+      );
+      expect(decks.setConsideringCount).toHaveBeenNthCalledWith(
+        2,
+        'deck-1',
+        { region: 'intl', cardId: 'sv01-001' },
+        1
+      );
+      checks.copyLimit.mockResolvedValue({ name: 'x', total: 0, limit: 4 });
+    });
+
+    it('adds nothing past the most copies a slot holds', async () => {
+      const modal = create('considering');
+
+      await modal.add(makeContractCard('intl', 'sv01', 'sv01-099', 98));
+
+      expect(decks.setConsideringCount).not.toHaveBeenCalled();
+      expect(dialogs.showSaveError).not.toHaveBeenCalled();
     });
   });
 

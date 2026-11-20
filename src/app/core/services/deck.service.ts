@@ -16,6 +16,9 @@ import { SyncService } from './sync.service';
 /** A printing in a deck: what `setCardCount` takes. */
 export type DeckCardRef = Pick<DeckCard, 'region' | 'cardId'>;
 
+/** A deck's two lists of printings: the deck itself, and its Considering pile. */
+export type DeckList = 'cards' | 'considering';
+
 /** What `update` can change. */
 export interface DeckChanges {
   name?: string;
@@ -145,30 +148,59 @@ export class DeckService {
    * is added at the end, so the deck keeps the order cards were added in.
    */
   async setCardCount(id: string, card: DeckCardRef, count: number): Promise<void> {
+    await this.setCount(id, 'cards', card, count);
+  }
+
+  /** Sets the copies of one printing in the deck's Considering pile, like `setCardCount`. */
+  async setConsideringCount(id: string, card: DeckCardRef, count: number): Promise<void> {
+    await this.setCount(id, 'considering', card, count);
+  }
+
+  /**
+   * Moves one copy of a printing between the deck and its Considering pile,
+   * as one change. Rejects (changing nothing) if the list it comes from has
+   * none.
+   */
+  async moveCopy(id: string, card: DeckCardRef, to: DeckList): Promise<void> {
+    const ref = cardRef(card);
+    const current = this.require(id);
+    const from: DeckList = to === 'cards' ? 'considering' : 'cards';
+    const source = current[from] ?? [];
+    const key = deckCardKey(ref);
+    const have = source.find((slot) => deckCardKey(slot) === key)?.count ?? 0;
+    if (have === 0) {
+      throw new RangeError('No copy to move');
+    }
+    const target = current[to] ?? [];
+    const want = (target.find((slot) => deckCardKey(slot) === key)?.count ?? 0) + 1;
+    if (!isDeckCardCount(want)) {
+      throw new RangeError('Invalid deck card count');
+    }
+    await this.save(
+      this.withLists(current, {
+        [from]: withCount(source, ref, have - 1),
+        [to]: withCount(target, ref, want),
+      })
+    );
+  }
+
+  private async setCount(
+    id: string,
+    list: DeckList,
+    card: DeckCardRef,
+    count: number
+  ): Promise<void> {
     if (count !== 0 && !isDeckCardCount(count)) {
       throw new RangeError('Invalid deck card count');
     }
-    const slot: DeckCard = { region: card.region, cardId: card.cardId, count };
-    if (!isDeckCard({ ...slot, count: 1 })) {
-      throw new TypeError('Invalid deck card');
-    }
+    const ref = cardRef(card);
     const current = this.require(id);
-    const key = deckCardKey(slot);
-    const existing = current.cards.find((other) => deckCardKey(other) === key);
-    if ((existing?.count ?? 0) === count) {
+    const slots = current[list] ?? [];
+    const key = deckCardKey(ref);
+    if ((slots.find((other) => deckCardKey(other) === key)?.count ?? 0) === count) {
       return;
     }
-    let cards: DeckCard[];
-    if (count === 0) {
-      cards = current.cards.filter((other) => deckCardKey(other) !== key);
-    } else if (existing) {
-      cards = current.cards.map((other) => (deckCardKey(other) === key ? slot : other));
-    } else if (current.cards.length >= MAX_DECK_SLOTS) {
-      throw new DeckFullError();
-    } else {
-      cards = [...current.cards, slot];
-    }
-    await this.save({ ...current, cards, updatedAt: this.nextUpdatedAt(current) });
+    await this.save(this.withLists(current, { [list]: withCount(slots, ref, count) }));
   }
 
   /** Deletes a deck: hidden at once, then deleted. */
@@ -235,6 +267,19 @@ export class DeckService {
     }
   }
 
+  /** `current` with some lists replaced and a later `updatedAt`; an empty pile is left out. */
+  private withLists(current: Deck, lists: Partial<Record<DeckList, DeckCard[]>>): Deck {
+    const { considering: _pile, ...rest } = current;
+    const cards = lists.cards ?? current.cards;
+    const considering = lists.considering ?? current.considering ?? [];
+    return {
+      ...rest,
+      cards,
+      ...(considering.length > 0 ? { considering } : {}),
+      updatedAt: this.nextUpdatedAt(current),
+    };
+  }
+
   private require(id: string): Deck {
     const found = this.byId().get(id);
     if (!found) {
@@ -266,6 +311,34 @@ export class DeckService {
       console.error('deck.load_failed', error);
     }
   }
+}
+
+/** A printing as a deck slot key's parts, checked. */
+function cardRef(card: DeckCardRef): DeckCardRef {
+  const ref = { region: card.region, cardId: card.cardId };
+  if (!isDeckCard({ ...ref, count: 1 })) {
+    throw new TypeError('Invalid deck card');
+  }
+  return ref;
+}
+
+/**
+ * `slots` with `count` copies of `card` (0 removes it); a new printing goes
+ * at the end. Rejects adding one past `MAX_DECK_SLOTS`.
+ */
+function withCount(slots: readonly DeckCard[], card: DeckCardRef, count: number): DeckCard[] {
+  const key = deckCardKey(card);
+  const slot: DeckCard = { region: card.region, cardId: card.cardId, count };
+  if (count === 0) {
+    return slots.filter((other) => deckCardKey(other) !== key);
+  }
+  if (slots.some((other) => deckCardKey(other) === key)) {
+    return slots.map((other) => (deckCardKey(other) === key ? slot : other));
+  }
+  if (slots.length >= MAX_DECK_SLOTS) {
+    throw new DeckFullError();
+  }
+  return [...slots, slot];
 }
 
 /** A copy of `decks` with `edit` applied. */
