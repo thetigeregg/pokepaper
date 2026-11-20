@@ -78,10 +78,14 @@ describe('DeckPage', () => {
     moveCopy: vi.fn(() => Promise.resolve()),
     setCover: vi.fn(() => Promise.resolve()),
     update: vi.fn(() => Promise.resolve()),
+    duplicate: vi.fn((_id: string, name: string) =>
+      Promise.resolve({ ...makeDeck(), id: 'deck-2', name })
+    ),
     remove: vi.fn(() => Promise.resolve()),
   };
   const dialogs = {
     askRename: vi.fn(() => Promise.resolve<string | null>('Zard')),
+    askDuplicateName: vi.fn(() => Promise.resolve<string | null>('Zard – Pidgeot')),
     confirmDelete: vi.fn(() => Promise.resolve(true)),
     showSaveError: vi.fn(() => Promise.resolve()),
     showCopyLimit: vi.fn((_limit: NameLimit) => Promise.resolve()),
@@ -101,7 +105,10 @@ describe('DeckPage', () => {
       Promise.resolve({ name: 'x', total: 0, limit: 4 })
     ),
   };
-  const nav = { navigateBack: vi.fn((_url: string) => Promise.resolve(true)) };
+  const nav = {
+    navigateBack: vi.fn((_url: string) => Promise.resolve(true)),
+    navigateForward: vi.fn((_url: unknown, _options?: unknown) => Promise.resolve(true)),
+  };
   const changed = new Subject<void>();
   const wide = signal(false);
   let fixture: ComponentFixture<DeckPage>;
@@ -803,6 +810,22 @@ describe('DeckPage', () => {
     expect(decks.update).toHaveBeenCalledTimes(1);
   });
 
+  it('duplicates the deck under the name given, opening the copy in its place', async () => {
+    const page = await create();
+
+    await page.duplicate();
+    expect(dialogs.askDuplicateName).toHaveBeenCalledWith(makeDeck());
+    expect(decks.duplicate).toHaveBeenCalledWith('deck-1', 'Zard – Pidgeot');
+    expect(nav.navigateForward).toHaveBeenCalledWith(['/tabs/decks/deck', 'deck-2'], {
+      replaceUrl: true,
+    });
+
+    dialogs.askDuplicateName.mockResolvedValueOnce(null);
+    await page.duplicate();
+    expect(decks.duplicate).toHaveBeenCalledTimes(1);
+    expect(nav.navigateForward).toHaveBeenCalledTimes(1);
+  });
+
   it('deletes the deck after confirming, once back on the list', async () => {
     let arrive: (done: boolean) => void = () => undefined;
     nav.navigateBack.mockImplementationOnce(
@@ -840,6 +863,7 @@ describe('DeckPage', () => {
     ['renaming', (page: DeckPage) => page.rename(), () => decks.update],
     ['changing the format', (page: DeckPage) => page.pickFormat('expanded'), () => decks.update],
     ['deleting', (page: DeckPage) => page.delete(), () => decks.remove],
+    ['duplicating', (page: DeckPage) => page.duplicate(), () => decks.duplicate],
   ])('says so when %s fails', async (_label, act, method) => {
     method().mockRejectedValueOnce(new Error('disk full'));
     const page = await create();
@@ -940,16 +964,25 @@ describe('DeckPage', () => {
     expect(engine.getCatalogCardsByKey).toHaveBeenCalledTimes(4);
   });
 
-  it('runs Rename and Delete from the header actions, disabled without a deck', async () => {
+  it('runs Rename, Duplicate and Delete from the header actions, disabled without a deck', async () => {
     const page = await create();
     const action = (id: string) => page.actions().find((entry) => entry.id === id);
-    expect(page.actions().map((entry) => entry.id)).toEqual(['rename', 'cover', 'delete']);
+    expect(page.actions().map((entry) => entry.id)).toEqual([
+      'rename',
+      'cover',
+      'duplicate',
+      'delete',
+    ]);
+    expect(action('duplicate')).toMatchObject({ label: 'Duplicate deck', icon: 'copy-outline' });
 
+    dialogs.askDuplicateName.mockResolvedValueOnce(null);
     action('rename')?.run();
+    action('duplicate')?.run();
     action('delete')?.run();
     await settle();
 
     expect(dialogs.askRename).toHaveBeenCalled();
+    expect(dialogs.askDuplicateName).toHaveBeenCalled();
     expect(dialogs.confirmDelete).toHaveBeenCalled();
     current.set(undefined);
     expect(page.actions().every((action) => action.disabled)).toBe(true);
@@ -1048,8 +1081,10 @@ describe('DeckPage', () => {
     expect(page.total()).toBe(0);
     expect(page.sections()).toEqual([]);
     await page.rename();
+    await page.duplicate();
     await page.delete();
     expect(dialogs.askRename).not.toHaveBeenCalled();
+    expect(dialogs.askDuplicateName).not.toHaveBeenCalled();
     expect(dialogs.confirmDelete).not.toHaveBeenCalled();
   });
 
