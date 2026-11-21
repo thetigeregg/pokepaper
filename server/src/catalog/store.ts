@@ -1,14 +1,17 @@
 import { createHash } from 'node:crypto';
 import type {
   CatalogCard,
+  CatalogCardPrices,
   CatalogLanguage,
   CatalogManifest,
+  CatalogPricePack,
   CatalogRegion,
   CatalogSeries,
   CatalogSet,
   CatalogSetPack,
 } from '@pokepaper/shared';
 import type { Db } from '../db.js';
+import { toWirePrices, type StoredCardPrices } from './price-data.js';
 
 export type CatalogRunKind = 'light' | 'full';
 export type CatalogRunStatus = 'ok' | 'partial' | 'failed' | 'aborted';
@@ -315,13 +318,13 @@ export class CatalogStore {
       .all(limit) as { id: number; kind: CatalogRunKind; status: string; startedAt: string }[];
   }
 
-  /** Runs left `running` by a process that died mid-import. */
+  /** Imports and price passes left `running` by a process that died mid-run. */
   abandonRunningRuns(now = new Date()): void {
-    this.db
-      .prepare(
-        "UPDATE catalog_runs SET status = 'aborted', finished_at = ? WHERE status = 'running'"
-      )
-      .run(now.toISOString());
+    for (const table of ['catalog_runs', 'catalog_price_runs']) {
+      this.db
+        .prepare(`UPDATE ${table} SET status = 'aborted', finished_at = ? WHERE status = 'running'`)
+        .run(now.toISOString());
+    }
   }
 
   /**
@@ -336,6 +339,139 @@ export class CatalogStore {
       )
       .get() as { at: string | null };
     return row.at ? new Date(row.at) : null;
+  }
+
+  /** Bumped whenever any of a region's prices change (`catalog_meta` key `prices_version:<region>`). */
+  pricesVersion(region: CatalogRegion): number {
+    const row = this.db
+      .prepare('SELECT value FROM catalog_meta WHERE key = ?')
+      .get(`prices_version:${region}`) as { value: string } | undefined;
+    return Number(row?.value ?? 0);
+  }
+
+  /** A card's stored prices (every figure TCGdex reports), if it has any. */
+  getCardPrices(region: CatalogRegion, cardId: string): StoredCardPrices | undefined {
+    const row = this.db
+      .prepare('SELECT payload FROM catalog_prices WHERE region = ? AND card_id = ?')
+      .get(region, cardId) as { payload: string } | undefined;
+    return row ? (JSON.parse(row.payload) as StoredCardPrices) : undefined;
+  }
+
+  /**
+   * Stores fetched prices in one transaction: `null` removes a card's prices
+   * (Cardmarket doesn't price it). Bumps the region's prices version when
+   * anything changed. Returns the number of cards that changed.
+   */
+  writeCardPrices(
+    region: CatalogRegion,
+    entries: readonly { cardId: string; prices: StoredCardPrices | null }[]
+  ): number {
+    return this.db.transaction(() => {
+      const read = this.db.prepare(
+        'SELECT payload FROM catalog_prices WHERE region = ? AND card_id = ?'
+      );
+      const upsert = this.db.prepare(
+        `INSERT INTO catalog_prices (region, card_id, payload) VALUES (?, ?, ?)
+         ON CONFLICT (region, card_id) DO UPDATE SET payload = excluded.payload`
+      );
+      const remove = this.db.prepare('DELETE FROM catalog_prices WHERE region = ? AND card_id = ?');
+      let changed = 0;
+      for (const { cardId, prices } of entries) {
+        const stored = read.get(region, cardId) as { payload: string } | undefined;
+        if (prices === null) {
+          if (stored) {
+            remove.run(region, cardId);
+            changed += 1;
+          }
+          continue;
+        }
+        const payload = JSON.stringify(prices);
+        if (stored?.payload !== payload) {
+          upsert.run(region, cardId, payload);
+          changed += 1;
+        }
+      }
+      if (changed > 0) {
+        this.bumpPricesVersion(region);
+      }
+      return changed;
+    })();
+  }
+
+  /** Removes prices of cards the catalog no longer has. Returns how many. */
+  pruneOrphanPrices(region: CatalogRegion): number {
+    return this.db.transaction(() => {
+      const { changes } = this.db
+        .prepare(
+          `DELETE FROM catalog_prices WHERE region = ? AND NOT EXISTS (
+             SELECT 1 FROM catalog_cards c WHERE c.region = catalog_prices.region AND c.id = catalog_prices.card_id
+           )`
+        )
+        .run(region);
+      if (changes > 0) {
+        this.bumpPricesVersion(region);
+      }
+      return changes;
+    })();
+  }
+
+  /** A region's prices as clients download them. */
+  getPricePack(region: CatalogRegion): CatalogPricePack {
+    // One read transaction, so the version always matches the prices returned.
+    return this.db.transaction(() => {
+      const rows = this.db
+        .prepare('SELECT card_id, payload FROM catalog_prices WHERE region = ? ORDER BY card_id')
+        .all(region) as { card_id: string; payload: string }[];
+      const prices: Record<string, CatalogCardPrices> = {};
+      for (const row of rows) {
+        prices[row.card_id] = toWirePrices(JSON.parse(row.payload) as StoredCardPrices);
+      }
+      return { region, version: this.pricesVersion(region), currency: 'EUR' as const, prices };
+    })();
+  }
+
+  startPriceRun(now = new Date()): number {
+    const { lastInsertRowid } = this.db
+      .prepare("INSERT INTO catalog_price_runs (started_at, status) VALUES (?, 'running')")
+      .run(now.toISOString());
+    return Number(lastInsertRowid);
+  }
+
+  finishPriceRun(id: number, status: CatalogRunStatus, stats: object, now = new Date()): void {
+    this.db
+      .prepare('UPDATE catalog_price_runs SET status = ?, stats = ?, finished_at = ? WHERE id = ?')
+      .run(status, JSON.stringify(stats), now.toISOString(), id);
+  }
+
+  /** Most recent price passes first (diagnostics). */
+  listPriceRuns(limit = 20): { id: number; status: string; startedAt: string }[] {
+    return this.db
+      .prepare(
+        'SELECT id, status, started_at AS startedAt FROM catalog_price_runs ORDER BY id DESC LIMIT ?'
+      )
+      .all(limit) as { id: number; status: string; startedAt: string }[];
+  }
+
+  /**
+   * When the last completed price pass started. A `partial` one counts, as
+   * for full refreshes: the sets it missed keep their previous prices.
+   */
+  lastCompletedPriceRun(): Date | null {
+    const row = this.db
+      .prepare(
+        "SELECT MAX(started_at) AS at FROM catalog_price_runs WHERE status IN ('ok', 'partial')"
+      )
+      .get() as { at: string | null };
+    return row.at ? new Date(row.at) : null;
+  }
+
+  private bumpPricesVersion(region: CatalogRegion): void {
+    this.db
+      .prepare(
+        `INSERT INTO catalog_meta (key, value) VALUES (?, '1')
+         ON CONFLICT (key) DO UPDATE SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT)`
+      )
+      .run(`prices_version:${region}`);
   }
 
   private bumpVersion(): void {

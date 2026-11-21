@@ -52,6 +52,7 @@ services:
       # CATALOG_LANGUAGES: en,fr,it,de,ja,zh-tw,zh-cn
       # CATALOG_REFRESH_HOURS: "24"
       # CATALOG_FULL_REFRESH_DAYS: "7"
+      # CATALOG_PRICES_REFRESH_HOURS: "24"
     healthcheck:
       test:
         [

@@ -79,7 +79,7 @@ export interface CatalogIngestStats {
 
 const PROGRESS_EVERY = 50;
 /** Consecutive failed sets after which the rest of a region is skipped. */
-const MAX_CONSECUTIVE_SET_FAILURES = 3;
+export const MAX_CONSECUTIVE_SET_FAILURES = 3;
 /** How long a "no scan at the expected path" answer is trusted. */
 const IMAGE_MISS_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -540,7 +540,7 @@ async function resolveUnlinkedImages(
  * Runs a TCGdex request and parses it. Answers retrying can't fix (404,
  * malformed) become `null`; an unavailable TCGdex or an abort propagates.
  */
-async function fetchContained<T>(
+export async function fetchContained<T>(
   request: () => Promise<unknown>,
   parse: (value: unknown) => T | null
 ): Promise<T | null> {
@@ -556,6 +556,6 @@ async function fetchContained<T>(
 }
 
 /** Failures that skip one set or region rather than ending the run. */
-function isContainedFailure(error: unknown): boolean {
+export function isContainedFailure(error: unknown): boolean {
   return error instanceof TcgdexUnavailableError || error instanceof TcgdexResponseError;
 }

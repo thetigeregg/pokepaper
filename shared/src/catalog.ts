@@ -219,6 +219,46 @@ export interface CatalogSetPack {
   cards: CatalogCard[];
 }
 
+/**
+ * Cardmarket price guide figures for one finish of a card, in euros. `null`
+ * when Cardmarket reports none (it uses 0 for that).
+ */
+export interface CardmarketFigures {
+  /** Cardmarket's price trend: its headline price, smoothed over recent sales. */
+  trend: number | null;
+  /** Average sale price over the last 7 days. */
+  avg7: number | null;
+  /** Average sale price over the last 30 days. */
+  avg30: number | null;
+}
+
+/**
+ * A card's Cardmarket prices, as TCGdex reports them. One Cardmarket product
+ * covers the printing in every language of its region: an English and a
+ * German copy share a price, and so do a Japanese and a Traditional Chinese
+ * one with the same card ID.
+ */
+export interface CatalogCardPrices {
+  /** When TCGdex last read Cardmarket's price guide (ISO timestamp). */
+  updated: string;
+  /** The normal print; for cards printed only as holo, the holo. */
+  base: CardmarketFigures | null;
+  /** The reverse holo (Cardmarket's "holo" figures). */
+  reverseHolo: CardmarketFigures | null;
+}
+
+/**
+ * `GET /api/catalog/prices/:region`: every priced card of a region, by card
+ * ID. Cards Cardmarket doesn't price are absent.
+ */
+export interface CatalogPricePack {
+  region: CatalogRegion;
+  /** Changes whenever the pack does (the response's ETag is derived from it). */
+  version: number;
+  currency: 'EUR';
+  prices: Record<string, CatalogCardPrices>;
+}
+
 export type CatalogImageQuality = 'low' | 'high';
 
 /**

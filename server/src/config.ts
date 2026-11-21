@@ -34,6 +34,8 @@ export interface CatalogConfig {
   refreshHours: number;
   /** Days between full refreshes (which refetch every card). */
   fullRefreshDays: number;
+  /** Hours between price passes (which fetch every card once). */
+  pricesRefreshHours: number;
 }
 
 export interface ServerConfig {
@@ -164,6 +166,7 @@ function loadCatalogConfig(env: Env): CatalogConfig {
     // Capped well below setTimeout's ~24.8-day limit (longer delays fire at once).
     refreshHours: readInt(env, 'CATALOG_REFRESH_HOURS', 24, 1, 168),
     fullRefreshDays: readInt(env, 'CATALOG_FULL_REFRESH_DAYS', 7, 1, 365),
+    pricesRefreshHours: readInt(env, 'CATALOG_PRICES_REFRESH_HOURS', 24, 1, 168),
   };
 }
 

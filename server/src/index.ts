@@ -41,6 +41,7 @@ const catalogSchedule: CatalogSchedule | null = config.catalog.syncEnabled
       languages: config.catalog.languages,
       refreshHours: config.catalog.refreshHours,
       fullRefreshDays: config.catalog.fullRefreshDays,
+      pricesRefreshHours: config.catalog.pricesRefreshHours,
       log: app.log,
     })
   : null;
