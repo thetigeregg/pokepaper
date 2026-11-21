@@ -35,7 +35,7 @@
     <ion-item data-testid="value-currency">
       <ion-select
         label="Currency"
-        interface="popover"
+        interface="alert"
         [value]="preferredCurrency()"
         (ionChange)="pickCurrency($event.detail.value)"
       >
