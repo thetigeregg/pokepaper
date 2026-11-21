@@ -1,7 +1,9 @@
 import {
   catalogSetImageUrl,
   COLLECTION_VARIANTS,
+  type CardmarketFigures,
   type CatalogCard,
+  type CatalogCardPrices,
   type CatalogLanguage,
   type CatalogSet,
   type CollectionTarget,
@@ -109,4 +111,47 @@ export function variantRows(
     label: VARIANT_LABELS[variant],
     quantity: quantity(variant),
   })).filter((row) => listed.includes(row.variant) || row.quantity > 0);
+}
+
+/**
+ * The price shown for a finish (docs/catalog.md → Prices): Cardmarket's
+ * trend, else the 30-day average; null when it has neither.
+ */
+export function headlinePrice(figures: CardmarketFigures): number | null {
+  return figures.trend ?? figures.avg30;
+}
+
+/** One finish's prices in card detail's Price section. */
+export interface PriceRow {
+  finish: 'base' | 'reverseHolo';
+  label: string;
+  price: number;
+  avg7: number | null;
+  avg30: number | null;
+}
+
+/**
+ * Card detail's Price rows: the base finish (named Holo for cards printed
+ * only as holo, which Cardmarket prices as the base product) and the
+ * reverse holo, each when it has a headline price.
+ */
+export function priceRows(card: CatalogCard, prices: CatalogCardPrices | undefined): PriceRow[] {
+  if (!prices) {
+    return [];
+  }
+  const variants = cardVariants(card);
+  const baseLabel =
+    !variants.includes('normal') && variants.includes('holo')
+      ? VARIANT_LABELS.holo
+      : VARIANT_LABELS.normal;
+  const finishes = [
+    { finish: 'base', label: baseLabel, figures: prices.base },
+    { finish: 'reverseHolo', label: VARIANT_LABELS.reverse, figures: prices.reverseHolo },
+  ] as const;
+  return finishes.flatMap(({ finish, label, figures }) => {
+    const price = figures ? headlinePrice(figures) : null;
+    return figures && price !== null
+      ? [{ finish, label, price, avg7: figures.avg7, avg30: figures.avg30 }]
+      : [];
+  });
 }

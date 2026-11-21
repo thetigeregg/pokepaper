@@ -156,7 +156,8 @@ After the sets, each run downloads the [prices](#prices) of every catalog with s
 - The stored ETag is written in the same transaction as the prices, so it always matches them.
 - A server without prices (`404`) is skipped quietly; the catalog itself is unaffected.
 - When a catalog has no sets left on the device, its prices and ETag are dropped.
-- `getCatalogCardPrices(region, cardId)` reads a card's prices; a card Cardmarket doesn't price has none. `CatalogSyncService.pricesChanged$` emits after new prices are stored.
+- `getCatalogCardPrices(region, cardId)` reads a card's prices; a card Cardmarket doesn't price has none. `CatalogSyncService.pricesChanged$` emits after new prices are stored, and `CatalogPriceService` (which screens read prices through) bumps its `version` signal, so open screens reload them.
+- **Shown price:** a finish's headline price is its `trend`, else its `avg30` (`headlinePrice`), since `trend` is what Cardmarket itself headlines. Card detail shows it per finish with the 7- and 30-day averages below (docs/ui.md → Card detail).
 
 ## Images on the device
 
