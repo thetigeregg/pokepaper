@@ -147,6 +147,17 @@ The app keeps a **full copy of the catalog** in its local storage: IndexedDB on 
 
 The first download is about 390 requests (one per set) and roughly 10–12 MB over the network.
 
+### Prices on the device
+
+After the sets, each run downloads the [prices](#prices) of every catalog with sets on the device (`GET /api/catalog/prices/:region`), sending the ETag it stored for that catalog (`catalogPricesEtag:<region>` in sync metadata), so unchanged prices cost one empty `304`. A changed pack replaces the catalog's stored prices whole, in one transaction (`replaceCatalogPrices`, store `catalogPrices`, keyed `region:cardId`), so they always come from a single pass. With the server's daily price pass, that's one download a day per catalog, about 300 KB for the international one.
+
+- Prices come after the sets are confirmed current (the check time is recorded and persistent storage requested first); meanwhile the status is `checking`.
+- Prices are retried like set packs. If they still fail, the run ends `error`, but the sets stay current and the prices already on the device stay, so they work offline from the last download. A pack for another catalog than the one asked for is refused the same way.
+- The stored ETag is written in the same transaction as the prices, so it always matches them.
+- A server without prices (`404`) is skipped quietly; the catalog itself is unaffected.
+- When a catalog has no sets left on the device, its prices and ETag are dropped.
+- `getCatalogCardPrices(region, cardId)` reads a card's prices; a card Cardmarket doesn't price has none. `CatalogSyncService.pricesChanged$` emits after new prices are stored.
+
 ## Images on the device
 
 Card scans aren't part of the catalog download (every grid-size scan in all seven languages would be about 2 GB). The app keeps them two ways:

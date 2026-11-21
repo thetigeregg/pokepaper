@@ -2,6 +2,8 @@ import { Injectable, inject } from '@angular/core';
 import Dexie, { Table, Transaction } from 'dexie';
 import type {
   CatalogCard,
+  CatalogCardPrices,
+  CatalogPricePack,
   CatalogRegion,
   CatalogSeries,
   CatalogSetPack,
@@ -13,6 +15,7 @@ import { collectionEntryId } from '@pokepaper/shared';
 import {
   AppDb,
   CatalogCardRow,
+  CatalogPriceRow,
   CatalogSeriesRow,
   CollectionRow,
   DeckRow,
@@ -55,6 +58,7 @@ const SCOPE_TABLE_NAMES: Record<StorageScope, string> = {
   catalogSets: 'catalogSets',
   catalogCards: 'catalogCards',
   catalogCardSearch: 'catalogCardSearch',
+  catalogPrices: 'catalogPrices',
   imagePins: 'imagePins',
   downloadedSets: 'downloadedSets',
   collection: 'collection',
@@ -354,6 +358,26 @@ export class DexieStorageEngine implements StorageEngine {
     });
   }
 
+  replaceCatalogPrices(pack: CatalogPricePack): Promise<void> {
+    return this.runInTransaction(['catalogPrices'], async () => {
+      await this.catalogPricesTable.where('region').equals(pack.region).delete();
+      await this.catalogPricesTable.bulkPut(
+        Object.entries(pack.prices).map(([cardId, prices]) => ({
+          key: catalogKey(pack.region, cardId),
+          region: pack.region,
+          prices,
+        }))
+      );
+    });
+  }
+
+  async getCatalogCardPrices(
+    region: CatalogRegion,
+    cardId: string
+  ): Promise<CatalogCardPrices | undefined> {
+    return (await this.catalogPricesTable.get(catalogKey(region, cardId)))?.prices;
+  }
+
   async putCollectionEntry(entry: CollectionEntry): Promise<void> {
     await this.collectionTable.put({ key: collectionEntryId(entry), entry });
   }
@@ -428,6 +452,10 @@ export class DexieStorageEngine implements StorageEngine {
 
   private get catalogCardSearchTable(): Table<CatalogSearchRow, string> {
     return this.resolveTable('catalogCardSearch', this.db.catalogCardSearch);
+  }
+
+  private get catalogPricesTable(): Table<CatalogPriceRow, string> {
+    return this.resolveTable('catalogPrices', this.db.catalogPrices);
   }
 
   private get imagePinsTable(): Table<ImagePin, [string, string]> {

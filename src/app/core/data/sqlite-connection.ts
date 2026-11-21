@@ -26,7 +26,7 @@ export interface SqliteConnection {
 }
 
 export const SQLITE_DB_NAME = 'pokepaper';
-export const SQLITE_SCHEMA_VERSION = 6;
+export const SQLITE_SCHEMA_VERSION = 7;
 
 /**
  * Native schema migrations, applied by the Capacitor plugin on open. Append a
@@ -138,6 +138,18 @@ export const SQLITE_UPGRADE_STATEMENTS: { toVersion: number; statements: string[
         key TEXT PRIMARY KEY,
         payload TEXT NOT NULL
       );`,
+    ],
+  },
+  {
+    // Card prices (docs/catalog.md → Prices). Matches Dexie version 7.
+    toVersion: 7,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS catalog_prices (
+        key TEXT PRIMARY KEY,
+        region TEXT NOT NULL,
+        payload TEXT NOT NULL
+      );`,
+      `CREATE INDEX IF NOT EXISTS idx_catalog_prices_region ON catalog_prices (region);`,
     ],
   },
 ];

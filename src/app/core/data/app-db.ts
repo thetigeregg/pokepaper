@@ -2,6 +2,8 @@ import Dexie, { Table } from 'dexie';
 import { Injectable } from '@angular/core';
 import type {
   CatalogCard,
+  CatalogCardPrices,
+  CatalogRegion,
   CatalogSeries,
   CollectionEntry,
   Deck,
@@ -32,6 +34,13 @@ export interface CatalogCardRow {
   card: CatalogCard;
 }
 
+/** A card's Cardmarket prices, keyed `region:cardId`. */
+export interface CatalogPriceRow {
+  key: string;
+  region: CatalogRegion;
+  prices: CatalogCardPrices;
+}
+
 /** A collection entry, keyed by its `collectionEntryId`. */
 export interface CollectionRow {
   key: string;
@@ -59,6 +68,7 @@ export class AppDb extends Dexie {
   catalogSets!: Table<StoredCatalogSet, string>;
   catalogCards!: Table<CatalogCardRow, string>;
   catalogCardSearch!: Table<CatalogSearchRow, string>;
+  catalogPrices!: Table<CatalogPriceRow, string>;
   imagePins!: Table<ImagePin, [string, string]>;
   downloadedSets!: Table<DownloadedSet, string>;
   collection!: Table<CollectionRow, string>;
@@ -102,6 +112,11 @@ export class AppDb extends Dexie {
     // Decks (docs/decks.md). Matches SQLite schema version 6.
     this.version(6).stores({
       decks: 'key',
+    });
+
+    // Card prices (docs/catalog.md → Prices). Matches SQLite schema version 7.
+    this.version(7).stores({
+      catalogPrices: 'key, region',
     });
   }
 }

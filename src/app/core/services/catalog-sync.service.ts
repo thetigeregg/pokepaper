@@ -1,6 +1,18 @@
-import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
+import {
+  HttpClient,
+  HttpErrorResponse,
+  HttpHeaders,
+  type HttpResponse,
+} from '@angular/common/http';
 import { Injectable, effect, inject, signal, untracked } from '@angular/core';
-import type { CatalogManifest, CatalogManifestSet, CatalogSetPack } from '@pokepaper/shared';
+import {
+  CATALOG_REGIONS,
+  type CatalogManifest,
+  type CatalogManifestSet,
+  type CatalogPricePack,
+  type CatalogRegion,
+  type CatalogSetPack,
+} from '@pokepaper/shared';
 import { Observable, Subject, firstValueFrom } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { catalogKey, type CatalogStats, type StorageEngine } from '../data/storage-engine';
@@ -15,8 +27,13 @@ export const CATALOG_DOWNLOAD_CONCURRENCY = 3;
 export const CATALOG_ETAG_KEY = 'catalogManifestEtag';
 /** syncMeta: when the catalog was last confirmed current (ISO time). */
 export const CATALOG_CHECKED_AT_KEY = 'catalogCheckedAt';
-/** Attempts per set pack for rate limiting and temporary failures, including the first. */
+/** Attempts per set or price pack for rate limiting and temporary failures, including the first. */
 export const CATALOG_PACK_ATTEMPTS = 4;
+
+/** syncMeta: ETag of a region's last stored price pack. */
+export function catalogPricesEtagKey(region: CatalogRegion): string {
+  return `catalogPricesEtag:${region}`;
+}
 
 /** Errors worth retrying a pack for: rate limited, server trouble, or a dropped connection. */
 function isTransient(error: unknown): error is HttpErrorResponse {
@@ -37,7 +54,7 @@ function retryDelayMs(error: HttpErrorResponse, attempt: number): number {
 /**
  * - `idle`: the catalog on this device matched the server at the last check
  *   (or no check has run yet)
- * - `checking`: fetching the manifest
+ * - `checking`: fetching the manifest, or prices once the sets are current
  * - `downloading`: fetching changed sets (see `progress`)
  * - `offline`: no connectivity; the catalog on this device keeps working
  * - `unauthorized`: signed out, or the server rejected the session
@@ -59,7 +76,9 @@ class RunSuperseded extends Error {
  * copy, downloads only the sets that differ (`CATALOG_DOWNLOAD_CONCURRENCY`
  * at a time, each stored atomically), and removes sets the server dropped.
  * The ETag is saved only after every set landed, so an interrupted download
- * resumes with the sets still missing.
+ * resumes with the sets still missing. Then, for each region with sets on
+ * this device, it fetches the region's price pack the same way (one 304 when
+ * unchanged) and stores it whole.
  *
  * The catalog is read-only reference data: it never goes through the
  * outbox. Runs on app start, every `CATALOG_SYNC_INTERVAL_MS`, when the
@@ -89,6 +108,10 @@ export class CatalogSyncService {
   private readonly _changed$ = new Subject<void>();
   /** Emits after each set is stored or removed, so screens can refresh as sets arrive. */
   readonly changed$: Observable<void> = this._changed$.asObservable();
+
+  private readonly _pricesChanged$ = new Subject<void>();
+  /** Emits after a catalog's new prices are stored, so screens showing prices can refresh. */
+  readonly pricesChanged$: Observable<void> = this._pricesChanged$.asObservable();
 
   private inFlight: Promise<void> | null = null;
   private rerunRequested = false;
@@ -237,6 +260,7 @@ export class CatalogSyncService {
       }
     }
 
+    // The sets are current: recorded before prices, whose failure shouldn't undo that.
     const now = new Date();
     await this.engine.putSyncMeta({ key: CATALOG_CHECKED_AT_KEY, value: now.toISOString() });
     this._lastChecked.set(now);
@@ -244,6 +268,11 @@ export class CatalogSyncService {
     if ((await this.engine.catalogStats()).sets > 0) {
       await requestPersistentStorage();
     }
+
+    this.ensureCurrent(epoch);
+    this._status.set('checking');
+    this._progress.set(null);
+    await this.syncPrices(epoch);
   }
 
   /** The manifest, or null when it's unchanged since `etag` (304). */
@@ -309,16 +338,81 @@ export class CatalogSyncService {
   }
 
   /**
-   * Fetches a set pack, waiting out rate limits and brief failures
-   * (`CATALOG_PACK_ATTEMPTS`). Null when the set no longer exists (404).
+   * Stores the price pack of each region with sets on this device, unless
+   * unchanged since its stored ETag (docs/catalog.md → Prices on the device).
    */
+  private async syncPrices(epoch: number): Promise<void> {
+    const regions = new Set((await this.engine.listCatalogSets()).map((set) => set.region));
+    for (const region of CATALOG_REGIONS) {
+      const key = catalogPricesEtagKey(region);
+      const etag = (await this.engine.getSyncMeta(key))?.value;
+      this.ensureCurrent(epoch);
+      if (!regions.has(region)) {
+        if (etag) {
+          // The catalog's sets are gone: drop its prices, and the ETag (as
+          // empty) so they're fetched afresh if sets come back.
+          await this.storePrices({ region, version: 0, currency: 'EUR', prices: {} }, '');
+        }
+        continue;
+      }
+      const response = await this.fetchWithRetries(
+        `${environment.apiUrl}/api/catalog/prices/${region}`,
+        epoch,
+        etag
+      );
+      this.ensureCurrent(epoch);
+      if (!response) {
+        continue; // Unchanged (304), or a server without prices yet (404).
+      }
+      if (!isPricePack(response.body, region)) {
+        throw new Error(`catalog.prices_invalid:${region}`);
+      }
+      await this.storePrices(response.body, response.headers.get('etag') ?? '');
+      this._pricesChanged$.next();
+    }
+  }
+
+  /**
+   * Replaces a catalog's prices together with the ETag they came with, so a
+   * stored ETag always matches the stored prices.
+   */
+  private storePrices(pack: CatalogPricePack, etag: string): Promise<void> {
+    return this.engine.runInTransaction(['catalogPrices', 'syncMeta'], async () => {
+      await this.engine.replaceCatalogPrices(pack);
+      await this.engine.putSyncMeta({ key: catalogPricesEtagKey(pack.region), value: etag });
+    });
+  }
+
+  /** Fetches a set pack. Null when the set no longer exists (404). */
   private async fetchPack(set: CatalogManifestSet, epoch: number): Promise<CatalogSetPack | null> {
     const url = `${environment.apiUrl}/api/catalog/sets/${set.region}/${encodeURIComponent(set.id)}`;
+    const response = await this.fetchWithRetries(url, epoch);
+    return (response?.body as CatalogSetPack | null | undefined) ?? null;
+  }
+
+  /**
+   * GETs `url`, waiting out rate limits and brief failures
+   * (`CATALOG_PACK_ATTEMPTS`). Null for 404, and for 304 when `etag` was
+   * sent (a 304 to a request without one is an error, not "gone").
+   */
+  private async fetchWithRetries(
+    url: string,
+    epoch: number,
+    etag?: string
+  ): Promise<HttpResponse<unknown> | null> {
     for (let attempt = 1; ; attempt++) {
       try {
-        return await firstValueFrom(this.http.get<CatalogSetPack>(url));
+        return await firstValueFrom(
+          this.http.get<unknown>(url, {
+            observe: 'response',
+            headers: etag ? new HttpHeaders({ 'If-None-Match': etag }) : undefined,
+          })
+        );
       } catch (error: unknown) {
-        if (error instanceof HttpErrorResponse && error.status === 404) {
+        if (
+          error instanceof HttpErrorResponse &&
+          (error.status === 404 || (error.status === 304 && etag))
+        ) {
           return null;
         }
         if (!isTransient(error) || attempt >= CATALOG_PACK_ATTEMPTS) {
@@ -343,6 +437,17 @@ export class CatalogSyncService {
       throw new RunSuperseded();
     }
   }
+}
+
+/** A price pack for `region`, as far as storing it safely needs. */
+function isPricePack(value: unknown, region: CatalogRegion): value is CatalogPricePack {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const { region: packRegion, prices } = value as Record<string, unknown>;
+  return (
+    packRegion === region && typeof prices === 'object' && prices !== null && !Array.isArray(prices)
+  );
 }
 
 /**
