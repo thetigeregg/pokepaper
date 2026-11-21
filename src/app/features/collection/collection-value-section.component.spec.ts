@@ -4,6 +4,7 @@ import type { CatalogCardPrices, CollectionEntry } from '@pokepaper/shared';
 import { vi } from 'vitest';
 import { CatalogPriceService } from '../../core/services/catalog-price.service';
 import { CollectionService, type ShownEntry } from '../../core/services/collection.service';
+import { CurrencyService, formatMoney } from '../../core/services/currency.service';
 import { CollectionValueSectionComponent } from './collection-value-section.component';
 
 describe('CollectionValueSectionComponent', () => {
@@ -17,6 +18,21 @@ describe('CollectionValueSectionComponent', () => {
         new Map(keys.flatMap((key) => (stored.has(key) ? [[key, stored.get(key)]] : [])))
       )
     ),
+  };
+
+  const preferred = signal('EUR');
+  const shown = signal('EUR');
+  let rate = 1;
+  const currencyService = {
+    preferred,
+    currency: shown,
+    rates: signal({ date: '2026-11-20', rates: { CHF: 0.9 } }),
+    options: signal([
+      { code: 'EUR', name: 'Euro' },
+      { code: 'CHF', name: 'Swiss Franc' },
+    ]),
+    format: (euros: number) => formatMoney(euros * rate, shown()),
+    pick: vi.fn(() => Promise.resolve()),
   };
 
   const entry = (overrides: Partial<CollectionEntry>): ShownEntry =>
@@ -56,6 +72,10 @@ describe('CollectionValueSectionComponent', () => {
 
   beforeEach(() => {
     loaded.set(true);
+    preferred.set('EUR');
+    shown.set('EUR');
+    rate = 1;
+    currencyService.pick.mockClear();
     ownedEntries.set([]);
     stored = new Map();
     priceService.version.set(0);
@@ -64,6 +84,7 @@ describe('CollectionValueSectionComponent', () => {
       providers: [
         { provide: CollectionService, useValue: { loaded, ownedEntries } },
         { provide: CatalogPriceService, useValue: priceService },
+        { provide: CurrencyService, useValue: currencyService },
       ],
     });
   });
@@ -92,6 +113,53 @@ describe('CollectionValueSectionComponent', () => {
     expect(text(fixture, 'value-note')).toBe(
       'Cardmarket price trends in euros, for any language and condition. Updated Nov 22, 2026.'
     );
+  });
+
+  it('shows values in the picked currency, noting the conversion', async () => {
+    preferred.set('CHF');
+    shown.set('CHF');
+    rate = 0.9;
+    ownedEntries.set([entry({ quantity: 2 })]);
+    stored.set('intl:sv01-001', prices(10));
+    const fixture = create();
+    await settle(fixture);
+
+    // `text` normalizes whitespace, the no-break space after CHF too.
+    expect(text(fixture, 'value-intl')).toBe('International 2 cards CHF 18.00');
+    expect(text(fixture, 'value-note')).toBe(
+      'Cardmarket price trends for any language and condition, converted from euros at the ECB rate of Nov 20, 2026. Updated Nov 21, 2026.'
+    );
+  });
+
+  it('says values stay in euros until the picked currency’s rate is downloaded', async () => {
+    preferred.set('CHF');
+    ownedEntries.set([entry({})]);
+    stored.set('intl:sv01-001', prices(1));
+    const fixture = create();
+    await settle(fixture);
+
+    expect(text(fixture, 'value-intl')).toBe('International 1 card €1.00');
+    expect(text(fixture, 'value-note')).toContain(
+      'Shown in euros until exchange rates are downloaded.'
+    );
+  });
+
+  it('offers every currency in its Currency row and saves a pick', async () => {
+    const fixture = create();
+    await settle(fixture);
+    const select = element(fixture).querySelector<HTMLIonSelectElement>(
+      '[data-testid="value-currency"] ion-select'
+    );
+
+    expect(select?.value).toBe('EUR');
+    expect(
+      [
+        ...element(fixture).querySelectorAll('[data-testid="value-currency"] ion-select-option'),
+      ].map((option) => option.textContent.trim())
+    ).toEqual(['Euro (EUR)', 'Swiss Franc (CHF)']);
+
+    fixture.componentInstance.pickCurrency('CHF');
+    expect(currencyService.pick).toHaveBeenCalledWith('CHF');
   });
 
   it('has no total with one catalog', async () => {

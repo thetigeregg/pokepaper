@@ -1,6 +1,7 @@
 import type { CatalogLanguage } from '@pokepaper/shared';
 import { runCatalogIngest, type CatalogLogger } from './ingest.js';
 import { runPriceRefresh } from './prices.js';
+import { refreshExchangeRates } from './rates.js';
 import type { CatalogRunKind, CatalogStore } from './store.js';
 import { TcgdexClient } from './tcgdex-client.js';
 
@@ -21,6 +22,8 @@ export interface CatalogScheduleOptions {
   initialDelayMs?: number;
   /** Injected in tests. */
   createClient?: (signal: AbortSignal) => TcgdexClient;
+  /** Fetches the ECB's exchange rates; injected in tests. */
+  fetchRates?: typeof fetch;
   now?: () => Date;
 }
 
@@ -53,7 +56,8 @@ export function pricesDue(lastStart: Date | null, now: Date, pricesRefreshHours:
 /**
  * Keeps the catalog current: one import shortly after startup, then one
  * every `refreshHours` after the previous finished, so runs never overlap.
- * After the import, a run refreshes prices when they're due (`pricesDue`).
+ * After the import, a run refreshes prices when they're due (`pricesDue`),
+ * then the ECB's exchange rates (one small request, stored only when new).
  * Failures are logged and retried at the next interval.
  */
 export function startCatalogSchedule(options: CatalogScheduleOptions): CatalogSchedule {
@@ -90,9 +94,20 @@ export function startCatalogSchedule(options: CatalogScheduleOptions): CatalogSc
       }
     }
     // Prices are refreshed for whatever the catalog holds, even after a failed import.
-    if (aborted() || !pricesDue(store.lastCompletedPriceRun(), now(), options.pricesRefreshHours)) {
-      return;
+    if (!aborted() && pricesDue(store.lastCompletedPriceRun(), now(), options.pricesRefreshHours)) {
+      await refreshPrices(client);
     }
+    if (!aborted()) {
+      await refreshExchangeRates({
+        store,
+        log,
+        signal: controller.signal,
+        fetch: options.fetchRates,
+      });
+    }
+  };
+
+  const refreshPrices = async (client: TcgdexClient): Promise<void> => {
     try {
       await runPriceRefresh({
         store,

@@ -215,26 +215,31 @@
             @if (row.avg7 !== null || row.avg30 !== null) {
               <p data-testid="price-averages">
                 @if (row.avg7 !== null) {
-                  <span>7-day avg {{ row.avg7 | currency: 'EUR' }}</span>
+                  <span>7-day avg {{ money(row.avg7) }}</span>
                 }
                 @if (row.avg7 !== null && row.avg30 !== null) {
                   ·
                 }
                 @if (row.avg30 !== null) {
-                  <span>30-day avg {{ row.avg30 | currency: 'EUR' }}</span>
+                  <span>30-day avg {{ money(row.avg30) }}</span>
                 }
               </p>
             }
           </ion-label>
           <ion-note slot="end" class="price" data-testid="price">
-            {{ row.price | currency: 'EUR' }}
+            {{ money(row.price) }}
           </ion-note>
         </ion-item>
       }
       @if (pricesUpdated(); as updated) {
         <ion-item>
           <ion-label class="ion-text-wrap">
-            <p data-testid="price-updated">Updated {{ updated | date: 'mediumDate' }}</p>
+            <p data-testid="price-updated">
+              Updated {{ updated | date: 'mediumDate' }}
+              @if (convertedOn(); as day) {
+                · converted from euros at the ECB rate of {{ day | date: 'mediumDate' }}
+              }
+            </p>
           </ion-label>
         </ion-item>
       }

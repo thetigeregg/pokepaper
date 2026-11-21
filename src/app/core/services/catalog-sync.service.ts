@@ -7,6 +7,7 @@ import {
 import { Injectable, effect, inject, signal, untracked } from '@angular/core';
 import {
   CATALOG_REGIONS,
+  isExchangeRates,
   type CatalogManifest,
   type CatalogManifestSet,
   type CatalogPricePack,
@@ -29,6 +30,11 @@ export const CATALOG_ETAG_KEY = 'catalogManifestEtag';
 export const CATALOG_CHECKED_AT_KEY = 'catalogCheckedAt';
 /** Attempts per set or price pack for rate limiting and temporary failures, including the first. */
 export const CATALOG_PACK_ATTEMPTS = 4;
+
+/** syncMeta: the ECB exchange rates last downloaded (`ExchangeRates` as JSON). */
+export const EXCHANGE_RATES_KEY = 'exchangeRates';
+/** syncMeta: ETag of the stored exchange rates. */
+export const EXCHANGE_RATES_ETAG_KEY = 'exchangeRatesEtag';
 
 /** syncMeta: ETag of a region's last stored price pack. */
 export function catalogPricesEtagKey(region: CatalogRegion): string {
@@ -112,6 +118,10 @@ export class CatalogSyncService {
   private readonly _pricesChanged$ = new Subject<void>();
   /** Emits after a catalog's new prices are stored, so screens showing prices can refresh. */
   readonly pricesChanged$: Observable<void> = this._pricesChanged$.asObservable();
+
+  private readonly _ratesChanged$ = new Subject<void>();
+  /** Emits after new exchange rates are stored (`EXCHANGE_RATES_KEY`). */
+  readonly ratesChanged$: Observable<void> = this._ratesChanged$.asObservable();
 
   private inFlight: Promise<void> | null = null;
   private rerunRequested = false;
@@ -273,6 +283,7 @@ export class CatalogSyncService {
     this._status.set('checking');
     this._progress.set(null);
     await this.syncPrices(epoch);
+    await this.syncRates(epoch);
   }
 
   /** The manifest, or null when it's unchanged since `etag` (304). */
@@ -370,6 +381,41 @@ export class CatalogSyncService {
       await this.storePrices(response.body, response.headers.get('etag') ?? '');
       this._pricesChanged$.next();
     }
+  }
+
+  /**
+   * Stores the ECB exchange rates, unless unchanged since their stored ETag
+   * (docs/catalog.md → Currencies). They're one small document, kept in
+   * sync metadata together with their ETag. Only fetched once the device
+   * holds sets: without them there are no prices to convert.
+   */
+  private async syncRates(epoch: number): Promise<void> {
+    if ((await this.engine.catalogStats()).sets === 0) {
+      return;
+    }
+    const etag = (await this.engine.getSyncMeta(EXCHANGE_RATES_ETAG_KEY))?.value;
+    this.ensureCurrent(epoch);
+    const response = await this.fetchWithRetries(
+      `${environment.apiUrl}/api/catalog/rates`,
+      epoch,
+      etag
+    );
+    this.ensureCurrent(epoch);
+    if (!response) {
+      return; // Unchanged (304), or a server without rates yet (404).
+    }
+    if (!isExchangeRates(response.body)) {
+      throw new Error('catalog.rates_invalid');
+    }
+    const rates = response.body;
+    await this.engine.runInTransaction(['syncMeta'], async () => {
+      await this.engine.putSyncMeta({ key: EXCHANGE_RATES_KEY, value: JSON.stringify(rates) });
+      await this.engine.putSyncMeta({
+        key: EXCHANGE_RATES_ETAG_KEY,
+        value: response.headers.get('etag') ?? '',
+      });
+    });
+    this._ratesChanged$.next();
   }
 
   /**

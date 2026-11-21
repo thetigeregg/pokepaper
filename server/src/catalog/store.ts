@@ -9,6 +9,7 @@ import type {
   CatalogSeries,
   CatalogSet,
   CatalogSetPack,
+  ExchangeRates,
 } from '@pokepaper/shared';
 import type { Db } from '../db.js';
 import { toWirePrices, type StoredCardPrices } from './price-data.js';
@@ -294,6 +295,23 @@ export class CatalogStore {
          ON CONFLICT (key) DO UPDATE SET value = excluded.value`
       )
       .run(`vocabulary:${language}`, stableStringify(Object.fromEntries(vocabulary)));
+  }
+
+  /** The ECB rates last stored (`catalog_meta` key `exchange_rates`), if any. */
+  getExchangeRates(): ExchangeRates | undefined {
+    const row = this.db
+      .prepare("SELECT value FROM catalog_meta WHERE key = 'exchange_rates'")
+      .get() as { value: string } | undefined;
+    return row ? (JSON.parse(row.value) as ExchangeRates) : undefined;
+  }
+
+  saveExchangeRates(rates: ExchangeRates): void {
+    this.db
+      .prepare(
+        `INSERT INTO catalog_meta (key, value) VALUES ('exchange_rates', ?)
+         ON CONFLICT (key) DO UPDATE SET value = excluded.value`
+      )
+      .run(stableStringify(rates));
   }
 
   startRun(kind: CatalogRunKind, now = new Date()): number {

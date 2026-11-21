@@ -52,6 +52,7 @@ describe('catalog routes', () => {
       '/api/catalog/manifest',
       '/api/catalog/sets/intl/sv01',
       '/api/catalog/prices/intl',
+      '/api/catalog/rates',
       '/images/catalog/cards/intl/sv01-001/en/low.webp',
     ]) {
       expect((await app.inject({ method: 'GET', url })).statusCode).toBe(401);
@@ -111,6 +112,36 @@ describe('catalog routes', () => {
       headers: { ...headers, 'if-none-match': `W/"x", "${pack.hash}"` },
     });
     expect(again.statusCode).toBe(304);
+  });
+
+  it('serve the stored exchange rates, revalidated by their date', async () => {
+    const { app, headers, store } = await catalogApp();
+    const url = '/api/catalog/rates';
+
+    expect((await app.inject({ method: 'GET', url, headers })).statusCode).toBe(404);
+
+    const rates = { date: '2026-11-20', rates: { CHF: 0.9223, USD: 1.099 } };
+    store.saveExchangeRates(rates);
+    const response = await app.inject({ method: 'GET', url, headers });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers.etag).toBe('"rates-2026-11-20"');
+    expect(response.json()).toEqual(rates);
+
+    const unchanged = await app.inject({
+      method: 'GET',
+      url,
+      headers: { ...headers, 'if-none-match': '"rates-2026-11-20"' },
+    });
+    expect(unchanged.statusCode).toBe(304);
+
+    store.saveExchangeRates({ date: '2026-11-21', rates: { CHF: 0.93 } });
+    const next = await app.inject({
+      method: 'GET',
+      url,
+      headers: { ...headers, 'if-none-match': '"rates-2026-11-20"' },
+    });
+    expect(next.statusCode).toBe(200);
+    expect(next.json<{ date: string }>().date).toBe('2026-11-21');
   });
 
   it('serve a region’s prices, revalidated by its prices version', async () => {

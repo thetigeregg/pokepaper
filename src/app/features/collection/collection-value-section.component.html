@@ -16,7 +16,7 @@
           </p>
         </ion-label>
         <ion-note slot="end" class="value" data-testid="value-amount">
-          {{ value.value | currency: 'EUR' }}
+          {{ money(value.value) }}
         </ion-note>
       </ion-item>
     } @empty {
@@ -28,15 +28,37 @@
       <ion-item data-testid="value-total">
         <ion-label><strong>Total</strong></ion-label>
         <ion-note slot="end" class="value" data-testid="value-amount">
-          {{ total | currency: 'EUR' }}
+          {{ money(total) }}
         </ion-note>
       </ion-item>
     }
+    <ion-item data-testid="value-currency">
+      <ion-select
+        label="Currency"
+        interface="popover"
+        [value]="preferredCurrency()"
+        (ionChange)="pickCurrency($event.detail.value)"
+      >
+        @for (option of currencyOptions(); track option.code) {
+          <ion-select-option [value]="option.code">
+            {{ option.name }} ({{ option.code }})
+          </ion-select-option>
+        }
+      </ion-select>
+    </ion-item>
     @if (values.length > 0) {
       <ion-item>
         <ion-label class="ion-text-wrap">
           <p class="hint" data-testid="value-note">
-            Cardmarket price trends in euros, for any language and condition.
+            @if (convertedOn(); as day) {
+              Cardmarket price trends for any language and condition, converted from euros at the
+              ECB rate of {{ day | date: 'mediumDate' }}.
+            } @else {
+              Cardmarket price trends in euros, for any language and condition.
+            }
+            @if (awaitingRates()) {
+              Shown in euros until exchange rates are downloaded.
+            }
             @if (updated(); as updated) {
               Updated {{ updated | date: 'mediumDate' }}.
             }

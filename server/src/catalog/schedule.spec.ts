@@ -1,9 +1,18 @@
 import { runCatalogIngest } from './ingest.js';
 import { nextRunKind, pricesDue, startCatalogSchedule } from './schedule.js';
 import type { CatalogStore } from './store.js';
-import { fakeClient, fakeTcgdex, memoryCatalogStore, silentLogger } from './test-helpers.js';
+import {
+  ecbXml,
+  fakeClient,
+  fakeTcgdex,
+  memoryCatalogStore,
+  silentLogger,
+} from './test-helpers.js';
 
 const HOUR = 60 * 60 * 1000;
+
+/** The ECB unreachable: schedule tests never touch the network. */
+const ecbOffline = (): Promise<Response> => Promise.reject(new Error('offline'));
 
 describe('nextRunKind', () => {
   const now = new Date('2026-01-10T00:00:00Z');
@@ -43,6 +52,7 @@ describe('startCatalogSchedule', () => {
     const fake = fakeTcgdex();
     const schedule = startCatalogSchedule({
       store,
+      fetchRates: ecbOffline,
       languages: ['en', 'fr'],
       refreshHours: 24,
       fullRefreshDays: 7,
@@ -71,6 +81,7 @@ describe('startCatalogSchedule', () => {
 
     const schedule = startCatalogSchedule({
       store,
+      fetchRates: ecbOffline,
       languages: ['en'],
       refreshHours: 24,
       fullRefreshDays: 7,
@@ -98,6 +109,7 @@ describe('startCatalogSchedule', () => {
 
     const schedule = startCatalogSchedule({
       store,
+      fetchRates: ecbOffline,
       languages: ['en'],
       refreshHours: 24,
       fullRefreshDays: 7,
@@ -124,6 +136,7 @@ describe('startCatalogSchedule', () => {
 
     const schedule = startCatalogSchedule({
       store,
+      fetchRates: ecbOffline,
       languages: ['en'],
       refreshHours: 1,
       fullRefreshDays: 7,
@@ -151,6 +164,7 @@ describe('startCatalogSchedule', () => {
 
     const schedule = startCatalogSchedule({
       store,
+      fetchRates: ecbOffline,
       languages: ['en'],
       refreshHours: 1,
       fullRefreshDays: 7,
@@ -176,6 +190,7 @@ describe('startCatalogSchedule', () => {
     let clock = new Date('2026-01-10T00:00:00Z').getTime();
     const schedule = startCatalogSchedule({
       store,
+      fetchRates: ecbOffline,
       languages: ['en', 'fr'],
       refreshHours: 12,
       fullRefreshDays: 7,
@@ -204,6 +219,44 @@ describe('startCatalogSchedule', () => {
     await schedule.stop();
   });
 
+  it('refreshes exchange rates after every run, keeping them when the ECB fails', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const store = memoryCatalogStore();
+    let day = 20;
+    let reachable = true;
+    const fetchRates = vi.fn(() =>
+      reachable
+        ? Promise.resolve(new Response(ecbXml(`2026-11-${String(day)}`, 0.92)))
+        : Promise.reject(new Error('offline'))
+    );
+    const schedule = startCatalogSchedule({
+      store,
+      fetchRates,
+      languages: ['en'],
+      refreshHours: 12,
+      fullRefreshDays: 7,
+      pricesRefreshHours: 24,
+      log: silentLogger(),
+      initialDelayMs: 0,
+      createClient: (signal) => fakeClient(fakeTcgdex(), signal),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.getExchangeRates()).toEqual({ date: '2026-11-20', rates: { CHF: 0.92 } });
+
+    day = 21;
+    reachable = false;
+    await vi.advanceTimersByTimeAsync(12 * HOUR);
+    expect(fetchRates).toHaveBeenCalledTimes(2);
+    expect(store.getExchangeRates()?.date).toBe('2026-11-20');
+
+    reachable = true;
+    await vi.advanceTimersByTimeAsync(12 * HOUR);
+    expect(store.getExchangeRates()?.date).toBe('2026-11-21');
+
+    await schedule.stop();
+  });
+
   it('refreshes prices even when the import fails', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const store = memoryCatalogStore();
@@ -222,6 +275,7 @@ describe('startCatalogSchedule', () => {
 
     const schedule = startCatalogSchedule({
       store,
+      fetchRates: ecbOffline,
       languages: ['en'],
       refreshHours: 24,
       fullRefreshDays: 7,
@@ -249,6 +303,7 @@ describe('startCatalogSchedule', () => {
 
     const schedule = startCatalogSchedule({
       store,
+      fetchRates: ecbOffline,
       languages: ['en'],
       refreshHours: 1,
       fullRefreshDays: 7,
@@ -273,6 +328,7 @@ describe('startCatalogSchedule', () => {
 
     const schedule = startCatalogSchedule({
       store,
+      fetchRates: ecbOffline,
       languages: ['en'],
       refreshHours: 24,
       fullRefreshDays: 7,

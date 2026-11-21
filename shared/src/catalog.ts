@@ -265,6 +265,47 @@ export interface CatalogPricePack {
   prices: Record<string, CatalogCardPrices>;
 }
 
+/**
+ * `GET /api/catalog/rates`: the European Central Bank's euro reference
+ * rates, published each working day (docs/catalog.md → Currencies).
+ */
+export interface ExchangeRates {
+  /** The day the rates are for (`YYYY-MM-DD`). */
+  date: string;
+  /** Units of each currency (ISO 4217 code) per euro; the euro itself isn't listed. */
+  rates: Record<string, number>;
+}
+
+/** An ISO 4217 currency code, as far as its shape goes (`CHF`). */
+export function isCurrencyCode(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Z]{3}$/.test(value);
+}
+
+/** Runtime shape check for `ExchangeRates` (server reading ECB, app reading the API). */
+export function isExchangeRates(value: unknown): value is ExchangeRates {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const { date, rates } = value as Record<string, unknown>;
+  if (
+    typeof date !== 'string' ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+    typeof rates !== 'object' ||
+    rates === null ||
+    Array.isArray(rates)
+  ) {
+    return false;
+  }
+  return Object.entries(rates).every(
+    ([code, rate]) =>
+      isCurrencyCode(code) &&
+      code !== 'EUR' &&
+      typeof rate === 'number' &&
+      Number.isFinite(rate) &&
+      rate > 0
+  );
+}
+
 /** The Cardmarket page of a product (a card printing), with its prices and offers. */
 export function cardmarketProductUrl(idProduct: number): string {
   return `https://www.cardmarket.com/en/Pokemon/Products?idProduct=${String(idProduct)}`;

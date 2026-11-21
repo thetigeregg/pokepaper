@@ -1,6 +1,7 @@
 /**
  * Runs one catalog import by hand: `npm run catalog:sync --workspace server
- * [-- --full]`, or a price pass with `-- --prices`. Uses the same
+ * [-- --full]`, a price pass with `-- --prices`, or an exchange rates
+ * refresh with `-- --rates`. Uses the same
  * configuration as the server (DATA_DIR, CATALOG_LANGUAGES). Safe while the
  * server runs: SQLite serializes writes.
  */
@@ -9,6 +10,7 @@ import { loadConfig } from '../config.js';
 import { CATALOG_DB_FILENAME, openCatalogDatabase } from './db.js';
 import { runCatalogIngest, type CatalogLogger } from './ingest.js';
 import { runPriceRefresh } from './prices.js';
+import { refreshExchangeRates } from './rates.js';
 import { CatalogStore } from './store.js';
 import { TcgdexClient } from './tcgdex-client.js';
 
@@ -42,7 +44,11 @@ try {
     log,
     signal: controller.signal,
   };
-  if (process.argv.includes('--prices')) {
+  if (process.argv.includes('--rates')) {
+    if (!(await refreshExchangeRates(options))) {
+      log.info({ date: options.store.getExchangeRates()?.date ?? null }, 'catalog.rates_unchanged');
+    }
+  } else if (process.argv.includes('--prices')) {
     await runPriceRefresh(options);
   } else {
     await runCatalogIngest({
