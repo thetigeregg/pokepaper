@@ -1,4 +1,13 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
+import { CurrencyPipe, DatePipe } from '@angular/common';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  inject,
+  input,
+  signal,
+} from '@angular/core';
 import {
   IonButton,
   IonIcon,
@@ -9,22 +18,27 @@ import {
   IonNote,
 } from '@ionic/angular';
 import {
+  cardmarketProductUrl,
   MAX_COLLECTION_QUANTITY,
   type CatalogCard,
+  type CatalogCardPrices,
   type CatalogLanguage,
   type CatalogSet,
   type CollectionTarget,
   type CollectionVariant,
 } from '@pokepaper/shared';
 import { addIcons } from 'ionicons';
-import { addCircleOutline, removeCircleOutline } from 'ionicons/icons';
+import { addCircleOutline, openOutline, removeCircleOutline } from 'ionicons/icons';
+import { catalogKey } from '../../core/data/storage-engine';
 import { LANGUAGE_LABELS } from '../../core/services/catalog-language.service';
+import { CatalogPriceService } from '../../core/services/catalog-price.service';
 import { CollectionService } from '../../core/services/collection.service';
 import { displayImage } from '../../core/utils/catalog-image.util';
 import {
   cardSubtitle,
   cardText,
   collectionTarget,
+  priceRows,
   retreatCost,
   retreatLabel,
   setLine,
@@ -38,14 +52,16 @@ import { RarityIconComponent } from './rarity-icon.component';
 /**
  * One card's scan and full text in `language` (docs/ui.md → Card detail):
  * an IonList with sections for abilities, attacks, weakness · resistance ·
- * retreat, the copies owned in `language` per variant (a stepper each), and
- * details. Image above the text on phones, beside it on desktop.
+ * retreat, the copies owned in `language` per variant (a stepper each),
+ * details, and the Cardmarket price per finish. Image above the text on phones, beside it on desktop.
  */
 @Component({
   selector: 'app-card-details',
   templateUrl: 'card-details.component.html',
   styleUrl: 'card-details.component.scss',
   imports: [
+    CurrencyPipe,
+    DatePipe,
     IonList,
     IonListHeader,
     IonItem,
@@ -62,6 +78,7 @@ import { RarityIconComponent } from './rarity-icon.component';
 })
 export class CardDetailsComponent {
   private readonly collection = inject(CollectionService);
+  private readonly priceService = inject(CatalogPriceService);
 
   readonly card = input.required<CatalogCard>();
   readonly set = input.required<CatalogSet>();
@@ -104,13 +121,52 @@ export class CardDetailsComponent {
   );
   readonly retreatCost = computed(() => retreatCost(this.card()));
   readonly retreatLabel = computed(() => retreatLabel(this.card()));
+  /** The stored prices of the card they were read for (a slide's card can change). */
+  private readonly loadedPrices = signal<{
+    key: string;
+    prices: CatalogCardPrices | undefined;
+  } | null>(null);
+  private readonly prices = computed(() => {
+    const loaded = this.loadedPrices();
+    const card = this.card();
+    return loaded?.key === catalogKey(card.region, card.id) ? loaded.prices : undefined;
+  });
+  /** The Price section's rows, one per priced finish (`priceRows`). */
+  readonly priceRows = computed(() => priceRows(this.card(), this.set(), this.prices()));
+  readonly pricesUpdated = computed(() => this.prices()?.updated ?? null);
+  /** The card's Cardmarket page, when its product ID is known (packs aren't checked per card). */
+  readonly cardmarketUrl = computed(() => {
+    const id = this.prices()?.idProduct;
+    return typeof id === 'number' && Number.isSafeInteger(id) && id > 0
+      ? cardmarketProductUrl(id)
+      : null;
+  });
   readonly legal = computed(() => {
     const { standard, expanded } = this.card().legal;
     return [standard ? 'Standard' : null, expanded ? 'Expanded' : null].filter(Boolean).join(' · ');
   });
 
   constructor() {
-    addIcons({ addCircleOutline, removeCircleOutline });
+    addIcons({ addCircleOutline, openOutline, removeCircleOutline });
+    // Reads the card's prices, and again whenever a sync stores new ones.
+    effect((onCleanup) => {
+      const { region, id } = this.card();
+      this.priceService.version();
+      let stale = false;
+      onCleanup(() => {
+        stale = true;
+      });
+      this.priceService
+        .prices(region, id)
+        .then((prices) => {
+          if (!stale) {
+            this.loadedPrices.set({ key: catalogKey(region, id), prices });
+          }
+        })
+        .catch((error: unknown) => {
+          console.error('catalog.card_prices_failed', error);
+        });
+    });
   }
 
   /** Adds (`+1`) or removes (`-1`) a copy of `variant` in the current language. */

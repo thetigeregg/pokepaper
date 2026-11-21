@@ -30,6 +30,11 @@ export interface StoredCardPrices {
 }
 
 const FIGURES = ['avg', 'low', 'trend', 'avg1', 'avg7', 'avg30'] as const;
+
+/** A Cardmarket product ID: a positive integer. */
+function isProductId(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+}
 /** Anything above this is a data error, not a price. */
 const MAX_PRICE = 10_000_000;
 
@@ -79,7 +84,7 @@ export function parseCardmarketPrices(card: unknown): StoredCardPrices | null {
   const idProduct = cardmarket['idProduct'];
   return {
     updated: new Date(updatedAt).toISOString(),
-    idProduct: Number.isSafeInteger(idProduct) ? (idProduct as number) : null,
+    idProduct: isProductId(idProduct) ? idProduct : null,
     base,
     reverseHolo,
   };
@@ -96,6 +101,7 @@ function wireFigures(stored: StoredFigures | null): CardmarketFigures | null {
 export function toWirePrices(stored: StoredCardPrices): CatalogCardPrices {
   return {
     updated: stored.updated,
+    ...(isProductId(stored.idProduct) && { idProduct: stored.idProduct }),
     base: wireFigures(stored.base),
     reverseHolo: wireFigures(stored.reverseHolo),
   };

@@ -1,7 +1,9 @@
 import {
   catalogSetImageUrl,
   COLLECTION_VARIANTS,
+  type CardmarketFigures,
   type CatalogCard,
+  type CatalogCardPrices,
   type CatalogLanguage,
   type CatalogSet,
   type CollectionTarget,
@@ -109,4 +111,67 @@ export function variantRows(
     label: VARIANT_LABELS[variant],
     quantity: quantity(variant),
   })).filter((row) => listed.includes(row.variant) || row.quantity > 0);
+}
+
+/**
+ * The price shown for a finish (docs/catalog.md → Prices): Cardmarket's
+ * trend, else the 30-day average; null when it has neither.
+ */
+export function headlinePrice(figures: CardmarketFigures): number | null {
+  return figures.trend ?? figures.avg30;
+}
+
+/** One finish's prices in card detail's Price section. */
+export interface PriceRow {
+  finish: 'base' | 'reverseHolo';
+  label: string;
+  price: number;
+  avg7: number | null;
+  avg30: number | null;
+}
+
+/**
+ * Reverse holos began with Legendary Collection (May 2002). Cardmarket
+ * reports reverse holo figures for some older cards too, which match no
+ * printing (docs/catalog.md → Prices).
+ */
+export const FIRST_REVERSE_HOLO_DATE = '2002-05-24';
+
+/**
+ * Card detail's Price rows: the base finish (named Holo for cards printed
+ * only as holo, which Cardmarket prices as the base product) and the
+ * reverse holo, each when it has a headline price. The reverse holo is
+ * left out for sets released before reverse holos existed, unless TCGdex
+ * says the card comes in one (its flags have gaps, so they can't decide
+ * for later sets).
+ */
+export function priceRows(
+  card: CatalogCard,
+  set: Pick<CatalogSet, 'releaseDate'>,
+  prices: CatalogCardPrices | undefined
+): PriceRow[] {
+  if (!prices) {
+    return [];
+  }
+  const variants = cardVariants(card);
+  const baseLabel =
+    !variants.includes('normal') && variants.includes('holo')
+      ? VARIANT_LABELS.holo
+      : VARIANT_LABELS.normal;
+  const beforeReverseHolos =
+    set.releaseDate !== null && set.releaseDate < FIRST_REVERSE_HOLO_DATE && !card.variants.reverse;
+  const finishes = [
+    { finish: 'base', label: baseLabel, figures: prices.base },
+    {
+      finish: 'reverseHolo',
+      label: VARIANT_LABELS.reverse,
+      figures: beforeReverseHolos ? null : prices.reverseHolo,
+    },
+  ] as const;
+  return finishes.flatMap(({ finish, label, figures }) => {
+    const price = figures ? headlinePrice(figures) : null;
+    return figures && price !== null
+      ? [{ finish, label, price, avg7: figures.avg7, avg30: figures.avg30 }]
+      : [];
+  });
 }

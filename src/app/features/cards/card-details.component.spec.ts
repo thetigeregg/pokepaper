@@ -1,8 +1,10 @@
+import { signal } from '@angular/core';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import {
   collectionEntry,
   collectionEntryId,
   type CatalogCard,
+  type CatalogCardPrices,
   type CatalogCardText,
   type CatalogSet,
   type CollectionChange,
@@ -12,6 +14,7 @@ import { NEVER } from 'rxjs';
 import { vi } from 'vitest';
 import { LocalUserDataRepository } from '../../core/data/local-user-data-repository';
 import { makeContractCard, makeContractPack } from '../../core/data/storage-engine.contract';
+import { CatalogPriceService } from '../../core/services/catalog-price.service';
 import { ImageCacheService } from '../../core/services/image-cache.service';
 import { SyncService } from '../../core/services/sync.service';
 import { VisibilityService } from '../../core/services/visibility.service';
@@ -85,8 +88,18 @@ describe('CardDetailsComponent', () => {
     fixture.detectChanges();
   };
 
+  /** Stored prices by card ID; bump `version` to signal a sync stored new ones. */
+  let storedPrices: Map<string, CatalogCardPrices>;
+  const priceService = {
+    version: signal(0),
+    prices: vi.fn((_region: string, cardId: string) => Promise.resolve(storedPrices.get(cardId))),
+  };
+
   beforeEach(() => {
     stored = new Map();
+    storedPrices = new Map();
+    priceService.version.set(0);
+    priceService.prices.mockClear();
     repository.setCollectionQuantities.mockClear();
     TestBed.configureTestingModule({
       providers: [
@@ -94,6 +107,7 @@ describe('CardDetailsComponent', () => {
         { provide: SyncService, useValue: { dataChanged$: NEVER } },
         { provide: ImageCacheService, useValue: { resolve: vi.fn(), release: vi.fn() } },
         { provide: VisibilityService, useValue: { whenVisible: () => () => undefined } },
+        { provide: CatalogPriceService, useValue: priceService },
       ],
     });
   });
@@ -371,6 +385,137 @@ describe('CardDetailsComponent', () => {
       await settle(fixture);
 
       expect(element(fixture).querySelector('[data-testid="other-languages"]')).toBeNull();
+    });
+  });
+
+  describe('prices', () => {
+    const prices = (overrides: Partial<CatalogCardPrices> = {}): CatalogCardPrices => ({
+      updated: '2026-11-21T05:47:42.306Z',
+      idProduct: 483559,
+      base: { trend: 0.14, avg7: 0.1, avg30: 0.08 },
+      reverseHolo: { trend: 1.5, avg7: null, avg30: 1.25 },
+      ...overrides,
+    });
+    const priceRow = (fixture: ComponentFixture<CardDetailsComponent>, finish: string) => {
+      const row = element(fixture).querySelector(`[data-testid="price-${finish}"]`);
+      return row
+        ? {
+            label: row.querySelector('ion-label')?.firstChild?.textContent?.trim(),
+            price: row.querySelector('[data-testid="price"]')?.textContent.trim(),
+            averages: row
+              .querySelector('[data-testid="price-averages"]')
+              ?.textContent.replace(/\s+/g, ' ')
+              .trim(),
+          }
+        : null;
+    };
+
+    it('shows each finish’s Cardmarket price last, after the details', async () => {
+      storedPrices.set(base.id, prices());
+      const fixture = create(base);
+      await settle(fixture);
+
+      expect(priceService.prices).toHaveBeenCalledWith('intl', base.id);
+      expect(headers(fixture)).toEqual([
+        'Attacks',
+        'Collection · English',
+        'Details',
+        'Price · Cardmarket',
+      ]);
+      expect(priceRow(fixture, 'base')).toEqual({
+        label: 'Normal',
+        price: '€0.14',
+        averages: '7-day avg €0.10 · 30-day avg €0.08',
+      });
+      expect(priceRow(fixture, 'reverseHolo')).toEqual({
+        label: 'Reverse holo',
+        price: '€1.50',
+        averages: '30-day avg €1.25',
+      });
+      expect(
+        element(fixture).querySelector('[data-testid="price-updated"]')?.textContent.trim()
+      ).toBe('Updated Nov 21, 2026');
+    });
+
+    it('links to the card’s Cardmarket page, opening outside the app', async () => {
+      storedPrices.set(base.id, prices());
+      const fixture = create(base);
+      await settle(fixture);
+
+      const link = element(fixture).querySelector<HTMLIonItemElement>(
+        '[data-testid="price-cardmarket"]'
+      );
+      expect(link?.href).toBe('https://www.cardmarket.com/en/Pokemon/Products?idProduct=483559');
+      expect(link?.target).toBe('_blank');
+      expect(link?.rel).toBe('noopener noreferrer');
+      expect(link?.detailIcon).toBe('open-outline');
+      expect(link?.textContent.trim()).toBe('View on Cardmarket');
+    });
+
+    it.each([
+      ['without a product ID', undefined],
+      ['with an invalid product ID', -1],
+    ])('has no Cardmarket link %s', async (_label, idProduct) => {
+      storedPrices.set(base.id, { ...prices(), idProduct });
+      const fixture = create(base);
+      await settle(fixture);
+
+      expect(element(fixture).querySelector('[data-testid="price-header"]')).not.toBeNull();
+      expect(element(fixture).querySelector('[data-testid="price-cardmarket"]')).toBeNull();
+    });
+
+    it('falls back to the 30-day average without a trend', async () => {
+      storedPrices.set(
+        base.id,
+        prices({ base: { trend: null, avg7: null, avg30: 2 }, reverseHolo: null })
+      );
+      const fixture = create(base);
+      await settle(fixture);
+
+      expect(priceRow(fixture, 'base')?.price).toBe('€2.00');
+      expect(priceRow(fixture, 'reverseHolo')).toBeNull();
+    });
+
+    it('has no Price section for a card Cardmarket doesn’t price', async () => {
+      const fixture = create(base);
+      await settle(fixture);
+
+      expect(headers(fixture)).not.toContain('Price · Cardmarket');
+    });
+
+    it('shows new prices when a sync stores them', async () => {
+      const fixture = create(base);
+      await settle(fixture);
+      expect(priceRow(fixture, 'base')).toBeNull();
+
+      storedPrices.set(base.id, prices());
+      priceService.version.set(1);
+      fixture.detectChanges();
+      await settle(fixture);
+
+      expect(priceRow(fixture, 'base')?.price).toBe('€0.14');
+    });
+
+    it('shows the new card’s prices, never the previous card’s', async () => {
+      storedPrices.set(base.id, prices());
+      const fixture = create(base);
+      await settle(fixture);
+
+      fixture.componentRef.setInput('card', { ...base, id: 'sv01-005' });
+      fixture.detectChanges();
+
+      expect(priceRow(fixture, 'base')).toBeNull();
+    });
+
+    it('logs prices that can’t be read and shows none', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      priceService.prices.mockRejectedValueOnce(new Error('disk'));
+      const fixture = create(base);
+      await settle(fixture);
+
+      expect(error).toHaveBeenCalledWith('catalog.card_prices_failed', expect.any(Error));
+      expect(headers(fixture)).not.toContain('Price · Cardmarket');
+      error.mockRestore();
     });
   });
 });

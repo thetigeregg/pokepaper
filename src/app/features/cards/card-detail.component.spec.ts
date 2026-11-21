@@ -4,6 +4,7 @@ import { ModalController } from '@ionic/angular';
 import { DEFAULT_CATALOG_LANGUAGES } from '@pokepaper/shared';
 import { vi } from 'vitest';
 import { makeContractPack } from '../../core/data/storage-engine.contract';
+import { CatalogPriceService } from '../../core/services/catalog-price.service';
 import { CatalogLanguageService } from '../../core/services/catalog-language.service';
 import { CollectionService } from '../../core/services/collection.service';
 import { ImageCacheService } from '../../core/services/image-cache.service';
@@ -98,6 +99,10 @@ describe('CardDetailComponent', () => {
           useValue: { resolve: () => Promise.resolve(null), release: vi.fn() },
         },
         { provide: VisibilityService, useValue: { whenVisible: () => () => undefined } },
+        {
+          provide: CatalogPriceService,
+          useValue: { version: signal(0), prices: () => Promise.resolve(undefined) },
+        },
       ],
     });
   });

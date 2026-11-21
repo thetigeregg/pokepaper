@@ -241,6 +241,12 @@ export interface CardmarketFigures {
 export interface CatalogCardPrices {
   /** When TCGdex last read Cardmarket's price guide (ISO timestamp). */
   updated: string;
+  /**
+   * Cardmarket's product ID, when TCGdex reports it: the card's page is
+   * `cardmarketProductUrl(idProduct)`. Absent from prices stored before it
+   * was sent.
+   */
+  idProduct?: number;
   /** The normal print; for cards printed only as holo, the holo. */
   base: CardmarketFigures | null;
   /** The reverse holo (Cardmarket's "holo" figures). */
@@ -257,6 +263,11 @@ export interface CatalogPricePack {
   version: number;
   currency: 'EUR';
   prices: Record<string, CatalogCardPrices>;
+}
+
+/** The Cardmarket page of a product (a card printing), with its prices and offers. */
+export function cardmarketProductUrl(idProduct: number): string {
+  return `https://www.cardmarket.com/en/Pokemon/Products?idProduct=${String(idProduct)}`;
 }
 
 export type CatalogImageQuality = 'low' | 'high';
