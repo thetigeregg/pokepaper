@@ -177,3 +177,7 @@
 ## v0.28.0 - 2026-11-21
 
 - f25979b feat(cards): show Cardmarket prices in card detail (#52)
+
+## v0.29.0 - 2026-11-21
+
+- 48760f8 feat(collection): show collection value in a preferred currency (#53)
