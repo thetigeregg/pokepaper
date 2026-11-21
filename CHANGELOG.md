@@ -161,3 +161,7 @@
 ## v0.25.0 - 2026-11-20
 
 - 1e0304e feat(decks): duplicate a deck under a name you choose (#48)
+
+## v0.25.1 - 2026-11-20
+
+- 17a8fa7 fix(ui): checklist rarity layout and sheet safe-area padding (#49)
