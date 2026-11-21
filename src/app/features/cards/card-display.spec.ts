@@ -77,6 +77,8 @@ describe('prices', () => {
     ...overrides,
   });
 
+  const modern = { releaseDate: '2023-03-31' };
+
   it('headlines the trend, else the 30-day average', () => {
     expect(headlinePrice(figures(0.14, 0.1, 0.08))).toBe(0.14);
     expect(headlinePrice(figures(null, 0.1, 0.08))).toBe(0.08);
@@ -87,6 +89,7 @@ describe('prices', () => {
     expect(
       priceRows(
         card({ variants: variants({ normal: true, reverse: true }) }),
+        modern,
         prices(figures(0.14, 0.1, 0.08), figures(0.28, null, 0.3))
       )
     ).toEqual([
@@ -98,17 +101,31 @@ describe('prices', () => {
   it('names the base finish Holo for cards printed only as holo', () => {
     const rows = priceRows(
       card({ variants: variants({ holo: true, reverse: true }) }),
+      modern,
       prices(figures(313.78, null, null))
     );
 
     expect(rows.map((row) => row.label)).toEqual(['Holo']);
   });
 
+  it('leaves out reverse holo figures from before reverse holos existed', () => {
+    const both = prices(figures(441.79, null, null), figures(123.63, null, null));
+    const finishes = (set: { releaseDate: string | null }, reverse = false) =>
+      priceRows(card({ variants: variants({ holo: true, reverse }) }), set, both).map(
+        (row) => row.finish
+      );
+
+    expect(finishes({ releaseDate: '1999-01-09' })).toEqual(['base']);
+    expect(finishes({ releaseDate: '1999-01-09' }, true)).toEqual(['base', 'reverseHolo']);
+    expect(finishes({ releaseDate: '2002-05-24' })).toEqual(['base', 'reverseHolo']);
+    expect(finishes({ releaseDate: null })).toEqual(['base', 'reverseHolo']);
+  });
+
   it('skips finishes without a headline price, and cards without prices', () => {
-    expect(priceRows(card({}), prices(figures(null, 2, null), figures(1, 1, 1)))).toEqual([
+    expect(priceRows(card({}), modern, prices(figures(null, 2, null), figures(1, 1, 1)))).toEqual([
       { finish: 'reverseHolo', label: 'Reverse holo', price: 1, avg7: 1, avg30: 1 },
     ]);
-    expect(priceRows(card({}), undefined)).toEqual([]);
+    expect(priceRows(card({}), modern, undefined)).toEqual([]);
   });
 });
 

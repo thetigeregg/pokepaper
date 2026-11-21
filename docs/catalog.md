@@ -158,6 +158,7 @@ After the sets, each run downloads the [prices](#prices) of every catalog with s
 - When a catalog has no sets left on the device, its prices and ETag are dropped.
 - `getCatalogCardPrices(region, cardId)` reads a card's prices; a card Cardmarket doesn't price has none. `CatalogSyncService.pricesChanged$` emits after new prices are stored, and `CatalogPriceService` (which screens read prices through) bumps its `version` signal, so open screens reload them.
 - **Shown price:** a finish's headline price is its `trend`, else its `avg30` (`headlinePrice`), since `trend` is what Cardmarket itself headlines. Card detail shows it per finish with the 7- and 30-day averages below (docs/ui.md → Card detail).
+- **Reverse holo figures before reverse holos.** Reverse holos began with Legendary Collection (May 2002), but Cardmarket reports `-holo` figures for many older cards too (Base Set Charizard: €124 next to €442), which match no printing. The app leaves them out for sets released before then, unless TCGdex flags the card as coming in reverse holo (`priceRows`). It can't go by those flags in general: TCGdex lacks them for whole sets that have reverse holos (every Sun & Moon, XY and EX set). The server keeps the figures as reported.
 
 ## Images on the device
 

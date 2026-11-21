@@ -131,7 +131,7 @@ export class CardDetailsComponent {
     return loaded?.key === catalogKey(card.region, card.id) ? loaded.prices : undefined;
   });
   /** The Price section's rows, one per priced finish (`priceRows`). */
-  readonly priceRows = computed(() => priceRows(this.card(), this.prices()));
+  readonly priceRows = computed(() => priceRows(this.card(), this.set(), this.prices()));
   readonly pricesUpdated = computed(() => this.prices()?.updated ?? null);
   readonly legal = computed(() => {
     const { standard, expanded } = this.card().legal;

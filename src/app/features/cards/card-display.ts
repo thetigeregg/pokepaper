@@ -131,11 +131,25 @@ export interface PriceRow {
 }
 
 /**
+ * Reverse holos began with Legendary Collection (May 2002). Cardmarket
+ * reports reverse holo figures for some older cards too, which match no
+ * printing (docs/catalog.md → Prices).
+ */
+export const FIRST_REVERSE_HOLO_DATE = '2002-05-24';
+
+/**
  * Card detail's Price rows: the base finish (named Holo for cards printed
  * only as holo, which Cardmarket prices as the base product) and the
- * reverse holo, each when it has a headline price.
+ * reverse holo, each when it has a headline price. The reverse holo is
+ * left out for sets released before reverse holos existed, unless TCGdex
+ * says the card comes in one (its flags have gaps, so they can't decide
+ * for later sets).
  */
-export function priceRows(card: CatalogCard, prices: CatalogCardPrices | undefined): PriceRow[] {
+export function priceRows(
+  card: CatalogCard,
+  set: Pick<CatalogSet, 'releaseDate'>,
+  prices: CatalogCardPrices | undefined
+): PriceRow[] {
   if (!prices) {
     return [];
   }
@@ -144,9 +158,15 @@ export function priceRows(card: CatalogCard, prices: CatalogCardPrices | undefin
     !variants.includes('normal') && variants.includes('holo')
       ? VARIANT_LABELS.holo
       : VARIANT_LABELS.normal;
+  const beforeReverseHolos =
+    set.releaseDate !== null && set.releaseDate < FIRST_REVERSE_HOLO_DATE && !card.variants.reverse;
   const finishes = [
     { finish: 'base', label: baseLabel, figures: prices.base },
-    { finish: 'reverseHolo', label: VARIANT_LABELS.reverse, figures: prices.reverseHolo },
+    {
+      finish: 'reverseHolo',
+      label: VARIANT_LABELS.reverse,
+      figures: beforeReverseHolos ? null : prices.reverseHolo,
+    },
   ] as const;
   return finishes.flatMap(({ finish, label, figures }) => {
     const price = figures ? headlinePrice(figures) : null;
