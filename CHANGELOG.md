@@ -173,3 +173,7 @@
 ## v0.27.0 - 2026-11-21
 
 - b63eb22 feat(catalog): keep card prices on the device (#51)
+
+## v0.28.0 - 2026-11-21
+
+- f25979b feat(cards): show Cardmarket prices in card detail (#52)
