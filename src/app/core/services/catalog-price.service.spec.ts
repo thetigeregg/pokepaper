@@ -28,6 +28,19 @@ describe('CatalogPriceService', () => {
     expect(engine.getCatalogCardPrices).toHaveBeenCalledWith('asia', 'SV2a-001');
   });
 
+  it('rejects instead of throwing when storage isn’t ready', async () => {
+    TestBed.overrideProvider(StorageEngineFactory, {
+      useValue: {
+        getEngine: () => {
+          throw new Error('not initialized');
+        },
+      },
+    });
+    const service = TestBed.inject(CatalogPriceService);
+
+    await expect(service.prices('intl', 'sv01-001')).rejects.toThrow('not initialized');
+  });
+
   it('bumps its version whenever a sync stores new prices', () => {
     const service = TestBed.inject(CatalogPriceService);
     expect(service.version()).toBe(0);

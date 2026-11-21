@@ -110,6 +110,18 @@ describe('toWirePrices', () => {
     ).toBeNull();
   });
 
+  it('never sends a product ID that isn’t one', () => {
+    // Rows stored before IDs were checked can hold anything.
+    expect(
+      toWirePrices({
+        updated: '2026-11-21T00:00:00.000Z',
+        idProduct: 0,
+        base: { avg: 1, low: 1, trend: 1, avg1: 1, avg7: 1, avg30: 1 },
+        reverseHolo: null,
+      })
+    ).not.toHaveProperty('idProduct');
+  });
+
   it('drops a finish that has none of those figures', () => {
     expect(
       toWirePrices({

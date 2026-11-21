@@ -24,8 +24,11 @@ export class CatalogPriceService {
       });
   }
 
-  /** A card's prices, or undefined when Cardmarket doesn't price it (or none are stored yet). */
-  prices(region: CatalogRegion, cardId: string): Promise<CatalogCardPrices | undefined> {
+  /**
+   * A card's prices, or undefined when Cardmarket doesn't price it (or none
+   * are stored yet). Rejects, never throws, when storage isn't ready.
+   */
+  async prices(region: CatalogRegion, cardId: string): Promise<CatalogCardPrices | undefined> {
     return this.storageEngineFactory.getEngine().getCatalogCardPrices(region, cardId);
   }
 }
