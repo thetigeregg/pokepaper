@@ -165,3 +165,7 @@
 ## v0.25.1 - 2026-11-20
 
 - 17a8fa7 fix(ui): checklist rarity layout and sheet safe-area padding (#49)
+
+## v0.26.0 - 2026-11-21
+
+- ceab7d4 feat(catalog): import Cardmarket prices and serve them per region (#50)
