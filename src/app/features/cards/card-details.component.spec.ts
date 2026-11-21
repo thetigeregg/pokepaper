@@ -15,6 +15,7 @@ import { vi } from 'vitest';
 import { LocalUserDataRepository } from '../../core/data/local-user-data-repository';
 import { makeContractCard, makeContractPack } from '../../core/data/storage-engine.contract';
 import { CatalogPriceService } from '../../core/services/catalog-price.service';
+import { CurrencyService, formatMoney } from '../../core/services/currency.service';
 import { ImageCacheService } from '../../core/services/image-cache.service';
 import { SyncService } from '../../core/services/sync.service';
 import { VisibilityService } from '../../core/services/visibility.service';
@@ -95,7 +96,18 @@ describe('CardDetailsComponent', () => {
     prices: vi.fn((_region: string, cardId: string) => Promise.resolve(storedPrices.get(cardId))),
   };
 
+  /** Prices show in `currency`, at `rate` per euro, with ECB rates of `ratesDate`. */
+  const currency = signal('EUR');
+  let rate = 1;
+  const currencyService = {
+    currency,
+    rates: signal<{ date: string } | null>({ date: '2026-11-20' }),
+    format: (euros: number) => formatMoney(euros * rate, currency()),
+  };
+
   beforeEach(() => {
+    currency.set('EUR');
+    rate = 1;
     stored = new Map();
     storedPrices = new Map();
     priceService.version.set(0);
@@ -108,6 +120,7 @@ describe('CardDetailsComponent', () => {
         { provide: ImageCacheService, useValue: { resolve: vi.fn(), release: vi.fn() } },
         { provide: VisibilityService, useValue: { whenVisible: () => () => undefined } },
         { provide: CatalogPriceService, useValue: priceService },
+        { provide: CurrencyService, useValue: currencyService },
       ],
     });
   });
@@ -462,6 +475,26 @@ describe('CardDetailsComponent', () => {
 
       expect(element(fixture).querySelector('[data-testid="price-header"]')).not.toBeNull();
       expect(element(fixture).querySelector('[data-testid="price-cardmarket"]')).toBeNull();
+    });
+
+    it('shows prices in the currency picked in Settings, noting the conversion', async () => {
+      currency.set('CHF');
+      rate = 0.9;
+      storedPrices.set(base.id, prices());
+      const fixture = create(base);
+      await settle(fixture);
+
+      expect(priceRow(fixture, 'base')).toEqual({
+        label: 'Normal',
+        price: 'CHF\u00a00.13',
+        averages: '7-day avg CHF 0.09 · 30-day avg CHF 0.07', // normalized whitespace
+      });
+      expect(
+        element(fixture)
+          .querySelector('[data-testid="price-updated"]')
+          ?.textContent.replace(/\s+/g, ' ')
+          .trim()
+      ).toBe('Updated Nov 21, 2026 · converted from euros at the ECB rate of Nov 20, 2026');
     });
 
     it('falls back to the 30-day average without a trend', async () => {

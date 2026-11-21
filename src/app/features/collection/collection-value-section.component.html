@@ -1,0 +1,78 @@
+<ion-list>
+  <ion-list-header>
+    <ion-label>Collection value</ion-label>
+  </ion-list-header>
+
+  @if (values(); as values) {
+    @for (value of values; track value.region) {
+      <ion-item [attr.data-testid]="'value-' + value.region">
+        <ion-label>
+          {{ regionLabels[value.region] }}
+          <p>
+            {{ value.copies | number }} {{ value.copies === 1 ? 'card' : 'cards' }}
+            @if (value.unpriced > 0) {
+              · {{ value.unpriced | number }} without a price
+            }
+          </p>
+        </ion-label>
+        <ion-note slot="end" class="value" data-testid="value-amount">
+          {{ money(value.value) }}
+        </ion-note>
+      </ion-item>
+    } @empty {
+      <ion-item data-testid="value-empty">
+        <ion-label>No cards in your collection yet</ion-label>
+      </ion-item>
+    }
+    @if (total(); as total) {
+      <ion-item data-testid="value-total">
+        <ion-label><strong>Total</strong></ion-label>
+        <ion-note slot="end" class="value" data-testid="value-amount">
+          {{ money(total.amount) }}
+        </ion-note>
+      </ion-item>
+    }
+    <ion-item data-testid="value-currency">
+      <ion-select
+        label="Currency"
+        interface="alert"
+        [value]="preferredCurrency()"
+        (ionChange)="pickCurrency($event.detail.value)"
+      >
+        @for (option of currencyOptions(); track option.code) {
+          <ion-select-option [value]="option.code">
+            {{ option.name }} ({{ option.code }})
+          </ion-select-option>
+        }
+      </ion-select>
+    </ion-item>
+    @if (values.length > 0) {
+      <ion-item>
+        <ion-label class="ion-text-wrap">
+          <p class="hint" data-testid="value-note">
+            @if (convertedOn(); as day) {
+              Cardmarket price trends for any language and condition, converted from euros at the
+              ECB rate of {{ day | date: 'mediumDate' }}.
+            } @else {
+              Cardmarket price trends in euros, for any language and condition.
+            }
+            @if (awaitingRates()) {
+              Shown in euros until exchange rates are downloaded.
+            }
+            @if (updated(); as updated) {
+              Updated {{ updated | date: 'mediumDate' }}.
+            }
+          </p>
+        </ion-label>
+      </ion-item>
+    }
+  } @else if (failed()) {
+    <ion-item data-testid="value-failed">
+      <ion-label>Couldn’t read the prices on this device</ion-label>
+    </ion-item>
+  } @else {
+    <ion-item>
+      <ion-label>Calculating…</ion-label>
+    </ion-item>
+  }
+</ion-list>

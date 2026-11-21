@@ -438,6 +438,21 @@ export class SqliteStorageEngine implements StorageEngine {
     return this.firstEntity(rows) as CatalogCardPrices | undefined;
   }
 
+  async getCatalogPricesByKey(keys: readonly string[]): Promise<Map<string, CatalogCardPrices>> {
+    const prices = new Map<string, CatalogCardPrices>();
+    for (let index = 0; index < keys.length; index += BULK_BATCH_SIZE) {
+      const batch = keys.slice(index, index + BULK_BATCH_SIZE);
+      const rows = await this.sql.query<PayloadRow & { key: string }>(
+        `SELECT key, payload FROM catalog_prices WHERE key IN (${batch.map(() => '?').join(', ')})`,
+        batch
+      );
+      for (const row of rows) {
+        prices.set(row.key, this.parseEntity(row) as CatalogCardPrices);
+      }
+    }
+    return prices;
+  }
+
   async putCollectionEntry(entry: CollectionEntry): Promise<void> {
     await this.sql.run(
       `INSERT INTO collection_entries (key, payload) VALUES (?, ?)

@@ -1,4 +1,4 @@
-import { CurrencyPipe, DatePipe } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -32,6 +32,7 @@ import { addCircleOutline, openOutline, removeCircleOutline } from 'ionicons/ico
 import { catalogKey } from '../../core/data/storage-engine';
 import { LANGUAGE_LABELS } from '../../core/services/catalog-language.service';
 import { CatalogPriceService } from '../../core/services/catalog-price.service';
+import { CurrencyService } from '../../core/services/currency.service';
 import { CollectionService } from '../../core/services/collection.service';
 import { displayImage } from '../../core/utils/catalog-image.util';
 import {
@@ -60,7 +61,6 @@ import { RarityIconComponent } from './rarity-icon.component';
   templateUrl: 'card-details.component.html',
   styleUrl: 'card-details.component.scss',
   imports: [
-    CurrencyPipe,
     DatePipe,
     IonList,
     IonListHeader,
@@ -79,6 +79,7 @@ import { RarityIconComponent } from './rarity-icon.component';
 export class CardDetailsComponent {
   private readonly collection = inject(CollectionService);
   private readonly priceService = inject(CatalogPriceService);
+  private readonly currencyService = inject(CurrencyService);
 
   readonly card = input.required<CatalogCard>();
   readonly set = input.required<CatalogSet>();
@@ -134,6 +135,10 @@ export class CardDetailsComponent {
   /** The Price section's rows, one per priced finish (`priceRows`). */
   readonly priceRows = computed(() => priceRows(this.card(), this.set(), this.prices()));
   readonly pricesUpdated = computed(() => this.prices()?.updated ?? null);
+  /** The ECB rates' day when prices are converted from euros, else null. */
+  readonly convertedOn = computed(() =>
+    this.currencyService.currency() === 'EUR' ? null : (this.currencyService.rates()?.date ?? null)
+  );
   /** The card's Cardmarket page, when its product ID is known (packs aren't checked per card). */
   readonly cardmarketUrl = computed(() => {
     const id = this.prices()?.idProduct;
@@ -167,6 +172,11 @@ export class CardDetailsComponent {
           console.error('catalog.card_prices_failed', error);
         });
     });
+  }
+
+  /** A price in euros, in the currency picked in Settings ("CHF 0.13"). */
+  money(euros: number): string {
+    return this.currencyService.format(euros);
   }
 
   /** Adds (`+1`) or removes (`-1`) a copy of `variant` in the current language. */

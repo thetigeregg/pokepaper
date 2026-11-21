@@ -5,6 +5,7 @@ import { DEFAULT_CATALOG_LANGUAGES } from '@pokepaper/shared';
 import { vi } from 'vitest';
 import { makeContractPack } from '../../core/data/storage-engine.contract';
 import { CatalogPriceService } from '../../core/services/catalog-price.service';
+import { CurrencyService } from '../../core/services/currency.service';
 import { CatalogLanguageService } from '../../core/services/catalog-language.service';
 import { CollectionService } from '../../core/services/collection.service';
 import { ImageCacheService } from '../../core/services/image-cache.service';
@@ -102,6 +103,10 @@ describe('CardDetailComponent', () => {
         {
           provide: CatalogPriceService,
           useValue: { version: signal(0), prices: () => Promise.resolve(undefined) },
+        },
+        {
+          provide: CurrencyService,
+          useValue: { currency: signal('EUR'), rates: signal(null), format: String },
         },
       ],
     });

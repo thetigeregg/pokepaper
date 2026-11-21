@@ -2,6 +2,7 @@ import {
   CATALOG_LANGUAGE_REGION,
   CATALOG_REGIONS,
   isCatalogLanguage,
+  isCurrencyCode,
   type CatalogLanguage,
   type CatalogRegion,
 } from './catalog';
@@ -23,6 +24,11 @@ export interface UserSettings {
    * `knownCatalogLanguages()`, and keep unknown entries when writing.
    */
   catalogLanguages?: Readonly<Record<string, string>>;
+  /**
+   * The currency prices are shown in (ISO 4217 code), converted from euros
+   * at the ECB's rates (docs/catalog.md → Currencies). Missing: euros.
+   */
+  currency?: string;
 }
 
 export const SETTINGS_ENTITY_ID = 'settings';
@@ -63,8 +69,11 @@ export function isUserSettings(value: unknown): value is UserSettings {
     return false;
   }
 
-  const { cardLanguage, catalogLanguages } = value as Record<string, unknown>;
+  const { cardLanguage, catalogLanguages, currency } = value as Record<string, unknown>;
   if (typeof cardLanguage !== 'string' || cardLanguage.length === 0 || cardLanguage.length > 16) {
+    return false;
+  }
+  if (currency !== undefined && !isCurrencyCode(currency)) {
     return false;
   }
   if (catalogLanguages === undefined) {

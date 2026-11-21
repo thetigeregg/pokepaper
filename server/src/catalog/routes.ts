@@ -77,6 +77,7 @@ function withETag(reply: FastifyReply, etag: string): FastifyReply {
  * - `GET /api/catalog/manifest`: all series and a hash per set.
  * - `GET /api/catalog/sets/:region/:setId`: one set with all its cards.
  * - `GET /api/catalog/prices/:region`: Cardmarket prices of a region's cards.
+ * - `GET /api/catalog/rates`: the ECB's euro exchange rates.
  * - `GET /images/catalog/...`: card scans and set logos/symbols, fetched from
  *   TCGdex once and cached on disk. Only images the catalog links are
  *   served, so this is never an open proxy to TCGdex.
@@ -143,6 +144,19 @@ export function registerCatalogRoutes(app: FastifyInstance, options: CatalogRout
       return pack;
     }
   );
+
+  app.get('/api/catalog/rates', catalogRoute, (request, reply) => {
+    const rates = store.getExchangeRates();
+    if (!rates) {
+      return notFound(reply);
+    }
+    const current = `"rates-${rates.date}"`;
+    if (matchesIfNoneMatch(request, current)) {
+      return withETag(reply, current).code(304).send();
+    }
+    withETag(reply, current);
+    return rates;
+  });
 
   const sendImage = async (
     request: FastifyRequest,

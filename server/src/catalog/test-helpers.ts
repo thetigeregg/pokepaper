@@ -276,3 +276,16 @@ export function tcgdexFixture(): Record<string, FakeRoute> {
     '/ja/cards/SV2a-002': { id: 'SV2a-002', localId: '002', category: 'Pokemon' },
   };
 }
+
+/** An ECB daily rates document for `date`, with CHF at `chf` (and USD, unless left out). */
+export function ecbXml(date: string, chf: number, usd: number | null = null): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<gesmes:Envelope xmlns:gesmes="http://www.gesmes.org/xml/2002-08-01" xmlns="http://www.ecb.int/vocabulary/2002-08-01/eurofxref">
+  <gesmes:subject>Reference rates</gesmes:subject>
+  <Cube>
+    <Cube time='${date}'>
+${usd === null ? '' : `      <Cube currency='USD' rate='${String(usd)}'/>\n`}      <Cube currency='CHF' rate='${String(chf)}'/>
+    </Cube>
+  </Cube>
+</gesmes:Envelope>`;
+}

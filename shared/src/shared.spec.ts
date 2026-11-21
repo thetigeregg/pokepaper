@@ -3,6 +3,7 @@ import {
   basicEnergyTypeOf,
   catalogCardImageUrl,
   DEFAULT_SETTINGS,
+  isExchangeRates,
   isSyncEntityType,
   isUserSettings,
   knownCatalogLanguages,
@@ -48,8 +49,16 @@ describe('isUserSettings', () => {
         ),
       },
     ],
+    ['a currency in lowercase', { cardLanguage: 'en', currency: 'chf' }],
+    ['a currency that is not a code', { cardLanguage: 'en', currency: 'Swiss franc' }],
+    ['a non-string currency', { cardLanguage: 'en', currency: 756 }],
   ])('rejects %s', (_label, value) => {
     expect(isUserSettings(value)).toBe(false);
+  });
+
+  it('accepts a currency, including ones this build has no rate for', () => {
+    expect(isUserSettings({ cardLanguage: 'en', currency: 'CHF' })).toBe(true);
+    expect(isUserSettings({ cardLanguage: 'en', currency: 'XYZ' })).toBe(true);
   });
 
   it('accepts per-catalog languages, and older payloads without them', () => {
@@ -71,6 +80,26 @@ describe('isUserSettings', () => {
     expect(knownCatalogLanguages({ cardLanguage: 'en', catalogLanguages: { intl: 'ja' } })).toEqual(
       {}
     );
+  });
+});
+
+describe('isExchangeRates', () => {
+  it('accepts ECB rates', () => {
+    expect(isExchangeRates({ date: '2026-11-20', rates: { CHF: 0.9223, JPY: 174.35 } })).toBe(true);
+    expect(isExchangeRates({ date: '2026-11-20', rates: {} })).toBe(true);
+  });
+
+  it.each([
+    ['null', null],
+    ['no date', { rates: { CHF: 1 } }],
+    ['a date that is not a day', { date: 'Nov 20', rates: { CHF: 1 } }],
+    ['rates that are not an object', { date: '2026-11-20', rates: [1] }],
+    ['a code that is not one', { date: '2026-11-20', rates: { chf: 1 } }],
+    ['a rate for the euro', { date: '2026-11-20', rates: { EUR: 1 } }],
+    ['a zero rate', { date: '2026-11-20', rates: { CHF: 0 } }],
+    ['a rate that is not a number', { date: '2026-11-20', rates: { CHF: '0.92' } }],
+  ])('rejects %s', (_label, value) => {
+    expect(isExchangeRates(value)).toBe(false);
   });
 });
 

@@ -110,9 +110,19 @@ Each finish has `trend` (Cardmarket's headline price, smoothed over recent sales
 npm run catalog:sync --workspace server               # light pass
 npm run catalog:sync --workspace server -- --full     # full refresh
 npm run catalog:sync --workspace server -- --prices   # price pass
+npm run catalog:sync --workspace server -- --rates    # exchange rates
 ```
 
 It uses the server's configuration (`DATA_DIR`, `CATALOG_LANGUAGES`, …) and can run while the server is up. Locally, `CATALOG_LANGUAGES=zh-tw npm run catalog:sync --workspace server` builds a small catalog in seconds.
+
+### Currencies
+
+Prices are in euros; the app can show them in another currency (Settings → Collection value → Currency, synced as `UserSettings.currency`), converted at the European Central Bank's [euro reference rates](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html): about 30 currencies, published each working day around 16:00 CET, free and without a key.
+
+- **Server:** each scheduled run starts by fetching the ECB's daily XML (`refreshExchangeRates`, one small request), before the import, so a new server has rates long before its first full import finishes. They're stored in `catalog_meta` (`exchange_rates`) when they're for a new day. On any failure (unreachable, an error, not rates) the stored rates stay, logged as `catalog.rates_failed`. The app never contacts the ECB itself.
+- **Lag:** runs come every `CATALOG_REFRESH_HOURS` (default 24) after the previous one ends, so the rates in use can be a day behind the ECB's latest (a run before 16:00 CET gets the previous working day's). For showing card prices, that's close enough.
+- **App:** each catalog run, after the prices and only once sets are on the device, downloads them (`GET /api/catalog/rates`, with the stored ETag) into sync metadata (`exchangeRates`, with `exchangeRatesEtag`, in one transaction). They're fetched even when prices fail, and a rates failure is only logged (`catalog.rates_sync_failed`): it doesn't fail the catalog run. `CurrencyService` converts and formats every amount (`format`), in the picked currency when it has a rate, else in euros (as until rates first arrive). Amounts are converted for display only: values are summed in euros first.
+- Screens that show a converted amount say so: "converted from euros at the ECB rate of Nov 20, 2026".
 
 ## Download API
 
@@ -122,6 +132,7 @@ All routes need a session, like the rest of the API. Wire types are in `shared/s
 | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET /api/catalog/manifest`                               | `CatalogManifest`: catalog version, languages, every series, and each set's `hash` and card count. `ETag` from the version                                                                         |
 | `GET /api/catalog/sets/:region/:setId`                    | `CatalogSetPack`: the set and all its cards in display order. `ETag` = the set's hash                                                                                                              |
+| `GET /api/catalog/rates`                                  | `ExchangeRates`: the ECB's rates per euro for one day. `ETag` from the day; `404` before the server has fetched any                                                                                |
 | `GET /api/catalog/prices/:region`                         | `CatalogPricePack`: `trend`, `avg7` and `avg30` of each finish, plus Cardmarket's product ID (`idProduct`), for every card in the region with at least one of them. `ETag` from its prices version |
 | `GET /images/catalog/cards/:region/:cardId/:lang/:q.webp` | Card scan, `q` = `low` (grids, ~18 KB) or `high` (detail, ~75 KB). Use `catalogCardImageUrl()`                                                                                                     |
 | `GET /images/catalog/sets/:region/:setId/logo/:lang.webp` | Set logo in a language                                                                                                                                                                             |
@@ -230,4 +241,4 @@ Cached images live in `DATA_DIR/images/catalog/` and are also rebuildable (delet
 
 ## Attribution
 
-Card data: [TCGdex](https://github.com/tcgdex/cards-database) (MIT License). Prices: Cardmarket's price guide, via TCGdex. Energy symbol icons: from ilkcmp's [Neo Neo Blank Symbolsheet](https://www.deviantart.com/ilkcmp/art/Neo-Neo-Blank-Symbolsheet-486883197) (free for non-commercial use). Rarity symbol icons: collected from community sources. Card images, energy and rarity symbols, and names are © The Pokémon Company, Nintendo, Game Freak and Creatures. PokePaper is a personal, non-commercial project not affiliated with them.
+Card data: [TCGdex](https://github.com/tcgdex/cards-database) (MIT License). Prices: Cardmarket's price guide, via TCGdex. Exchange rates: European Central Bank euro reference rates. Energy symbol icons: from ilkcmp's [Neo Neo Blank Symbolsheet](https://www.deviantart.com/ilkcmp/art/Neo-Neo-Blank-Symbolsheet-486883197) (free for non-commercial use). Rarity symbol icons: collected from community sources. Card images, energy and rarity symbols, and names are © The Pokémon Company, Nintendo, Game Freak and Creatures. PokePaper is a personal, non-commercial project not affiliated with them.

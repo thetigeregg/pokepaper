@@ -11,6 +11,7 @@ import {
   IonToolbar,
 } from '@ionic/angular';
 import { AccountSectionComponent } from '../features/account/account-section.component';
+import { CollectionValueSectionComponent } from '../features/collection/collection-value-section.component';
 import { CatalogSectionComponent } from '../features/catalog/catalog-section.component';
 import { ImagesSectionComponent } from '../features/catalog/images-section.component';
 import { SyncService, type SyncStatus } from '../core/services/sync.service';
@@ -30,6 +31,7 @@ const SYNC_STATUS_LABELS: Record<SyncStatus, string> = {
   imports: [
     AccountSectionComponent,
     CatalogSectionComponent,
+    CollectionValueSectionComponent,
     ImagesSectionComponent,
     IonHeader,
     IonToolbar,

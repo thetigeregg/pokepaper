@@ -8,6 +8,7 @@ import type {
   CatalogPricePack,
   CatalogRegion,
   CatalogSetPack,
+  ExchangeRates,
 } from '@pokepaper/shared';
 import { vi, type MockInstance } from 'vitest';
 import { AppDb } from '../data/app-db';
@@ -23,6 +24,8 @@ import {
   CATALOG_CHECKED_AT_KEY,
   CATALOG_ETAG_KEY,
   catalogPricesEtagKey,
+  EXCHANGE_RATES_ETAG_KEY,
+  EXCHANGE_RATES_KEY,
   CatalogSyncService,
   type CatalogSyncStatus,
 } from './catalog-sync.service';
@@ -146,6 +149,22 @@ describe('CatalogSyncService', () => {
     return request;
   }
 
+  /** Answers the exchange rates request: by default as a server without rates yet (404). */
+  async function respondRates(
+    rates: ExchangeRates | 'none' | 'unchanged' = 'none',
+    etag = '"rates-2026-11-20"'
+  ) {
+    const request = await waitForRequest(httpMock, '/api/catalog/rates');
+    if (rates === 'none') {
+      request.flush(null, { status: 404, statusText: 'Not Found' });
+    } else if (rates === 'unchanged') {
+      request.flush(null, { status: 304, statusText: 'Not Modified' });
+    } else {
+      request.flush(rates, { headers: { etag } });
+    }
+    return request;
+  }
+
   async function waitForStatus(status: CatalogSyncStatus) {
     await waitFor(() => service.status() === status, `status ${status}`);
   }
@@ -162,6 +181,7 @@ describe('CatalogSyncService', () => {
     await respondPack(SV2A);
     await respondPrices('intl', makeContractPricePack('intl', { 'sv01-001': 0.14 }));
     await respondPrices('asia', makeContractPricePack('asia', {}));
+    await respondRates();
     await run;
 
     expect(service.status()).toBe('idle');
@@ -202,6 +222,7 @@ describe('CatalogSyncService', () => {
     await respondPack(SV2A);
     await respondPrices('intl');
     await respondPrices('asia');
+    await respondRates();
     await run;
 
     expect((await engine.listCatalogSets()).map((set) => `${set.key}@${set.hash}`).sort()).toEqual([
@@ -224,6 +245,7 @@ describe('CatalogSyncService', () => {
     });
     await respondPack(SV01);
     await respondPrices('intl');
+    await respondRates();
     await run;
 
     expect(sleep).toHaveBeenCalledWith(7000);
@@ -270,6 +292,7 @@ describe('CatalogSyncService', () => {
     await respondPack(SV2A);
     await respondPrices('intl');
     await respondPrices('asia');
+    await respondRates();
     await second;
 
     expect(service.stats()).toEqual({ sets: 2, cards: 3 });
@@ -333,6 +356,7 @@ describe('CatalogSyncService', () => {
       statusText: 'Not Found',
     });
     await respondPrices('intl');
+    await respondRates();
     await run;
 
     expect(service.status()).toBe('idle');
@@ -399,6 +423,7 @@ describe('CatalogSyncService', () => {
       statusText: 'Not Modified',
     });
     await respondPrices('intl');
+    await respondRates();
     await run;
 
     expect(persist).toHaveBeenCalledTimes(1);
@@ -421,6 +446,7 @@ describe('CatalogSyncService', () => {
         '"prices-intl-4"'
       );
       await respondPrices('asia', makeContractPricePack('asia', { 'SV2a-001': 8.33 }));
+      await respondRates();
       await first;
 
       expect(intl.request.headers.has('If-None-Match')).toBe(false);
@@ -439,6 +465,7 @@ describe('CatalogSyncService', () => {
       });
       const again = await respondPrices('intl', 'unchanged');
       await respondPrices('asia', makeContractPricePack('asia', {}, 2), '"prices-asia-2"');
+      await respondRates();
       await second;
 
       expect(again.request.headers.get('If-None-Match')).toBe('"prices-intl-4"');
@@ -461,6 +488,7 @@ describe('CatalogSyncService', () => {
         status: 404,
         statusText: 'Not Found',
       });
+      await respondRates();
       await run;
 
       expect(service.status()).toBe('idle');
@@ -484,6 +512,7 @@ describe('CatalogSyncService', () => {
         statusText: 'Unavailable',
       });
       await respondPrices('intl', makeContractPricePack('intl', { 'sv01-001': 0.14 }));
+      await respondRates();
       await run;
       expect(service.status()).toBe('idle');
       expect((await engine.getCatalogCardPrices('intl', 'sv01-001'))?.base?.trend).toBe(0.14);
@@ -499,6 +528,7 @@ describe('CatalogSyncService', () => {
           statusText: 'Unavailable',
         });
       }
+      await respondRates(); // Fetched even though the prices failed.
       const checkedBefore = service.lastChecked();
       await failing;
       expect(service.status()).toBe('error');
@@ -530,6 +560,7 @@ describe('CatalogSyncService', () => {
           statusText: 'Unavailable',
         });
       }
+      await respondRates();
       await run;
       Reflect.deleteProperty(navigator, 'storage');
 
@@ -548,11 +579,73 @@ describe('CatalogSyncService', () => {
         statusText: 'Not Modified',
       });
       await respondPrices('intl', makeContractPricePack('asia', { 'sv01-001': 9 }));
+      await respondRates();
       await run;
 
       expect(service.status()).toBe('error');
       expect(await engine.getCatalogCardPrices('asia', 'sv01-001')).toBeUndefined();
       expect(await engine.getSyncMeta(catalogPricesEtagKey('intl'))).toBeUndefined();
+    });
+
+    describe('exchange rates', () => {
+      const RATES = { date: '2026-11-20', rates: { CHF: 0.9223 } };
+      /** One run over a stored, unchanged catalog with SV01, up to its rates request. */
+      async function runToRates() {
+        const run = service.syncNow();
+        (await waitForRequest(httpMock, MANIFEST_URL)).flush(null, {
+          status: 304,
+          statusText: 'Not Modified',
+        });
+        await respondPrices('intl', 'unchanged');
+        return { run }; // Wrapped: awaiting the helper mustn't wait for the run.
+      }
+
+      beforeEach(async () => {
+        await engine.replaceCatalogSet(SV01);
+        await engine.putSyncMeta({ key: catalogPricesEtagKey('intl'), value: '"prices-intl-1"' });
+      });
+
+      it('stores them after the prices, and asks with their ETag next time', async () => {
+        const ratesChanged = vi.fn();
+        service.ratesChanged$.subscribe(ratesChanged);
+
+        const first = await runToRates();
+        const request = await respondRates(RATES);
+        await first.run;
+
+        expect(request.request.headers.has('If-None-Match')).toBe(false);
+        expect(JSON.parse((await engine.getSyncMeta(EXCHANGE_RATES_KEY))?.value ?? '')).toEqual(
+          RATES
+        );
+        expect((await engine.getSyncMeta(EXCHANGE_RATES_ETAG_KEY))?.value).toBe(
+          '"rates-2026-11-20"'
+        );
+        expect(ratesChanged).toHaveBeenCalledTimes(1);
+
+        const second = await runToRates();
+        const again = await respondRates('unchanged');
+        await second.run;
+
+        expect(again.request.headers.get('If-None-Match')).toBe('"rates-2026-11-20"');
+        expect(ratesChanged).toHaveBeenCalledTimes(1);
+        expect(service.status()).toBe('idle');
+      });
+
+      it('refuses rates that aren’t rates, keeping the stored ones, without failing the run', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        await engine.putSyncMeta({ key: EXCHANGE_RATES_KEY, value: JSON.stringify(RATES) });
+
+        const { run } = await runToRates();
+        await respondRates({ date: 'today', rates: { CHF: -1 } });
+        await run;
+
+        expect(service.status()).toBe('idle');
+        expect(error).toHaveBeenCalledWith('catalog.rates_sync_failed', expect.any(Error));
+        error.mockRestore();
+        expect(JSON.parse((await engine.getSyncMeta(EXCHANGE_RATES_KEY))?.value ?? '')).toEqual(
+          RATES
+        );
+      });
     });
 
     it('drops a catalog’s prices once none of its sets are left', async () => {
@@ -564,6 +657,7 @@ describe('CatalogSyncService', () => {
       const run = service.syncNow();
       await respondManifest(manifest([SV01], 2), '"catalog-2"');
       await respondPrices('intl');
+      await respondRates();
       await run;
 
       expect(service.status()).toBe('idle');

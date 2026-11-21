@@ -1,6 +1,7 @@
 import type { CatalogLanguage } from '@pokepaper/shared';
 import { runCatalogIngest, type CatalogLogger } from './ingest.js';
 import { runPriceRefresh } from './prices.js';
+import { refreshExchangeRates } from './rates.js';
 import type { CatalogRunKind, CatalogStore } from './store.js';
 import { TcgdexClient } from './tcgdex-client.js';
 
@@ -21,6 +22,8 @@ export interface CatalogScheduleOptions {
   initialDelayMs?: number;
   /** Injected in tests. */
   createClient?: (signal: AbortSignal) => TcgdexClient;
+  /** Fetches the ECB's exchange rates; injected in tests. */
+  fetchRates?: typeof fetch;
   now?: () => Date;
 }
 
@@ -53,7 +56,9 @@ export function pricesDue(lastStart: Date | null, now: Date, pricesRefreshHours:
 /**
  * Keeps the catalog current: one import shortly after startup, then one
  * every `refreshHours` after the previous finished, so runs never overlap.
- * After the import, a run refreshes prices when they're due (`pricesDue`).
+ * Each run first refreshes the ECB's exchange rates (one small request,
+ * stored only when new); after the import, it refreshes prices when they're
+ * due (`pricesDue`).
  * Failures are logged and retried at the next interval.
  */
 export function startCatalogSchedule(options: CatalogScheduleOptions): CatalogSchedule {
@@ -73,6 +78,17 @@ export function startCatalogSchedule(options: CatalogScheduleOptions): CatalogSc
   const aborted = (): boolean => controller.signal.aborted;
 
   const run = async (): Promise<void> => {
+    // Rates first: one small request, so a new server has them long before
+    // its first (hours-long) full import finishes.
+    await refreshExchangeRates({
+      store,
+      log,
+      signal: controller.signal,
+      fetch: options.fetchRates,
+    });
+    if (aborted()) {
+      return;
+    }
     const client = createClient(controller.signal);
     try {
       const kind = nextRunKind(store.lastCompletedFullRun(), now(), options.fullRefreshDays);
@@ -90,9 +106,12 @@ export function startCatalogSchedule(options: CatalogScheduleOptions): CatalogSc
       }
     }
     // Prices are refreshed for whatever the catalog holds, even after a failed import.
-    if (aborted() || !pricesDue(store.lastCompletedPriceRun(), now(), options.pricesRefreshHours)) {
-      return;
+    if (!aborted() && pricesDue(store.lastCompletedPriceRun(), now(), options.pricesRefreshHours)) {
+      await refreshPrices(client);
     }
+  };
+
+  const refreshPrices = async (client: TcgdexClient): Promise<void> => {
     try {
       await runPriceRefresh({
         store,
