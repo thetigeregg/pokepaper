@@ -93,9 +93,12 @@ Each finish has `trend` (Cardmarket's headline price, smoothed over recent sales
 
 **Coverage** (sampled November 2026): 87% of international cards (the gaps are TCG Pocket's digital sets, some promos and Gym), 92% of Japanese cards from 2011 on, but no Japanese cards from before 2011, and 42% of Traditional Chinese cards.
 
-**The price pass.** TCGdex has prices only in card details (not in set listings, and not in its GraphQL API), so a separate pass fetches every card once, in the first imported language it has (English, else French, Italian, German; Japanese, else Chinese): about 41,000 requests, roughly 5 minutes. It runs after the scheduled import when the last completed pass started at least `CATALOG_PRICES_REFRESH_HOURS` ago (default 24), so with the default schedule, once a day. It runs even if the import failed, over whatever the catalog holds.
+**The price pass.** TCGdex has prices only in card details (not in set listings, and not in its GraphQL API), so a separate pass fetches every card once, in the first imported language it has (English, else French, Italian, German; Japanese, else Chinese): about 41,000 requests, roughly 5 minutes. It runs after the scheduled import when the last completed pass started at least `CATALOG_PRICES_REFRESH_HOURS` ago (default 24), so with the default schedule, once a day; since it follows an import, it never runs more often than `CATALOG_REFRESH_HOURS`. It runs even if the import failed, over whatever the catalog holds.
 
-- Failures are contained like the import's: a set TCGdex is unavailable for keeps its previous prices (the pass ends `partial`, logged as `catalog.prices_set_failed`), after 3 such sets in a row the rest of the region is skipped (`catalog.prices_region_interrupted`), and a card TCGdex can't serve keeps its previous prices.
+- Failures are contained like the import's:
+  - **Cards:** a card TCGdex can't serve (404, malformed) keeps its previous prices. So does one TCGdex keeps failing for (network, 5xx, 429 after retries), and the pass ends `partial` (`catalog.prices_cards_unavailable`): one broken card doesn't freeze its set.
+  - **Sets:** when TCGdex is unavailable for 3 of a set's cards, or for all of them, the set's remaining requests are cancelled and the whole set keeps its previous prices (`catalog.prices_set_failed`).
+  - **Outages:** after 3 failed sets in a row, the rest of the region is skipped (`catalog.prices_region_interrupted`). A pass that refreshed no set at all ends `failed` and doesn't count as done, so the next scheduled run tries again.
 - Each set's prices are written in one transaction. A card Cardmarket no longer prices loses its prices, and prices of cards that left the catalog are pruned at the end of each region.
 - Prices live in their own table (`catalog_prices`), never in the cards, so they never change a set's hash: daily price changes don't make clients download sets again. Each region has a **prices version**, bumped whenever any of its prices change.
 - Every pass is recorded in `catalog_price_runs` and logged as `catalog.prices_started`, `catalog.prices_progress` and `catalog.prices_finished`.
@@ -114,14 +117,14 @@ It uses the server's configuration (`DATA_DIR`, `CATALOG_LANGUAGES`, …) and ca
 
 All routes need a session, like the rest of the API. Wire types are in `shared/src/catalog.ts`.
 
-| Route                                                     | Response                                                                                                                           |
-| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/catalog/manifest`                               | `CatalogManifest`: catalog version, languages, every series, and each set's `hash` and card count. `ETag` from the version         |
-| `GET /api/catalog/sets/:region/:setId`                    | `CatalogSetPack`: the set and all its cards in display order. `ETag` = the set's hash                                              |
-| `GET /api/catalog/prices/:region`                         | `CatalogPricePack`: `trend`, `avg7` and `avg30` of each finish for every priced card in the region. `ETag` from its prices version |
-| `GET /images/catalog/cards/:region/:cardId/:lang/:q.webp` | Card scan, `q` = `low` (grids, ~18 KB) or `high` (detail, ~75 KB). Use `catalogCardImageUrl()`                                     |
-| `GET /images/catalog/sets/:region/:setId/logo/:lang.webp` | Set logo in a language                                                                                                             |
-| `GET /images/catalog/sets/:region/:setId/symbol.webp`     | Set symbol                                                                                                                         |
+| Route                                                     | Response                                                                                                                                              |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/catalog/manifest`                               | `CatalogManifest`: catalog version, languages, every series, and each set's `hash` and card count. `ETag` from the version                            |
+| `GET /api/catalog/sets/:region/:setId`                    | `CatalogSetPack`: the set and all its cards in display order. `ETag` = the set's hash                                                                 |
+| `GET /api/catalog/prices/:region`                         | `CatalogPricePack`: `trend`, `avg7` and `avg30` of each finish for every card in the region with at least one of them. `ETag` from its prices version |
+| `GET /images/catalog/cards/:region/:cardId/:lang/:q.webp` | Card scan, `q` = `low` (grids, ~18 KB) or `high` (detail, ~75 KB). Use `catalogCardImageUrl()`                                                        |
+| `GET /images/catalog/sets/:region/:setId/logo/:lang.webp` | Set logo in a language                                                                                                                                |
+| `GET /images/catalog/sets/:region/:setId/symbol.webp`     | Set symbol                                                                                                                                            |
 
 - **Revalidation:** the manifest, set packs and price packs are sent with `Cache-Control: private, no-cache` and an `ETag`. Sending it back in `If-None-Match` gets an empty `304` when nothing changed. The tag is checked before anything is loaded, so checking for updates costs almost nothing. Matching is weak, as RFC 9110 specifies: it ignores a `W/` prefix (Cloudflare weakens tags it recompresses) and a `-gzip`/`-zstd`/`-br` suffix (added by the edge's compression). Both are read in one transaction, so a pack's hash always matches its cards, even mid-import.
 - **Images** are served only when the catalog links them: the server looks up the card or set, so the routes can't be used to fetch arbitrary TCGdex files. Unknown cards, languages without a scan and unsupported names get `404` without contacting TCGdex. An image is fetched from TCGdex the first time it's requested, checked to be WebP by its file signature (TCGdex labels some as `application/octet-stream`), capped at 2 MB, and stored in `DATA_DIR/images/catalog/` under a hash of its path. Concurrent requests for one image share one fetch, and at most 6 fetches run at once, so an offline set download doesn't flood TCGdex. Temporary errors (network, 429, 5xx) are retried twice. If TCGdex still fails, the response is `502` and nothing is cached. Responses carry `Cache-Control: private, max-age=604800`.
@@ -203,13 +206,13 @@ Cached images live in `DATA_DIR/images/catalog/` and are also rebuildable (delet
 
 ## Configuration
 
-| Variable                       | Default                      | Purpose                                                                                |
-| ------------------------------ | ---------------------------- | -------------------------------------------------------------------------------------- |
-| `CATALOG_SYNC_ENABLED`         | `true`                       | Run the scheduled import                                                               |
-| `CATALOG_LANGUAGES`            | `en,fr,it,de,ja,zh-tw,zh-cn` | Languages to import (comma-separated TCGdex codes)                                     |
-| `CATALOG_REFRESH_HOURS`        | `24`                         | Hours between imports (1–168)                                                          |
-| `CATALOG_FULL_REFRESH_DAYS`    | `7`                          | A run is a full refresh when the last one is at least this old (1–365)                 |
-| `CATALOG_PRICES_REFRESH_HOURS` | `24`                         | A run refreshes prices when the last price pass started at least this long ago (1–168) |
+| Variable                       | Default                      | Purpose                                                                                                                               |
+| ------------------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `CATALOG_SYNC_ENABLED`         | `true`                       | Run the scheduled import                                                                                                              |
+| `CATALOG_LANGUAGES`            | `en,fr,it,de,ja,zh-tw,zh-cn` | Languages to import (comma-separated TCGdex codes)                                                                                    |
+| `CATALOG_REFRESH_HOURS`        | `24`                         | Hours between imports (1–168)                                                                                                         |
+| `CATALOG_FULL_REFRESH_DAYS`    | `7`                          | A run is a full refresh when the last one is at least this old (1–365)                                                                |
+| `CATALOG_PRICES_REFRESH_HOURS` | `24`                         | A run refreshes prices when the last price pass started at least this long ago (1–168); never more often than `CATALOG_REFRESH_HOURS` |
 
 ## Attribution
 

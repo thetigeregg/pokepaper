@@ -2,6 +2,7 @@ import type { CatalogLanguage } from '@pokepaper/shared';
 import { runCatalogIngest } from './ingest.js';
 import { runPriceRefresh, type PriceRefreshOptions } from './prices.js';
 import type { CatalogStore } from './store.js';
+import { TcgdexClient } from './tcgdex-client.js';
 import {
   fakeClient,
   fakeTcgdex,
@@ -103,6 +104,20 @@ describe('runPriceRefresh', () => {
     expect(Object.keys(store.getPricePack('intl').prices)).toEqual(['2019sm-fr-1', 'sv01-001']);
   });
 
+  it('leaves out cards whose stored figures include none that clients are sent', async () => {
+    const store = memoryCatalogStore();
+    const fake = fakeTcgdex();
+    await importCatalog(store, fake);
+    setPricing(fake, '/en/cards/sv01-172', {
+      cardmarket: { updated: '2026-11-21T00:00:00Z', unit: 'EUR', low: 0.5, trend: 0 },
+    });
+
+    await refresh(store, fake);
+
+    expect(store.getCardPrices('intl', 'sv01-172')?.base?.low).toBe(0.5);
+    expect(store.getPricePack('intl').prices['sv01-172']).toBeUndefined();
+  });
+
   it('never changes the catalog itself, so clients don’t download sets again', async () => {
     const store = memoryCatalogStore();
     const fake = fakeTcgdex();
@@ -167,7 +182,7 @@ describe('runPriceRefresh', () => {
     expect(store.getCardPrices('intl', 'sv01-001')).toEqual(before);
   });
 
-  it('keeps a set’s prices when TCGdex is unavailable for it', async () => {
+  it('keeps the prices of a card TCGdex stays unavailable for, refreshing the rest of its set', async () => {
     const store = memoryCatalogStore();
     const fake = fakeTcgdex();
     await importCatalog(store, fake);
@@ -179,11 +194,79 @@ describe('runPriceRefresh', () => {
 
     const stats = await refresh(store, fake, { log });
 
-    expect(stats).toMatchObject({ status: 'partial', sets: { seen: 3, failed: 1 } });
+    expect(stats).toMatchObject({
+      status: 'partial',
+      sets: { seen: 3, refreshed: 3, failed: 0 },
+      cards: { priced: 3, unavailable: 1 },
+    });
     expect(store.getCardPrices('intl', 'sv01-001')).toEqual(before);
-    // The set's other cards aren't half-updated either.
-    expect(store.getCardPrices('intl', 'sv01-172')).toBeUndefined();
+    expect(store.getCardPrices('intl', 'sv01-172')?.base?.trend).toBe(5);
+    expect(log.warnings).toEqual(['catalog.prices_cards_unavailable']);
+  });
+
+  it('keeps a set’s prices when TCGdex is unavailable for all of its cards', async () => {
+    const store = memoryCatalogStore();
+    const fake = fakeTcgdex();
+    await importCatalog(store, fake);
+    await refresh(store, fake);
+    const before = store.getCardPrices('intl', 'sv01-001');
+    fake.routes.set('/en/cards/sv01-001', new Status(503));
+    fake.routes.set('/en/cards/sv01-172', new Status(503));
+    const log = silentLogger();
+
+    const stats = await refresh(store, fake, { log });
+
+    expect(stats).toMatchObject({
+      status: 'partial',
+      sets: { seen: 3, refreshed: 2, failed: 1 },
+      // Only the refreshed sets' cards count.
+      cards: { priced: 2, unpriced: 0, unavailable: 0 },
+    });
+    expect(store.getCardPrices('intl', 'sv01-001')).toEqual(before);
     expect(log.warnings).toEqual(['catalog.prices_set_failed']);
+  });
+
+  it('fails a set once TCGdex is unavailable for 3 of its cards, cancelling the rest', async () => {
+    const store = memoryCatalogStore();
+    const cards = ['1', '2', '3', '4', '5', '6'];
+    const routes: Record<string, unknown> = {
+      '/en/series': [{ id: 'x', name: 'X' }],
+      '/en/sets': [{ id: 'big' }],
+      '/en/sets/big': {
+        id: 'big',
+        name: 'Big',
+        serie: { id: 'x' },
+        cards: cards.map((localId) => ({ id: `big-${localId}`, localId })),
+      },
+    };
+    for (const localId of cards) {
+      routes[`/en/cards/big-${localId}`] = {
+        id: `big-${localId}`,
+        localId,
+        name: localId,
+        category: 'Pokemon',
+        pricing: tcgdexPricing(1),
+      };
+    }
+    const fake = fakeTcgdex(routes);
+    await importCatalog(store, fake, ['en']);
+    for (const localId of cards) {
+      fake.routes.set(`/en/cards/big-${localId}`, new Status(503));
+    }
+    fake.routes.set('/en/cards/big-6', { ...(routes['/en/cards/big-6'] as object) });
+    const client = new TcgdexClient({
+      fetch: fake.fetch,
+      sleep: () => Promise.resolve(),
+      concurrency: 1,
+    });
+
+    const stats = await refresh(store, fake, { client, languages: ['en'] });
+
+    expect(stats).toMatchObject({ status: 'failed', sets: { failed: 1, refreshed: 0 } });
+    expect(store.getCardPrices('intl', 'big-6')).toBeUndefined();
+    // Three cards' four attempts, plus at most one request that took the
+    // freed slot just before the cancel landed.
+    expect(fake.calls.length).toBeLessThanOrEqual(13);
   });
 
   it('skips the rest of a region after several sets in a row fail', async () => {
@@ -211,10 +294,28 @@ describe('runPriceRefresh', () => {
 
     const stats = await refresh(store, fake, { languages: ['en'], log });
 
-    expect(stats).toMatchObject({ status: 'partial', sets: { seen: 5, failed: 3, skipped: 2 } });
+    expect(stats).toMatchObject({
+      status: 'failed',
+      sets: { seen: 5, refreshed: 0, failed: 3, skipped: 2 },
+    });
     // Four attempts for each of the three failed sets, none for the rest.
     expect(fake.calls).toHaveLength(12);
     expect(log.warnings).toContain('catalog.prices_region_interrupted');
+    // Nothing was refreshed, so the next scheduled run tries again.
+    expect(store.listPriceRuns(1)[0]?.status).toBe('failed');
+    expect(store.lastCompletedPriceRun()).toBeNull();
+  });
+
+  it('skips cards without an imported language', async () => {
+    const store = memoryCatalogStore();
+    const fake = fakeTcgdex();
+    await importCatalog(store, fake);
+
+    // The French-only promo has no English text.
+    const stats = await refresh(store, fake, { languages: ['en'] });
+
+    expect(stats.cards).toMatchObject({ priced: 1, unpriced: 1, skipped: 1 });
+    expect(fake.calls).not.toContain('/fr/cards/2019sm-fr-1');
   });
 
   it('prunes prices of cards that left the catalog', async () => {

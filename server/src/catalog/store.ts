@@ -424,7 +424,11 @@ export class CatalogStore {
         .all(region) as { card_id: string; payload: string }[];
       const prices: Record<string, CatalogCardPrices> = {};
       for (const row of rows) {
-        prices[row.card_id] = toWirePrices(JSON.parse(row.payload) as StoredCardPrices);
+        const wire = toWirePrices(JSON.parse(row.payload) as StoredCardPrices);
+        // Stored figures clients aren't sent (only `low`, say) don't make a card priced.
+        if (wire.base || wire.reverseHolo) {
+          prices[row.card_id] = wire;
+        }
       }
       return { region, version: this.pricesVersion(region), currency: 'EUR' as const, prices };
     })();
