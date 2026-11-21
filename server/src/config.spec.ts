@@ -8,6 +8,7 @@ describe('loadConfig', () => {
       languages: ['en', 'fr', 'it', 'de', 'ja', 'zh-tw', 'zh-cn'],
       refreshHours: 24,
       fullRefreshDays: 7,
+      pricesRefreshHours: 24,
     });
   });
 
@@ -18,12 +19,14 @@ describe('loadConfig', () => {
         CATALOG_LANGUAGES: ' JA, en ,fr',
         CATALOG_REFRESH_HOURS: '6',
         CATALOG_FULL_REFRESH_DAYS: '30',
+        CATALOG_PRICES_REFRESH_HOURS: '12',
       }).catalog
     ).toEqual({
       syncEnabled: false,
       languages: ['en', 'fr', 'ja'],
       refreshHours: 6,
       fullRefreshDays: 30,
+      pricesRefreshHours: 12,
     });
   });
 
@@ -31,6 +34,8 @@ describe('loadConfig', () => {
     ['CATALOG_REFRESH_HOURS', '169'],
     ['CATALOG_REFRESH_HOURS', '0'],
     ['CATALOG_FULL_REFRESH_DAYS', '366'],
+    ['CATALOG_PRICES_REFRESH_HOURS', '0'],
+    ['CATALOG_PRICES_REFRESH_HOURS', '169'],
   ])('rejects %s=%s', (key, value) => {
     expect(() => loadConfig({ [key]: value })).toThrow(
       new RegExp(`${key} must be an integer from`)

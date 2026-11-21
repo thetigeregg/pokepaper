@@ -88,6 +88,34 @@ export function silentLogger(): CatalogLogger & { warnings: string[]; errors: st
   };
 }
 
+/**
+ * A card's `pricing` in TCGdex's real response shape: Cardmarket's price
+ * guide in euros, with `-holo` figures for the reverse holo (0 or null when
+ * Cardmarket has none).
+ */
+export function tcgdexPricing(trend: number, trendHolo = 0, updated = '2026-11-20T22:24:05.881Z') {
+  return {
+    cardmarket: {
+      updated,
+      unit: 'EUR',
+      idProduct: 483559,
+      avg: trend,
+      low: 0.02,
+      trend,
+      avg1: trend,
+      avg7: trend,
+      avg30: trend,
+      'avg-holo': trendHolo || null,
+      'low-holo': trendHolo ? 0.02 : null,
+      'trend-holo': trendHolo,
+      'avg1-holo': trendHolo || null,
+      'avg7-holo': trendHolo || null,
+      'avg30-holo': trendHolo || null,
+    },
+    tcgplayer: null,
+  };
+}
+
 function brief(id: string, localId: string, language: string, path: string) {
   return { id, localId, name: id, image: `${ASSETS}/${language}/${path}/${localId}` };
 }
@@ -143,7 +171,7 @@ export function tcgdexFixture(): Record<string, FakeRoute> {
           variants: { normal: true, reverse: true, holo: false, firstEdition: false },
           legal: { standard: false, expanded: true },
           image: `${ASSETS}/en/sv/sv01/001`,
-          pricing: { cardmarket: { avg: 0.04 } },
+          pricing: tcgdexPricing(0.14, 0.28),
         }
       : {
           id: 'sv01-001',
@@ -204,6 +232,7 @@ export function tcgdexFixture(): Record<string, FakeRoute> {
       stage: 'Base',
       attacks: [{ cost: ['Incolore'], name: 'Charge', damage: '10+' }],
       weaknesses: [{ type: 'Feu', value: '×2' }],
+      pricing: tcgdexPricing(1.5),
     },
 
     '/ja/series': [{ id: 'SV', name: 'スカーレット&バイオレット' }],
@@ -229,6 +258,7 @@ export function tcgdexFixture(): Record<string, FakeRoute> {
       dexId: [1],
       attacks: [{ cost: ['Grass', 'Colorless'], name: 'やどりぎのタネ', damage: 20 }],
       image: `${ASSETS}/ja/SV/SV2a/001`,
+      pricing: tcgdexPricing(0.02, 8.33),
     },
     '/zh-tw/cards/SV2a-001': {
       id: 'SV2a-001',

@@ -76,6 +76,7 @@ function withETag(reply: FastifyReply, etag: string): FastifyReply {
  *
  * - `GET /api/catalog/manifest`: all series and a hash per set.
  * - `GET /api/catalog/sets/:region/:setId`: one set with all its cards.
+ * - `GET /api/catalog/prices/:region`: Cardmarket prices of a region's cards.
  * - `GET /images/catalog/...`: card scans and set logos/symbols, fetched from
  *   TCGdex once and cached on disk. Only images the catalog links are
  *   served, so this is never an open proxy to TCGdex.
@@ -118,6 +119,27 @@ export function registerCatalogRoutes(app: FastifyInstance, options: CatalogRout
         return notFound(reply);
       }
       withETag(reply, `"${pack.hash}"`);
+      return pack;
+    }
+  );
+
+  const pricesTag = (region: CatalogRegion, version: number): string =>
+    `"prices-${region}-${String(version)}"`;
+
+  app.get<{ Params: { region: string } }>(
+    '/api/catalog/prices/:region',
+    catalogRoute,
+    (request, reply) => {
+      const { region } = request.params;
+      if (!isRegion(region)) {
+        return notFound(reply);
+      }
+      const current = pricesTag(region, store.pricesVersion(region));
+      if (matchesIfNoneMatch(request, current)) {
+        return withETag(reply, current).code(304).send();
+      }
+      const pack = store.getPricePack(region);
+      withETag(reply, pricesTag(region, pack.version));
       return pack;
     }
   );

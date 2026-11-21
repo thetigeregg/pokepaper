@@ -1,5 +1,6 @@
 import type { CatalogLanguage } from '@pokepaper/shared';
 import { runCatalogIngest, type CatalogLogger } from './ingest.js';
+import { runPriceRefresh } from './prices.js';
 import type { CatalogRunKind, CatalogStore } from './store.js';
 import { TcgdexClient } from './tcgdex-client.js';
 
@@ -13,6 +14,8 @@ export interface CatalogScheduleOptions {
   refreshHours: number;
   /** A run is a full refresh when the last one finished at least this long ago. */
   fullRefreshDays: number;
+  /** A run refreshes prices too when the last price pass started at least this long ago. */
+  pricesRefreshHours: number;
   log: CatalogLogger;
   /** Delay before the first run, so startup isn't slowed down. */
   initialDelayMs?: number;
@@ -38,8 +41,19 @@ export function nextRunKind(
 }
 
 /**
+ * Whether a run should refresh prices: none completed yet, or the last one
+ * started at least `pricesRefreshHours` ago. Start times are compared so
+ * that runs every 24 hours refresh prices every time, however long each
+ * takes.
+ */
+export function pricesDue(lastStart: Date | null, now: Date, pricesRefreshHours: number): boolean {
+  return !lastStart || now.getTime() - lastStart.getTime() >= pricesRefreshHours * HOUR_MS;
+}
+
+/**
  * Keeps the catalog current: one import shortly after startup, then one
  * every `refreshHours` after the previous finished, so runs never overlap.
+ * After the import, a run refreshes prices when they're due (`pricesDue`).
  * Failures are logged and retried at the next interval.
  */
 export function startCatalogSchedule(options: CatalogScheduleOptions): CatalogSchedule {
@@ -54,20 +68,43 @@ export function startCatalogSchedule(options: CatalogScheduleOptions): CatalogSc
   // A previous process may have died mid-import.
   store.abandonRunningRuns(now());
 
+  // A function, not the property: TypeScript would keep a narrowed value
+  // across the awaits below.
+  const aborted = (): boolean => controller.signal.aborted;
+
   const run = async (): Promise<void> => {
+    const client = createClient(controller.signal);
     try {
       const kind = nextRunKind(store.lastCompletedFullRun(), now(), options.fullRefreshDays);
       await runCatalogIngest({
         store,
-        client: createClient(controller.signal),
+        client,
         languages: options.languages,
         kind,
         log,
         signal: controller.signal,
       });
     } catch (error: unknown) {
-      if (!controller.signal.aborted) {
+      if (!aborted()) {
         log.error({ err: error }, 'catalog.scheduled_run_failed');
+      }
+    }
+    // Prices are refreshed for whatever the catalog holds, even after a failed import.
+    if (aborted() || !pricesDue(store.lastCompletedPriceRun(), now(), options.pricesRefreshHours)) {
+      return;
+    }
+    try {
+      await runPriceRefresh({
+        store,
+        client,
+        languages: options.languages,
+        log,
+        signal: controller.signal,
+        now,
+      });
+    } catch (error: unknown) {
+      if (!aborted()) {
+        log.error({ err: error }, 'catalog.scheduled_prices_failed');
       }
     }
   };

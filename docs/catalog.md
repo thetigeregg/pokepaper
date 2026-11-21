@@ -2,7 +2,7 @@
 
 PokePaper's card data comes from [TCGdex](https://tcgdex.dev), a community-maintained, open-source Pokémon TCG database. The server imports it into its own SQLite file on a schedule. Clients will download it from the server (never from TCGdex directly), so the app keeps working if TCGdex is slow, down, or changes its API.
 
-Status: the server import, download API and image cache (`server/src/catalog/`), the app's offline copy (`CatalogSyncService`) and the app's image cache (`ImageCacheService`, `ImageDownloadService`) are implemented. The browsing and search screens are implemented too (see [Browsing](#browsing) and [Search](#search)).
+Status: the server import, download API, image cache and Cardmarket prices (`server/src/catalog/`), the app's offline copy (`CatalogSyncService`) and the app's image cache (`ImageCacheService`, `ImageDownloadService`) are implemented. The browsing and search screens are implemented too (see [Browsing](#browsing) and [Search](#search)).
 
 ## Data model
 
@@ -78,11 +78,37 @@ TCGdex has no scan for many basic Energy printings: all 16 cards of Mega Evoluti
 - **Never in the way of the real scan:** the unlinked-scan check treats a borrowed scan as none (it's never used to build another language's path), so the card's own path is still checked, and a hit replaces the borrowed scan.
 - **In the app:** a borrowed scan is badged "Alt" (with its language too when that differs, "EN · Alt"), and the card's Details say "Scan: From another printing". Its image URL ends in `?from=<source>`, so the app's image cache, which is keyed by URL, fetches it anew when the source changes or the card gets its own scan; the server ignores the query, and every other card's URL is unchanged.
 
+## Prices
+
+Card prices come from [Cardmarket](https://www.cardmarket.com), Europe's main marketplace for singles, as TCGdex reports them in each card's details (`pricing.cardmarket`, in euros, updated by TCGdex daily). TCGdex also reports TCGplayer (US dollars), which isn't imported.
+
+**What a price covers.** One Cardmarket product covers a printing in every language of its region: English, French, Italian and German copies of `sv01-001` share one price, and a Japanese and a Traditional Chinese copy of `SV2a-001` share another (the Japanese product's). Prices aren't per condition either. TCGdex reports two finishes:
+
+| Figures                                 | Finish                                                     |
+| --------------------------------------- | ---------------------------------------------------------- |
+| Plain (`trend`, `avg30`, …)             | The normal print; for cards printed only as holo, the holo |
+| `-holo` (`trend-holo`, `avg30-holo`, …) | The reverse holo                                           |
+
+Each finish has `trend` (Cardmarket's headline price, smoothed over recent sales), `avg` (average sale price), `low` (cheapest listing in any condition or language), and `avg1`, `avg7` and `avg30` (average sale price over the last 1, 7 and 30 days). Cardmarket reports "no data" as 0, which is stored as no figure. In a November 2026 sample, `trend` and `avg30` agreed within 2× on all but 3 of 302 modern international prices, and on all cards worth €5 or more but 4 of 90; they diverge on cheap, rarely sold cards (Japanese and vintage commons), where `trend` often drops to €0.02.
+
+**Coverage** (sampled November 2026): 87% of international cards (the gaps are TCG Pocket's digital sets, some promos and Gym), 92% of Japanese cards from 2011 on, but no Japanese cards from before 2011, and 42% of Traditional Chinese cards.
+
+**The price pass.** TCGdex has prices only in card details (not in set listings, and not in its GraphQL API), so a separate pass fetches every card once, in the first imported language it has (English, else French, Italian, German; Japanese, else Chinese): about 41,000 requests, roughly 5 minutes. It runs after the scheduled import when the last completed pass started at least `CATALOG_PRICES_REFRESH_HOURS` ago (default 24), so with the default schedule, once a day; since it follows an import, it never runs more often than `CATALOG_REFRESH_HOURS`. It runs even if the import failed, over whatever the catalog holds.
+
+- Failures are contained like the import's:
+  - **Cards:** a card TCGdex can't serve (404, malformed) keeps its previous prices. So does one TCGdex keeps failing for (network, 5xx, 429 after retries), and the pass ends `partial` (`catalog.prices_cards_unavailable`): one broken card doesn't freeze its set.
+  - **Sets:** when TCGdex is unavailable for 3 of a set's cards, or for all of them, the set's remaining requests are cancelled and the whole set keeps its previous prices (`catalog.prices_set_failed`).
+  - **Outages:** after 3 failed sets in a row, the rest of the region is skipped (`catalog.prices_region_interrupted`). A pass that refreshed no set at all ends `failed` and doesn't count as done, so the next scheduled run tries again.
+- Each set's prices are written in one transaction. A card Cardmarket no longer prices loses its prices, and prices of cards that left the catalog are pruned at the end of each region.
+- Prices live in their own table (`catalog_prices`), never in the cards, so they never change a set's hash: daily price changes don't make clients download sets again. Each region has a **prices version**, bumped whenever any of its prices change.
+- Every pass is recorded in `catalog_price_runs` and logged as `catalog.prices_started`, `catalog.prices_progress` and `catalog.prices_finished`.
+
 ### Running it by hand
 
 ```bash
-npm run catalog:sync --workspace server             # light pass
-npm run catalog:sync --workspace server -- --full   # full refresh
+npm run catalog:sync --workspace server               # light pass
+npm run catalog:sync --workspace server -- --full     # full refresh
+npm run catalog:sync --workspace server -- --prices   # price pass
 ```
 
 It uses the server's configuration (`DATA_DIR`, `CATALOG_LANGUAGES`, …) and can run while the server is up. Locally, `CATALOG_LANGUAGES=zh-tw npm run catalog:sync --workspace server` builds a small catalog in seconds.
@@ -91,15 +117,16 @@ It uses the server's configuration (`DATA_DIR`, `CATALOG_LANGUAGES`, …) and ca
 
 All routes need a session, like the rest of the API. Wire types are in `shared/src/catalog.ts`.
 
-| Route                                                     | Response                                                                                                                   |
-| --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/catalog/manifest`                               | `CatalogManifest`: catalog version, languages, every series, and each set's `hash` and card count. `ETag` from the version |
-| `GET /api/catalog/sets/:region/:setId`                    | `CatalogSetPack`: the set and all its cards in display order. `ETag` = the set's hash                                      |
-| `GET /images/catalog/cards/:region/:cardId/:lang/:q.webp` | Card scan, `q` = `low` (grids, ~18 KB) or `high` (detail, ~75 KB). Use `catalogCardImageUrl()`                             |
-| `GET /images/catalog/sets/:region/:setId/logo/:lang.webp` | Set logo in a language                                                                                                     |
-| `GET /images/catalog/sets/:region/:setId/symbol.webp`     | Set symbol                                                                                                                 |
+| Route                                                     | Response                                                                                                                                              |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/catalog/manifest`                               | `CatalogManifest`: catalog version, languages, every series, and each set's `hash` and card count. `ETag` from the version                            |
+| `GET /api/catalog/sets/:region/:setId`                    | `CatalogSetPack`: the set and all its cards in display order. `ETag` = the set's hash                                                                 |
+| `GET /api/catalog/prices/:region`                         | `CatalogPricePack`: `trend`, `avg7` and `avg30` of each finish for every card in the region with at least one of them. `ETag` from its prices version |
+| `GET /images/catalog/cards/:region/:cardId/:lang/:q.webp` | Card scan, `q` = `low` (grids, ~18 KB) or `high` (detail, ~75 KB). Use `catalogCardImageUrl()`                                                        |
+| `GET /images/catalog/sets/:region/:setId/logo/:lang.webp` | Set logo in a language                                                                                                                                |
+| `GET /images/catalog/sets/:region/:setId/symbol.webp`     | Set symbol                                                                                                                                            |
 
-- **Revalidation:** the manifest and packs are sent with `Cache-Control: private, no-cache` and an `ETag`. Sending it back in `If-None-Match` gets an empty `304` when nothing changed. The tag is checked before anything is loaded, so checking for updates costs almost nothing. Matching is weak, as RFC 9110 specifies: it ignores a `W/` prefix (Cloudflare weakens tags it recompresses) and a `-gzip`/`-zstd`/`-br` suffix (added by the edge's compression). Both are read in one transaction, so a pack's hash always matches its cards, even mid-import.
+- **Revalidation:** the manifest, set packs and price packs are sent with `Cache-Control: private, no-cache` and an `ETag`. Sending it back in `If-None-Match` gets an empty `304` when nothing changed. The tag is checked before anything is loaded, so checking for updates costs almost nothing. Matching is weak, as RFC 9110 specifies: it ignores a `W/` prefix (Cloudflare weakens tags it recompresses) and a `-gzip`/`-zstd`/`-br` suffix (added by the edge's compression). Both are read in one transaction, so a pack's hash always matches its cards, even mid-import.
 - **Images** are served only when the catalog links them: the server looks up the card or set, so the routes can't be used to fetch arbitrary TCGdex files. Unknown cards, languages without a scan and unsupported names get `404` without contacting TCGdex. An image is fetched from TCGdex the first time it's requested, checked to be WebP by its file signature (TCGdex labels some as `application/octet-stream`), capped at 2 MB, and stored in `DATA_DIR/images/catalog/` under a hash of its path. Concurrent requests for one image share one fetch, and at most 6 fetches run at once, so an offline set download doesn't flood TCGdex. Temporary errors (network, 429, 5xx) are retried twice. If TCGdex still fails, the response is `502` and nothing is cached. Responses carry `Cache-Control: private, max-age=604800`.
 - **Rate limit:** each catalog route (manifest, packs and images) allows 3,000 requests per minute per client, above the global 600. A device's first download is about 390 pack requests, a set grid or an offline download loads hundreds of images at once, and devices at home share one public IP.
 
@@ -179,13 +206,14 @@ Cached images live in `DATA_DIR/images/catalog/` and are also rebuildable (delet
 
 ## Configuration
 
-| Variable                    | Default                      | Purpose                                                                |
-| --------------------------- | ---------------------------- | ---------------------------------------------------------------------- |
-| `CATALOG_SYNC_ENABLED`      | `true`                       | Run the scheduled import                                               |
-| `CATALOG_LANGUAGES`         | `en,fr,it,de,ja,zh-tw,zh-cn` | Languages to import (comma-separated TCGdex codes)                     |
-| `CATALOG_REFRESH_HOURS`     | `24`                         | Hours between imports (1–168)                                          |
-| `CATALOG_FULL_REFRESH_DAYS` | `7`                          | A run is a full refresh when the last one is at least this old (1–365) |
+| Variable                       | Default                      | Purpose                                                                                                                               |
+| ------------------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `CATALOG_SYNC_ENABLED`         | `true`                       | Run the scheduled import                                                                                                              |
+| `CATALOG_LANGUAGES`            | `en,fr,it,de,ja,zh-tw,zh-cn` | Languages to import (comma-separated TCGdex codes)                                                                                    |
+| `CATALOG_REFRESH_HOURS`        | `24`                         | Hours between imports (1–168)                                                                                                         |
+| `CATALOG_FULL_REFRESH_DAYS`    | `7`                          | A run is a full refresh when the last one is at least this old (1–365)                                                                |
+| `CATALOG_PRICES_REFRESH_HOURS` | `24`                         | A run refreshes prices when the last price pass started at least this long ago (1–168); never more often than `CATALOG_REFRESH_HOURS` |
 
 ## Attribution
 
-Card data: [TCGdex](https://github.com/tcgdex/cards-database) (MIT License). Energy symbol icons: from ilkcmp's [Neo Neo Blank Symbolsheet](https://www.deviantart.com/ilkcmp/art/Neo-Neo-Blank-Symbolsheet-486883197) (free for non-commercial use). Rarity symbol icons: collected from community sources. Card images, energy and rarity symbols, and names are © The Pokémon Company, Nintendo, Game Freak and Creatures. PokePaper is a personal, non-commercial project not affiliated with them.
+Card data: [TCGdex](https://github.com/tcgdex/cards-database) (MIT License). Prices: Cardmarket's price guide, via TCGdex. Energy symbol icons: from ilkcmp's [Neo Neo Blank Symbolsheet](https://www.deviantart.com/ilkcmp/art/Neo-Neo-Blank-Symbolsheet-486883197) (free for non-commercial use). Rarity symbol icons: collected from community sources. Card images, energy and rarity symbols, and names are © The Pokémon Company, Nintendo, Game Freak and Creatures. PokePaper is a personal, non-commercial project not affiliated with them.

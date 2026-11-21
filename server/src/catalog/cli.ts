@@ -1,12 +1,14 @@
 /**
  * Runs one catalog import by hand: `npm run catalog:sync --workspace server
- * [-- --full]`. Uses the same configuration as the server (DATA_DIR,
- * CATALOG_LANGUAGES). Safe while the server runs: SQLite serializes writes.
+ * [-- --full]`, or a price pass with `-- --prices`. Uses the same
+ * configuration as the server (DATA_DIR, CATALOG_LANGUAGES). Safe while the
+ * server runs: SQLite serializes writes.
  */
 import { join } from 'node:path';
 import { loadConfig } from '../config.js';
 import { CATALOG_DB_FILENAME, openCatalogDatabase } from './db.js';
 import { runCatalogIngest, type CatalogLogger } from './ingest.js';
+import { runPriceRefresh } from './prices.js';
 import { CatalogStore } from './store.js';
 import { TcgdexClient } from './tcgdex-client.js';
 
@@ -33,14 +35,21 @@ process.once('SIGINT', () => {
 });
 
 try {
-  await runCatalogIngest({
+  const options = {
     store: new CatalogStore(db),
     client: new TcgdexClient({ signal: controller.signal }),
     languages: config.catalog.languages,
-    kind: process.argv.includes('--full') ? 'full' : 'light',
     log,
     signal: controller.signal,
-  });
+  };
+  if (process.argv.includes('--prices')) {
+    await runPriceRefresh(options);
+  } else {
+    await runCatalogIngest({
+      ...options,
+      kind: process.argv.includes('--full') ? 'full' : 'light',
+    });
+  }
 } catch {
   process.exitCode = 1;
 } finally {

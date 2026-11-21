@@ -5,11 +5,13 @@ import {
   catalogCardImageUrl,
   catalogSetImageUrl,
   type CatalogManifest,
+  type CatalogPricePack,
   type CatalogSetPack,
 } from '@pokepaper/shared';
 import { testApp } from '../test-helpers.js';
 import { CatalogImageCache } from './image-cache.js';
 import { runCatalogIngest } from './ingest.js';
+import { runPriceRefresh } from './prices.js';
 import { CATALOG_RATE_LIMIT } from './routes.js';
 import {
   Bytes,
@@ -49,6 +51,7 @@ describe('catalog routes', () => {
     for (const url of [
       '/api/catalog/manifest',
       '/api/catalog/sets/intl/sv01',
+      '/api/catalog/prices/intl',
       '/images/catalog/cards/intl/sv01-001/en/low.webp',
     ]) {
       expect((await app.inject({ method: 'GET', url })).statusCode).toBe(401);
@@ -110,7 +113,52 @@ describe('catalog routes', () => {
     expect(again.statusCode).toBe(304);
   });
 
+  it('serve a region’s prices, revalidated by its prices version', async () => {
+    const { app, headers, store, fake } = await catalogApp();
+    const url = '/api/catalog/prices/intl';
+
+    const empty = await app.inject({ method: 'GET', url, headers });
+    expect(empty.statusCode).toBe(200);
+    expect(empty.json<CatalogPricePack>()).toEqual({
+      region: 'intl',
+      version: 0,
+      currency: 'EUR',
+      prices: {},
+    });
+
+    await runPriceRefresh({
+      store,
+      client: fakeClient(fake),
+      languages: ['en', 'fr', 'ja', 'zh-tw'],
+      log: silentLogger(),
+    });
+    const stale = await app.inject({
+      method: 'GET',
+      url,
+      headers: { ...headers, 'if-none-match': empty.headers.etag as string },
+    });
+    const pack = stale.json<CatalogPricePack>();
+    expect(stale.statusCode).toBe(200);
+    expect(stale.headers['cache-control']).toBe('private, no-cache');
+    expect(stale.headers.etag).toBe(`"prices-intl-${String(store.pricesVersion('intl'))}"`);
+    expect(pack.version).toBe(store.pricesVersion('intl'));
+    expect(pack.prices['sv01-001']).toEqual({
+      updated: '2026-11-20T22:24:05.881Z',
+      base: { trend: 0.14, avg7: 0.14, avg30: 0.14 },
+      reverseHolo: { trend: 0.28, avg7: 0.28, avg30: 0.28 },
+    });
+
+    const again = await app.inject({
+      method: 'GET',
+      url,
+      headers: { ...headers, 'if-none-match': `W/${stale.headers.etag as string}` },
+    });
+    expect(again.statusCode).toBe(304);
+    expect(again.body).toBe('');
+  });
+
   it.each([
+    '/api/catalog/prices/mars',
     '/api/catalog/sets/intl/nope',
     '/api/catalog/sets/mars/sv01',
     `/api/catalog/sets/intl/${'x'.repeat(81)}`,
