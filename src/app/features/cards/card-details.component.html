@@ -238,6 +238,18 @@
           </ion-label>
         </ion-item>
       }
+      @if (cardmarketUrl(); as url) {
+        <ion-item
+          [href]="url"
+          target="_blank"
+          rel="noopener noreferrer"
+          [detail]="true"
+          detailIcon="open-outline"
+          data-testid="price-cardmarket"
+        >
+          <ion-label>View on Cardmarket</ion-label>
+        </ion-item>
+      }
     }
   </ion-list>
 </div>

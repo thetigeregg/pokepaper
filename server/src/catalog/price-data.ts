@@ -79,7 +79,8 @@ export function parseCardmarketPrices(card: unknown): StoredCardPrices | null {
   const idProduct = cardmarket['idProduct'];
   return {
     updated: new Date(updatedAt).toISOString(),
-    idProduct: Number.isSafeInteger(idProduct) ? (idProduct as number) : null,
+    idProduct:
+      Number.isSafeInteger(idProduct) && (idProduct as number) > 0 ? (idProduct as number) : null,
     base,
     reverseHolo,
   };
@@ -96,6 +97,7 @@ function wireFigures(stored: StoredFigures | null): CardmarketFigures | null {
 export function toWirePrices(stored: StoredCardPrices): CatalogCardPrices {
   return {
     updated: stored.updated,
+    ...(stored.idProduct !== null && { idProduct: stored.idProduct }),
     base: wireFigures(stored.base),
     reverseHolo: wireFigures(stored.reverseHolo),
   };

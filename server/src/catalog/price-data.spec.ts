@@ -96,9 +96,18 @@ describe('toWirePrices', () => {
 
     expect(stored && toWirePrices(stored)).toEqual({
       updated: '2026-11-20T22:24:05.881Z',
+      idProduct: 483559,
       base: { trend: 0.14, avg7: 0.14, avg30: 0.14 },
       reverseHolo: { trend: 0.28, avg7: 0.28, avg30: 0.28 },
     });
+  });
+
+  it('leaves out an unknown product ID', () => {
+    expect(
+      parseCardmarketPrices({
+        pricing: { cardmarket: { ...tcgdexPricing(1).cardmarket, idProduct: -4 } },
+      })?.idProduct
+    ).toBeNull();
   });
 
   it('drops a finish that has none of those figures', () => {

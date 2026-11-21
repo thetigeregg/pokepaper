@@ -391,6 +391,7 @@ describe('CardDetailsComponent', () => {
   describe('prices', () => {
     const prices = (overrides: Partial<CatalogCardPrices> = {}): CatalogCardPrices => ({
       updated: '2026-11-21T05:47:42.306Z',
+      idProduct: 483559,
       base: { trend: 0.14, avg7: 0.1, avg30: 0.08 },
       reverseHolo: { trend: 1.5, avg7: null, avg30: 1.25 },
       ...overrides,
@@ -434,6 +435,33 @@ describe('CardDetailsComponent', () => {
       expect(
         element(fixture).querySelector('[data-testid="price-updated"]')?.textContent.trim()
       ).toBe('Updated Nov 21, 2026');
+    });
+
+    it('links to the card’s Cardmarket page, opening outside the app', async () => {
+      storedPrices.set(base.id, prices());
+      const fixture = create(base);
+      await settle(fixture);
+
+      const link = element(fixture).querySelector<HTMLIonItemElement>(
+        '[data-testid="price-cardmarket"]'
+      );
+      expect(link?.href).toBe('https://www.cardmarket.com/en/Pokemon/Products?idProduct=483559');
+      expect(link?.target).toBe('_blank');
+      expect(link?.rel).toBe('noopener noreferrer');
+      expect(link?.detailIcon).toBe('open-outline');
+      expect(link?.textContent.trim()).toBe('View on Cardmarket');
+    });
+
+    it.each([
+      ['without a product ID', undefined],
+      ['with an invalid product ID', -1],
+    ])('has no Cardmarket link %s', async (_label, idProduct) => {
+      storedPrices.set(base.id, { ...prices(), idProduct });
+      const fixture = create(base);
+      await settle(fixture);
+
+      expect(element(fixture).querySelector('[data-testid="price-header"]')).not.toBeNull();
+      expect(element(fixture).querySelector('[data-testid="price-cardmarket"]')).toBeNull();
     });
 
     it('falls back to the 30-day average without a trend', async () => {

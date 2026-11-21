@@ -144,6 +144,7 @@ describe('catalog routes', () => {
     expect(pack.version).toBe(store.pricesVersion('intl'));
     expect(pack.prices['sv01-001']).toEqual({
       updated: '2026-11-20T22:24:05.881Z',
+      idProduct: 483559,
       base: { trend: 0.14, avg7: 0.14, avg30: 0.14 },
       reverseHolo: { trend: 0.28, avg7: 0.28, avg30: 0.28 },
     });

@@ -96,6 +96,7 @@ describe('runPriceRefresh', () => {
       prices: {
         'SV2a-001': {
           updated: '2026-11-20T22:24:05.881Z',
+          idProduct: 483559,
           base: { trend: 0.02, avg7: 0.02, avg30: 0.02 },
           reverseHolo: { trend: 8.33, avg7: 8.33, avg30: 8.33 },
         },

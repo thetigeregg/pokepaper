@@ -18,6 +18,7 @@ import {
   IonNote,
 } from '@ionic/angular';
 import {
+  cardmarketProductUrl,
   MAX_COLLECTION_QUANTITY,
   type CatalogCard,
   type CatalogCardPrices,
@@ -27,7 +28,7 @@ import {
   type CollectionVariant,
 } from '@pokepaper/shared';
 import { addIcons } from 'ionicons';
-import { addCircleOutline, removeCircleOutline } from 'ionicons/icons';
+import { addCircleOutline, openOutline, removeCircleOutline } from 'ionicons/icons';
 import { catalogKey } from '../../core/data/storage-engine';
 import { LANGUAGE_LABELS } from '../../core/services/catalog-language.service';
 import { CatalogPriceService } from '../../core/services/catalog-price.service';
@@ -133,13 +134,20 @@ export class CardDetailsComponent {
   /** The Price section's rows, one per priced finish (`priceRows`). */
   readonly priceRows = computed(() => priceRows(this.card(), this.set(), this.prices()));
   readonly pricesUpdated = computed(() => this.prices()?.updated ?? null);
+  /** The card's Cardmarket page, when its product ID is known (packs aren't checked per card). */
+  readonly cardmarketUrl = computed(() => {
+    const id = this.prices()?.idProduct;
+    return typeof id === 'number' && Number.isSafeInteger(id) && id > 0
+      ? cardmarketProductUrl(id)
+      : null;
+  });
   readonly legal = computed(() => {
     const { standard, expanded } = this.card().legal;
     return [standard ? 'Standard' : null, expanded ? 'Expanded' : null].filter(Boolean).join(' · ');
   });
 
   constructor() {
-    addIcons({ addCircleOutline, removeCircleOutline });
+    addIcons({ addCircleOutline, openOutline, removeCircleOutline });
     // Reads the card's prices, and again whenever a sync stores new ones.
     effect((onCleanup) => {
       const { region, id } = this.card();
