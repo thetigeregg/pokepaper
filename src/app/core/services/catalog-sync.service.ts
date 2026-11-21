@@ -54,7 +54,7 @@ function retryDelayMs(error: HttpErrorResponse, attempt: number): number {
 /**
  * - `idle`: the catalog on this device matched the server at the last check
  *   (or no check has run yet)
- * - `checking`: fetching the manifest
+ * - `checking`: fetching the manifest, or prices once the sets are current
  * - `downloading`: fetching changed sets (see `progress`)
  * - `offline`: no connectivity; the catalog on this device keeps working
  * - `unauthorized`: signed out, or the server rejected the session
@@ -108,6 +108,10 @@ export class CatalogSyncService {
   private readonly _changed$ = new Subject<void>();
   /** Emits after each set is stored or removed, so screens can refresh as sets arrive. */
   readonly changed$: Observable<void> = this._changed$.asObservable();
+
+  private readonly _pricesChanged$ = new Subject<void>();
+  /** Emits after a catalog's new prices are stored, so screens showing prices can refresh. */
+  readonly pricesChanged$: Observable<void> = this._pricesChanged$.asObservable();
 
   private inFlight: Promise<void> | null = null;
   private rerunRequested = false;
@@ -256,8 +260,7 @@ export class CatalogSyncService {
       }
     }
 
-    await this.syncPrices(epoch);
-
+    // The sets are current: recorded before prices, whose failure shouldn't undo that.
     const now = new Date();
     await this.engine.putSyncMeta({ key: CATALOG_CHECKED_AT_KEY, value: now.toISOString() });
     this._lastChecked.set(now);
@@ -265,6 +268,11 @@ export class CatalogSyncService {
     if ((await this.engine.catalogStats()).sets > 0) {
       await requestPersistentStorage();
     }
+
+    this.ensureCurrent(epoch);
+    this._status.set('checking');
+    this._progress.set(null);
+    await this.syncPrices(epoch);
   }
 
   /** The manifest, or null when it's unchanged since `etag` (304). */
@@ -335,25 +343,44 @@ export class CatalogSyncService {
    */
   private async syncPrices(epoch: number): Promise<void> {
     const regions = new Set((await this.engine.listCatalogSets()).map((set) => set.region));
-    for (const region of CATALOG_REGIONS.filter((candidate) => regions.has(candidate))) {
+    for (const region of CATALOG_REGIONS) {
       const key = catalogPricesEtagKey(region);
       const etag = (await this.engine.getSyncMeta(key))?.value;
       this.ensureCurrent(epoch);
+      if (!regions.has(region)) {
+        if (etag) {
+          // The catalog's sets are gone: drop its prices, and the ETag (as
+          // empty) so they're fetched afresh if sets come back.
+          await this.storePrices({ region, version: 0, currency: 'EUR', prices: {} }, '');
+        }
+        continue;
+      }
       const response = await this.fetchWithRetries(
         `${environment.apiUrl}/api/catalog/prices/${region}`,
         epoch,
         etag
       );
       this.ensureCurrent(epoch);
-      if (!response?.body) {
+      if (!response) {
         continue; // Unchanged (304), or a server without prices yet (404).
       }
-      await this.engine.replaceCatalogPrices(response.body as CatalogPricePack);
-      const newEtag = response.headers.get('etag');
-      if (newEtag) {
-        await this.engine.putSyncMeta({ key, value: newEtag });
+      if (!isPricePack(response.body, region)) {
+        throw new Error(`catalog.prices_invalid:${region}`);
       }
+      await this.storePrices(response.body, response.headers.get('etag') ?? '');
+      this._pricesChanged$.next();
     }
+  }
+
+  /**
+   * Replaces a catalog's prices together with the ETag they came with, so a
+   * stored ETag always matches the stored prices.
+   */
+  private storePrices(pack: CatalogPricePack, etag: string): Promise<void> {
+    return this.engine.runInTransaction(['catalogPrices', 'syncMeta'], async () => {
+      await this.engine.replaceCatalogPrices(pack);
+      await this.engine.putSyncMeta({ key: catalogPricesEtagKey(pack.region), value: etag });
+    });
   }
 
   /** Fetches a set pack. Null when the set no longer exists (404). */
@@ -365,7 +392,8 @@ export class CatalogSyncService {
 
   /**
    * GETs `url`, waiting out rate limits and brief failures
-   * (`CATALOG_PACK_ATTEMPTS`). Null for 404, and for 304 when `etag` was sent.
+   * (`CATALOG_PACK_ATTEMPTS`). Null for 404, and for 304 when `etag` was
+   * sent (a 304 to a request without one is an error, not "gone").
    */
   private async fetchWithRetries(
     url: string,
@@ -381,7 +409,10 @@ export class CatalogSyncService {
           })
         );
       } catch (error: unknown) {
-        if (error instanceof HttpErrorResponse && (error.status === 404 || error.status === 304)) {
+        if (
+          error instanceof HttpErrorResponse &&
+          (error.status === 404 || (error.status === 304 && etag))
+        ) {
           return null;
         }
         if (!isTransient(error) || attempt >= CATALOG_PACK_ATTEMPTS) {
@@ -406,6 +437,17 @@ export class CatalogSyncService {
       throw new RunSuperseded();
     }
   }
+}
+
+/** A price pack for `region`, as far as storing it safely needs. */
+function isPricePack(value: unknown, region: CatalogRegion): value is CatalogPricePack {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const { region: packRegion, prices } = value as Record<string, unknown>;
+  return (
+    packRegion === region && typeof prices === 'object' && prices !== null && !Array.isArray(prices)
+  );
 }
 
 /**
