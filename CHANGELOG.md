@@ -169,3 +169,7 @@
 ## v0.26.0 - 2026-11-21
 
 - ceab7d4 feat(catalog): import Cardmarket prices and serve them per region (#50)
+
+## v0.27.0 - 2026-11-21
+
+- b63eb22 feat(catalog): keep card prices on the device (#51)
