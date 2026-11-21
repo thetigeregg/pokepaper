@@ -1,5 +1,7 @@
 import type {
   CatalogCard,
+  CatalogCardPrices,
+  CatalogPricePack,
   CatalogRegion,
   CatalogSeries,
   CatalogSetPack,
@@ -410,6 +412,30 @@ export class SqliteStorageEngine implements StorageEngine {
         rows.map((row) => catalogSearchRow(this.parseEntity(row) as CatalogCard, key))
       );
     });
+  }
+
+  replaceCatalogPrices(pack: CatalogPricePack): Promise<void> {
+    return this.runInTransaction(['catalogPrices'], async () => {
+      await this.sql.run('DELETE FROM catalog_prices WHERE region = ?', [pack.region]);
+      await this.executeBatched(
+        Object.entries(pack.prices).map(([cardId, prices]) => ({
+          statement: `INSERT INTO catalog_prices (key, region, payload) VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET region = excluded.region, payload = excluded.payload`,
+          values: [catalogKey(pack.region, cardId), pack.region, JSON.stringify(prices)],
+        }))
+      );
+    });
+  }
+
+  async getCatalogCardPrices(
+    region: CatalogRegion,
+    cardId: string
+  ): Promise<CatalogCardPrices | undefined> {
+    const rows = await this.sql.query<PayloadRow>(
+      'SELECT payload FROM catalog_prices WHERE key = ?',
+      [catalogKey(region, cardId)]
+    );
+    return this.firstEntity(rows) as CatalogCardPrices | undefined;
   }
 
   async putCollectionEntry(entry: CollectionEntry): Promise<void> {

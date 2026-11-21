@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type {
   CatalogCard,
+  CatalogCardPrices,
+  CatalogPricePack,
   CatalogRegion,
   CatalogSeries,
   CatalogSetPack,
@@ -153,6 +155,29 @@ export function makeContractPack(
       languages: ['en'],
     },
     cards: cardIds.map((id, index) => makeContractCard(region, setId, id, index)).reverse(),
+  };
+}
+
+export function makeContractPrices(trend: number): CatalogCardPrices {
+  return {
+    updated: '2026-11-21T05:47:42.306Z',
+    base: { trend, avg7: trend, avg30: trend },
+    reverseHolo: null,
+  };
+}
+
+export function makeContractPricePack(
+  region: CatalogRegion,
+  prices: Record<string, number>,
+  version = 1
+): CatalogPricePack {
+  return {
+    region,
+    version,
+    currency: 'EUR',
+    prices: Object.fromEntries(
+      Object.entries(prices).map(([cardId, trend]) => [cardId, makeContractPrices(trend)])
+    ),
   };
 }
 
@@ -689,6 +714,61 @@ export function describeStorageEngineContract(
         expect((await engine.listCatalogSearchRows('intl')).sort(byKey)).toEqual(
           before.sort(byKey)
         );
+      });
+    });
+
+    describe('card prices', () => {
+      it('has none before any are downloaded', async () => {
+        expect(await engine.getCatalogCardPrices('intl', 'sv01-001')).toBeUndefined();
+      });
+
+      it("stores a region's prices by card, keeping regions apart even when IDs repeat", async () => {
+        await engine.replaceCatalogPrices(makeContractPricePack('intl', { 'sv01-001': 0.14 }));
+        await engine.replaceCatalogPrices(makeContractPricePack('asia', { 'sv01-001': 8.33 }));
+
+        expect(await engine.getCatalogCardPrices('intl', 'sv01-001')).toEqual(
+          makeContractPrices(0.14)
+        );
+        expect((await engine.getCatalogCardPrices('asia', 'sv01-001'))?.base?.trend).toBe(8.33);
+        expect(await engine.getCatalogCardPrices('intl', 'sv01-002')).toBeUndefined();
+      });
+
+      it("replaces a region's prices whole, leaving the other region's", async () => {
+        await engine.replaceCatalogPrices(
+          makeContractPricePack('intl', { 'sv01-001': 0.14, 'sv01-002': 1 })
+        );
+        await engine.replaceCatalogPrices(makeContractPricePack('asia', { 'SV2a-001': 0.02 }));
+
+        await engine.replaceCatalogPrices(makeContractPricePack('intl', { 'sv01-001': 0.2 }, 2));
+
+        expect((await engine.getCatalogCardPrices('intl', 'sv01-001'))?.base?.trend).toBe(0.2);
+        expect(await engine.getCatalogCardPrices('intl', 'sv01-002')).toBeUndefined();
+        expect((await engine.getCatalogCardPrices('asia', 'SV2a-001'))?.base?.trend).toBe(0.02);
+      });
+
+      it('stores more prices than one write batch holds', async () => {
+        const prices = Object.fromEntries(
+          Array.from({ length: 1201 }, (_, index) => [`c-${String(index)}`, index + 1])
+        );
+
+        await engine.replaceCatalogPrices(makeContractPricePack('intl', prices));
+
+        expect((await engine.getCatalogCardPrices('intl', 'c-0'))?.base?.trend).toBe(1);
+        expect((await engine.getCatalogCardPrices('intl', 'c-1200'))?.base?.trend).toBe(1201);
+      });
+
+      it('rolls prices back with the transaction they joined', async () => {
+        await engine.replaceCatalogPrices(makeContractPricePack('intl', { 'sv01-001': 0.14 }));
+
+        await expect(
+          engine.runInTransaction(['catalogPrices'], async () => {
+            await engine.replaceCatalogPrices(makeContractPricePack('intl', { 'sv01-002': 1 }, 2));
+            throw new Error('boom');
+          })
+        ).rejects.toThrow('boom');
+
+        expect((await engine.getCatalogCardPrices('intl', 'sv01-001'))?.base?.trend).toBe(0.14);
+        expect(await engine.getCatalogCardPrices('intl', 'sv01-002')).toBeUndefined();
       });
     });
 

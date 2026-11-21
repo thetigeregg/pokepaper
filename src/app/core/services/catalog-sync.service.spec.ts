@@ -3,15 +3,26 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import type { CatalogManifest, CatalogSetPack } from '@pokepaper/shared';
+import type {
+  CatalogManifest,
+  CatalogPricePack,
+  CatalogRegion,
+  CatalogSetPack,
+} from '@pokepaper/shared';
 import { vi, type MockInstance } from 'vitest';
 import { AppDb } from '../data/app-db';
 import { DexieStorageEngine } from '../data/dexie-storage-engine';
-import { makeContractPack, makeContractSeries } from '../data/storage-engine.contract';
+import {
+  makeContractPack,
+  makeContractPricePack,
+  makeContractPrices,
+  makeContractSeries,
+} from '../data/storage-engine.contract';
 import { StorageEngineFactory } from '../data/storage-engine.factory';
 import {
   CATALOG_CHECKED_AT_KEY,
   CATALOG_ETAG_KEY,
+  catalogPricesEtagKey,
   CatalogSyncService,
   type CatalogSyncStatus,
 } from './catalog-sync.service';
@@ -120,6 +131,21 @@ describe('CatalogSyncService', () => {
     request.flush(pack);
   }
 
+  /** Answers a region's price request with a pack, or 304 when `pack` is null. */
+  async function respondPrices(
+    region: CatalogRegion,
+    pack: CatalogPricePack | null = null,
+    etag = `"prices-${region}-1"`
+  ) {
+    const request = await waitForRequest(httpMock, `/api/catalog/prices/${region}`);
+    if (pack) {
+      request.flush(pack, { headers: { etag } });
+    } else {
+      request.flush(null, { status: 304, statusText: 'Not Modified' });
+    }
+    return request;
+  }
+
   async function waitForStatus(status: CatalogSyncStatus) {
     await waitFor(() => service.status() === status, `status ${status}`);
   }
@@ -134,6 +160,8 @@ describe('CatalogSyncService', () => {
     expect(service.progress()).toEqual({ done: 0, total: 2 });
     await respondPack(SV01);
     await respondPack(SV2A);
+    await respondPrices('intl', makeContractPricePack('intl', { 'sv01-001': 0.14 }));
+    await respondPrices('asia', makeContractPricePack('asia', {}));
     await run;
 
     expect(service.status()).toBe('idle');
@@ -172,6 +200,8 @@ describe('CatalogSyncService', () => {
     await respondManifest(manifest([updated, SV2A], 2), '"catalog-2"');
     await respondPack(updated);
     await respondPack(SV2A);
+    await respondPrices('intl');
+    await respondPrices('asia');
     await run;
 
     expect((await engine.listCatalogSets()).map((set) => `${set.key}@${set.hash}`).sort()).toEqual([
@@ -193,6 +223,7 @@ describe('CatalogSyncService', () => {
       headers: { 'retry-after': '7' },
     });
     await respondPack(SV01);
+    await respondPrices('intl');
     await run;
 
     expect(sleep).toHaveBeenCalledWith(7000);
@@ -237,6 +268,8 @@ describe('CatalogSyncService', () => {
     const request = await respondManifest(manifest([SV01, SV2A]), '"catalog-1"');
     expect(request.request.headers.has('If-None-Match')).toBe(false);
     await respondPack(SV2A);
+    await respondPrices('intl');
+    await respondPrices('asia');
     await second;
 
     expect(service.stats()).toEqual({ sets: 2, cards: 3 });
@@ -299,10 +332,13 @@ describe('CatalogSyncService', () => {
       status: 404,
       statusText: 'Not Found',
     });
+    await respondPrices('intl');
     await run;
 
     expect(service.status()).toBe('idle');
     expect((await engine.listCatalogSets()).map((set) => set.key)).toEqual(['intl:sv01']);
+    // No sets left in that catalog, so no prices either.
+    httpMock.expectNone('/api/catalog/prices/asia');
   });
 
   it('stops before its next request as soon as SyncService is signed out', async () => {
@@ -347,10 +383,125 @@ describe('CatalogSyncService', () => {
       status: 304,
       statusText: 'Not Modified',
     });
+    await respondPrices('intl');
     await run;
 
     expect(persist).toHaveBeenCalledTimes(1);
     Reflect.deleteProperty(navigator, 'storage');
+  });
+
+  describe('prices', () => {
+    it('stores each catalog’s prices after its sets, and asks with their ETag next time', async () => {
+      const first = service.syncNow();
+      await respondManifest(manifest([SV01, SV2A]), '"catalog-1"');
+      await respondPack(SV01);
+      await respondPack(SV2A);
+      const intl = await respondPrices(
+        'intl',
+        makeContractPricePack('intl', { 'sv01-001': 0.14 }),
+        '"prices-intl-4"'
+      );
+      await respondPrices('asia', makeContractPricePack('asia', { 'SV2a-001': 8.33 }));
+      await first;
+
+      expect(intl.request.headers.has('If-None-Match')).toBe(false);
+      expect(await engine.getCatalogCardPrices('intl', 'sv01-001')).toEqual(
+        makeContractPrices(0.14)
+      );
+      expect((await engine.getCatalogCardPrices('asia', 'SV2a-001'))?.base?.trend).toBe(8.33);
+      expect((await engine.getSyncMeta(catalogPricesEtagKey('intl')))?.value).toBe(
+        '"prices-intl-4"'
+      );
+
+      const second = service.syncNow();
+      (await waitForRequest(httpMock, MANIFEST_URL)).flush(null, {
+        status: 304,
+        statusText: 'Not Modified',
+      });
+      const again = await respondPrices('intl');
+      await respondPrices('asia', makeContractPricePack('asia', {}, 2), '"prices-asia-2"');
+      await second;
+
+      expect(again.request.headers.get('If-None-Match')).toBe('"prices-intl-4"');
+      expect((await engine.getCatalogCardPrices('intl', 'sv01-001'))?.base?.trend).toBe(0.14);
+      expect(await engine.getCatalogCardPrices('asia', 'SV2a-001')).toBeUndefined();
+      expect(service.status()).toBe('idle');
+    });
+
+    it('carries on without prices when the server has none (404)', async () => {
+      await engine.replaceCatalogSet(SV01);
+
+      const run = service.syncNow();
+      (await waitForRequest(httpMock, MANIFEST_URL)).flush(null, {
+        status: 304,
+        statusText: 'Not Modified',
+      });
+      (await waitForRequest(httpMock, '/api/catalog/prices/intl')).flush('not found', {
+        status: 404,
+        statusText: 'Not Found',
+      });
+      await run;
+
+      expect(service.status()).toBe('idle');
+      expect(await engine.getSyncMeta(catalogPricesEtagKey('intl'))).toBeUndefined();
+    });
+
+    it('waits out brief failures, and reports an error when they persist', async () => {
+      vi.spyOn(
+        service as unknown as { sleep: (ms: number) => Promise<void> },
+        'sleep'
+      ).mockResolvedValue(undefined);
+      await engine.replaceCatalogSet(SV01);
+
+      const run = service.syncNow();
+      (await waitForRequest(httpMock, MANIFEST_URL)).flush(null, {
+        status: 304,
+        statusText: 'Not Modified',
+      });
+      (await waitForRequest(httpMock, '/api/catalog/prices/intl')).flush(null, {
+        status: 503,
+        statusText: 'Unavailable',
+      });
+      await respondPrices('intl', makeContractPricePack('intl', { 'sv01-001': 0.14 }));
+      await run;
+      expect(service.status()).toBe('idle');
+      expect((await engine.getCatalogCardPrices('intl', 'sv01-001'))?.base?.trend).toBe(0.14);
+
+      const failing = service.syncNow();
+      (await waitForRequest(httpMock, MANIFEST_URL)).flush(null, {
+        status: 304,
+        statusText: 'Not Modified',
+      });
+      for (let attempt = 0; attempt < 4; attempt++) {
+        (await waitForRequest(httpMock, '/api/catalog/prices/intl')).flush(null, {
+          status: 503,
+          statusText: 'Unavailable',
+        });
+      }
+      await failing;
+      expect(service.status()).toBe('error');
+      // The prices already on the device stay.
+      expect((await engine.getCatalogCardPrices('intl', 'sv01-001'))?.base?.trend).toBe(0.14);
+    });
+
+    it('stores no prices once a sign-out overtakes the run', async () => {
+      await engine.replaceCatalogSet(SV01);
+
+      const run = service.syncNow();
+      (await waitForRequest(httpMock, MANIFEST_URL)).flush(null, {
+        status: 304,
+        statusText: 'Not Modified',
+      });
+      const request = await waitForRequest(httpMock, '/api/catalog/prices/intl');
+      syncStatus.set('unauthorized');
+      request.flush(makeContractPricePack('intl', { 'sv01-001': 0.14 }), {
+        headers: { etag: '"prices-intl-1"' },
+      });
+      await run;
+
+      expect(service.status()).toBe('unauthorized');
+      expect(await engine.getCatalogCardPrices('intl', 'sv01-001')).toBeUndefined();
+    });
   });
 
   it('reports offline without making a request', async () => {

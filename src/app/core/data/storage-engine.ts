@@ -1,7 +1,9 @@
 import { InjectionToken } from '@angular/core';
 import type {
   CatalogCard,
+  CatalogCardPrices,
   CatalogLanguage,
+  CatalogPricePack,
   CatalogRegion,
   CatalogSeries,
   CatalogSet,
@@ -30,6 +32,7 @@ export type StorageScope =
   | 'catalogSets'
   | 'catalogCards'
   | 'catalogCardSearch'
+  | 'catalogPrices'
   | 'imagePins'
   | 'downloadedSets'
   | 'collection'
@@ -230,6 +233,16 @@ export interface StorageEngine {
   listCatalogSearchRows(region: CatalogRegion): Promise<CatalogSearchRow[]>;
   /** Rebuilds a stored set's search rows from its cards (after the row format changes). */
   reindexCatalogSet(region: CatalogRegion, setId: string): Promise<void>;
+  /**
+   * Makes a region's stored prices exactly the pack's, atomically
+   * (docs/catalog.md → Prices on the device).
+   */
+  replaceCatalogPrices(pack: CatalogPricePack): Promise<void>;
+  /** A card's Cardmarket prices, if Cardmarket prices it. */
+  getCatalogCardPrices(
+    region: CatalogRegion,
+    cardId: string
+  ): Promise<CatalogCardPrices | undefined>;
 
   // Collection (docs/collection.md), keyed by `collectionEntryId`
   /** Inserts or replaces the entry with its `collectionEntryId`. */

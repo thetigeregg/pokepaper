@@ -1,6 +1,18 @@
-import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
+import {
+  HttpClient,
+  HttpErrorResponse,
+  HttpHeaders,
+  type HttpResponse,
+} from '@angular/common/http';
 import { Injectable, effect, inject, signal, untracked } from '@angular/core';
-import type { CatalogManifest, CatalogManifestSet, CatalogSetPack } from '@pokepaper/shared';
+import {
+  CATALOG_REGIONS,
+  type CatalogManifest,
+  type CatalogManifestSet,
+  type CatalogPricePack,
+  type CatalogRegion,
+  type CatalogSetPack,
+} from '@pokepaper/shared';
 import { Observable, Subject, firstValueFrom } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { catalogKey, type CatalogStats, type StorageEngine } from '../data/storage-engine';
@@ -15,8 +27,13 @@ export const CATALOG_DOWNLOAD_CONCURRENCY = 3;
 export const CATALOG_ETAG_KEY = 'catalogManifestEtag';
 /** syncMeta: when the catalog was last confirmed current (ISO time). */
 export const CATALOG_CHECKED_AT_KEY = 'catalogCheckedAt';
-/** Attempts per set pack for rate limiting and temporary failures, including the first. */
+/** Attempts per set or price pack for rate limiting and temporary failures, including the first. */
 export const CATALOG_PACK_ATTEMPTS = 4;
+
+/** syncMeta: ETag of a region's last stored price pack. */
+export function catalogPricesEtagKey(region: CatalogRegion): string {
+  return `catalogPricesEtag:${region}`;
+}
 
 /** Errors worth retrying a pack for: rate limited, server trouble, or a dropped connection. */
 function isTransient(error: unknown): error is HttpErrorResponse {
@@ -59,7 +76,9 @@ class RunSuperseded extends Error {
  * copy, downloads only the sets that differ (`CATALOG_DOWNLOAD_CONCURRENCY`
  * at a time, each stored atomically), and removes sets the server dropped.
  * The ETag is saved only after every set landed, so an interrupted download
- * resumes with the sets still missing.
+ * resumes with the sets still missing. Then, for each region with sets on
+ * this device, it fetches the region's price pack the same way (one 304 when
+ * unchanged) and stores it whole.
  *
  * The catalog is read-only reference data: it never goes through the
  * outbox. Runs on app start, every `CATALOG_SYNC_INTERVAL_MS`, when the
@@ -237,6 +256,8 @@ export class CatalogSyncService {
       }
     }
 
+    await this.syncPrices(epoch);
+
     const now = new Date();
     await this.engine.putSyncMeta({ key: CATALOG_CHECKED_AT_KEY, value: now.toISOString() });
     this._lastChecked.set(now);
@@ -309,16 +330,58 @@ export class CatalogSyncService {
   }
 
   /**
-   * Fetches a set pack, waiting out rate limits and brief failures
-   * (`CATALOG_PACK_ATTEMPTS`). Null when the set no longer exists (404).
+   * Stores the price pack of each region with sets on this device, unless
+   * unchanged since its stored ETag (docs/catalog.md → Prices on the device).
    */
+  private async syncPrices(epoch: number): Promise<void> {
+    const regions = new Set((await this.engine.listCatalogSets()).map((set) => set.region));
+    for (const region of CATALOG_REGIONS.filter((candidate) => regions.has(candidate))) {
+      const key = catalogPricesEtagKey(region);
+      const etag = (await this.engine.getSyncMeta(key))?.value;
+      this.ensureCurrent(epoch);
+      const response = await this.fetchWithRetries(
+        `${environment.apiUrl}/api/catalog/prices/${region}`,
+        epoch,
+        etag
+      );
+      this.ensureCurrent(epoch);
+      if (!response?.body) {
+        continue; // Unchanged (304), or a server without prices yet (404).
+      }
+      await this.engine.replaceCatalogPrices(response.body as CatalogPricePack);
+      const newEtag = response.headers.get('etag');
+      if (newEtag) {
+        await this.engine.putSyncMeta({ key, value: newEtag });
+      }
+    }
+  }
+
+  /** Fetches a set pack. Null when the set no longer exists (404). */
   private async fetchPack(set: CatalogManifestSet, epoch: number): Promise<CatalogSetPack | null> {
     const url = `${environment.apiUrl}/api/catalog/sets/${set.region}/${encodeURIComponent(set.id)}`;
+    const response = await this.fetchWithRetries(url, epoch);
+    return (response?.body as CatalogSetPack | null | undefined) ?? null;
+  }
+
+  /**
+   * GETs `url`, waiting out rate limits and brief failures
+   * (`CATALOG_PACK_ATTEMPTS`). Null for 404, and for 304 when `etag` was sent.
+   */
+  private async fetchWithRetries(
+    url: string,
+    epoch: number,
+    etag?: string
+  ): Promise<HttpResponse<unknown> | null> {
     for (let attempt = 1; ; attempt++) {
       try {
-        return await firstValueFrom(this.http.get<CatalogSetPack>(url));
+        return await firstValueFrom(
+          this.http.get<unknown>(url, {
+            observe: 'response',
+            headers: etag ? new HttpHeaders({ 'If-None-Match': etag }) : undefined,
+          })
+        );
       } catch (error: unknown) {
-        if (error instanceof HttpErrorResponse && error.status === 404) {
+        if (error instanceof HttpErrorResponse && (error.status === 404 || error.status === 304)) {
           return null;
         }
         if (!isTransient(error) || attempt >= CATALOG_PACK_ATTEMPTS) {
