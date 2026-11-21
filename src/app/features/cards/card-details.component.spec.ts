@@ -409,7 +409,7 @@ describe('CardDetailsComponent', () => {
         : null;
     };
 
-    it('shows each finish’s Cardmarket price after the collection', async () => {
+    it('shows each finish’s Cardmarket price last, after the details', async () => {
       storedPrices.set(base.id, prices());
       const fixture = create(base);
       await settle(fixture);
@@ -418,8 +418,8 @@ describe('CardDetailsComponent', () => {
       expect(headers(fixture)).toEqual([
         'Attacks',
         'Collection · English',
-        'Price · Cardmarket',
         'Details',
+        'Price · Cardmarket',
       ]);
       expect(priceRow(fixture, 'base')).toEqual({
         label: 'Normal',

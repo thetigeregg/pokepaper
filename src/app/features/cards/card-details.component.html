@@ -154,42 +154,6 @@
       </ion-item>
     }
 
-    @if (priceRows().length) {
-      <ion-list-header>
-        <ion-label data-testid="price-header">Price · Cardmarket</ion-label>
-      </ion-list-header>
-      @for (row of priceRows(); track row.finish) {
-        <ion-item lines="inset" [attr.data-testid]="'price-' + row.finish">
-          <ion-label class="ion-text-wrap">
-            {{ row.label }}
-            @if (row.avg7 !== null || row.avg30 !== null) {
-              <p data-testid="price-averages">
-                @if (row.avg7 !== null) {
-                  <span>7-day avg {{ row.avg7 | currency: 'EUR' }}</span>
-                }
-                @if (row.avg7 !== null && row.avg30 !== null) {
-                  ·
-                }
-                @if (row.avg30 !== null) {
-                  <span>30-day avg {{ row.avg30 | currency: 'EUR' }}</span>
-                }
-              </p>
-            }
-          </ion-label>
-          <ion-note slot="end" class="price" data-testid="price">
-            {{ row.price | currency: 'EUR' }}
-          </ion-note>
-        </ion-item>
-      }
-      @if (pricesUpdated(); as updated) {
-        <ion-item>
-          <ion-label class="ion-text-wrap">
-            <p data-testid="price-updated">Updated {{ updated | date: 'mediumDate' }}</p>
-          </ion-label>
-        </ion-item>
-      }
-    }
-
     <ion-list-header><ion-label>Details</ion-label></ion-list-header>
     <ion-item>
       <ion-label>Set</ion-label>
@@ -238,6 +202,42 @@
           <p class="hint">{{ description }}</p>
         </ion-label>
       </ion-item>
+    }
+
+    @if (priceRows().length) {
+      <ion-list-header>
+        <ion-label data-testid="price-header">Price · Cardmarket</ion-label>
+      </ion-list-header>
+      @for (row of priceRows(); track row.finish) {
+        <ion-item lines="inset" [attr.data-testid]="'price-' + row.finish">
+          <ion-label class="ion-text-wrap">
+            {{ row.label }}
+            @if (row.avg7 !== null || row.avg30 !== null) {
+              <p data-testid="price-averages">
+                @if (row.avg7 !== null) {
+                  <span>7-day avg {{ row.avg7 | currency: 'EUR' }}</span>
+                }
+                @if (row.avg7 !== null && row.avg30 !== null) {
+                  ·
+                }
+                @if (row.avg30 !== null) {
+                  <span>30-day avg {{ row.avg30 | currency: 'EUR' }}</span>
+                }
+              </p>
+            }
+          </ion-label>
+          <ion-note slot="end" class="price" data-testid="price">
+            {{ row.price | currency: 'EUR' }}
+          </ion-note>
+        </ion-item>
+      }
+      @if (pricesUpdated(); as updated) {
+        <ion-item>
+          <ion-label class="ion-text-wrap">
+            <p data-testid="price-updated">Updated {{ updated | date: 'mediumDate' }}</p>
+          </ion-label>
+        </ion-item>
+      }
     }
   </ion-list>
 </div>

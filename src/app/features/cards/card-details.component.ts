@@ -51,8 +51,8 @@ import { RarityIconComponent } from './rarity-icon.component';
 /**
  * One card's scan and full text in `language` (docs/ui.md → Card detail):
  * an IonList with sections for abilities, attacks, weakness · resistance ·
- * retreat, the copies owned in `language` per variant (a stepper each), the
- * Cardmarket price per finish, and details. Image above the text on phones, beside it on desktop.
+ * retreat, the copies owned in `language` per variant (a stepper each),
+ * details, and the Cardmarket price per finish. Image above the text on phones, beside it on desktop.
  */
 @Component({
   selector: 'app-card-details',
