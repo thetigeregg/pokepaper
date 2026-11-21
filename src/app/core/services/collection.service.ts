@@ -20,7 +20,7 @@ import { inDisplayOrder } from './catalog-language.service';
 import { SyncService } from './sync.service';
 
 /** An entry with a region, variant and language this build knows. */
-type ShownEntry = CollectionEntry & { region: CatalogRegion; language: CatalogLanguage };
+export type ShownEntry = CollectionEntry & { region: CatalogRegion; language: CatalogLanguage };
 
 function isShown(entry: CollectionEntry): entry is ShownEntry {
   return (
@@ -65,6 +65,8 @@ export class CollectionService {
    * Badges and progress count only these, so every counted copy has a stepper.
    */
   private readonly shown = computed(() => [...this.entries().values()].filter(isShown));
+  /** Every entry this build can show (collection value counts them all). */
+  readonly ownedEntries = this.shown;
 
   /** Copies of each card per language, keyed like the catalog (`catalogKey`). */
   private readonly cardLanguages = computed(() => {

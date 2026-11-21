@@ -28,6 +28,18 @@ describe('CatalogPriceService', () => {
     expect(engine.getCatalogCardPrices).toHaveBeenCalledWith('asia', 'SV2a-001');
   });
 
+  it('reads many cards’ prices at once', async () => {
+    const prices = new Map([['intl:sv01-001', makeContractPrices(1)]]);
+    const getCatalogPricesByKey = vi.fn(() => Promise.resolve(prices));
+    TestBed.overrideProvider(StorageEngineFactory, {
+      useValue: { getEngine: () => ({ getCatalogPricesByKey }) },
+    });
+    const service = TestBed.inject(CatalogPriceService);
+
+    expect(await service.pricesByKey(['intl:sv01-001', 'intl:x'])).toBe(prices);
+    expect(getCatalogPricesByKey).toHaveBeenCalledWith(['intl:sv01-001', 'intl:x']);
+  });
+
   it('rejects instead of throwing when storage isn’t ready', async () => {
     TestBed.overrideProvider(StorageEngineFactory, {
       useValue: {

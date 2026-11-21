@@ -2,7 +2,7 @@
 
 PokePaper tracks how many copies of each card you own, per **variant** and **language**. Collection tracking lives in the Cards tab, alongside the catalog: there's no separate Collection screen.
 
-Status: storage, sync and the Cards tab screens (quantity stepper, owned badges, set progress, Collection search filter, set checklist) are implemented.
+Status: storage, sync and the Cards tab screens (quantity stepper, owned badges, set progress, Collection search filter, set checklist) are implemented, and Settings shows the collection's value.
 
 ## Screens
 
@@ -11,7 +11,17 @@ Status: storage, sync and the Cards tab screens (quantity stepper, owned badges,
 - **Set checklist** (the set page's view button): for entering a collection quickly. Each card is a row with its scan, "001 · Pineco", its rarity, and a button per variant underneath; tapping one toggles 0 ↔ 1 copy in the set's current language (with more copies, the card opens to edit), and "Mark all owned" adds one copy of every unowned card, in its first variant, after a confirmation. Bulk changes are saved together, in one transaction (`setQuantities`, `setCollectionQuantities`).
 - **Sets list:** a second line, "87 / 198 owned", appears under "date · 198 cards" once any card of the set is owned, counted in the language the set opens in.
 - **Search:** a Collection filter, first among the filters, with Owned and Missing checkboxes (none checked: any card). A card counts as owned with any copy in the language its set opens in, like the badges. Missing plus a Set filter gives that set's want list. Card counts in the other filters follow the pick, as filters do with each other (`SearchFilters.owned`, `CatalogSearchService`). Status is read when the search changes (query, filters, catalog or its language, or once the collection loads), not on every quantity change: a card you add from the modal while Missing is picked stays in the results, with its badge, until the next search change, so the list the modal pages through doesn't reshuffle.
+- **Settings → Collection value:** what each catalog's copies are worth at Cardmarket prices (see [Value](#value)).
 - The old Collection tab is gone; `/tabs/collection` redirects to Cards. UI details are in [`ui.md`](ui.md) → Cards.
+
+## Value
+
+Settings' first section, "Collection value", has a row per catalog with copies ("International", "Japan & Asia"): "1,234 cards · 12 without a price" and its value in euros, then a Total row when both catalogs have copies, and a note: "Cardmarket price trends in euros, for any language and condition. Updated Nov 21, 2026." (the newest price used). It reads "No cards in your collection yet" for an empty collection.
+
+- **Every language counts,** unlike badges and set progress: the value is what the whole collection is worth, and a Cardmarket price covers every language of its catalog (docs/catalog.md → Prices).
+- **A copy's price** (`variantFigures`, `headlinePrice`): normal and holo copies take the base finish's price (Cardmarket prices a holo-only card as its base product), reverse holos the reverse holo's. Each is the trend, else the 30-day average, as in card detail. First edition and W promo copies have no Cardmarket price of their own. Card detail hides reverse holo figures for sets from before reverse holos existed (docs/catalog.md → Prices), but a reverse holo copy is always valued: you only own one of a card TCGdex lists in reverse holo.
+- **Copies without a price** (Cardmarket doesn't price the card, the variant has no price, or the card's prices aren't on this device yet) are counted, not valued, so the total never silently drops them.
+- Values are summed in cents. `collectionValue` computes them from `CollectionService.ownedEntries` and the prices read in one batch (`CatalogPriceService.pricesByKey`, `getCatalogPricesByKey`). The section recalculates when the collection or the stored prices change.
 
 ## Data model
 

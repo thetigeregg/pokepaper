@@ -5,7 +5,6 @@ import {
   cardText,
   cardTint,
   formatStage,
-  headlinePrice,
   priceRows,
   retreatCost,
   retreatLabel,
@@ -78,12 +77,6 @@ describe('prices', () => {
   });
 
   const modern = { releaseDate: '2023-03-31' };
-
-  it('headlines the trend, else the 30-day average', () => {
-    expect(headlinePrice(figures(0.14, 0.1, 0.08))).toBe(0.14);
-    expect(headlinePrice(figures(null, 0.1, 0.08))).toBe(0.08);
-    expect(headlinePrice(figures(null, 0.1, null))).toBeNull();
-  });
 
   it('lists the base finish and the reverse holo', () => {
     expect(

@@ -243,6 +243,11 @@ export interface StorageEngine {
     region: CatalogRegion,
     cardId: string
   ): Promise<CatalogCardPrices | undefined>;
+  /**
+   * Many cards' prices at once, by catalog key (`region:cardId`); cards
+   * without prices are absent from the map.
+   */
+  getCatalogPricesByKey(keys: readonly string[]): Promise<Map<string, CatalogCardPrices>>;
 
   // Collection (docs/collection.md), keyed by `collectionEntryId`
   /** Inserts or replaces the entry with its `collectionEntryId`. */

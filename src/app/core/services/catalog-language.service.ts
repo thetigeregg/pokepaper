@@ -26,6 +26,12 @@ export const LANGUAGE_LABELS: Readonly<Record<CatalogLanguage, { short: string; 
   'zh-cn': { short: '简中', name: 'Simplified Chinese' },
 };
 
+/** Catalog names, as the Cards tab's catalog segment shows them. */
+export const REGION_LABELS: Readonly<Record<CatalogRegion, string>> = {
+  intl: 'International',
+  asia: 'Japan & Asia',
+};
+
 /** The order languages are listed in pickers and app text. */
 const LANGUAGE_DISPLAY_ORDER: readonly CatalogLanguage[] = [
   'en',

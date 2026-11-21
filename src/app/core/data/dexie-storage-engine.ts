@@ -378,6 +378,11 @@ export class DexieStorageEngine implements StorageEngine {
     return (await this.catalogPricesTable.get(catalogKey(region, cardId)))?.prices;
   }
 
+  async getCatalogPricesByKey(keys: readonly string[]): Promise<Map<string, CatalogCardPrices>> {
+    const rows = await this.catalogPricesTable.bulkGet([...keys]);
+    return new Map(rows.flatMap((row) => (row ? [[row.key, row.prices] as const] : [])));
+  }
+
   async putCollectionEntry(entry: CollectionEntry): Promise<void> {
     await this.collectionTable.put({ key: collectionEntryId(entry), entry });
   }

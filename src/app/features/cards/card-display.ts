@@ -1,7 +1,7 @@
+import { headlinePrice } from '../../core/utils/catalog-price.util';
 import {
   catalogSetImageUrl,
   COLLECTION_VARIANTS,
-  type CardmarketFigures,
   type CatalogCard,
   type CatalogCardPrices,
   type CatalogLanguage,
@@ -111,14 +111,6 @@ export function variantRows(
     label: VARIANT_LABELS[variant],
     quantity: quantity(variant),
   })).filter((row) => listed.includes(row.variant) || row.quantity > 0);
-}
-
-/**
- * The price shown for a finish (docs/catalog.md → Prices): Cardmarket's
- * trend, else the 30-day average; null when it has neither.
- */
-export function headlinePrice(figures: CardmarketFigures): number | null {
-  return figures.trend ?? figures.avg30;
 }
 
 /** One finish's prices in card detail's Price section. */

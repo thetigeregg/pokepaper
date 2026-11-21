@@ -11,7 +11,7 @@ import type {
   UserSettings,
 } from '@pokepaper/shared';
 import { DEFAULT_SETTINGS, SETTINGS_ENTITY_ID } from '@pokepaper/shared';
-import { NestedTransactionScopeError } from './storage-engine';
+import { catalogKey, NestedTransactionScopeError } from './storage-engine';
 import type { ImageCacheRecord, OutboxEntry, StorageEngine, SyncMetaEntry } from './storage-engine';
 
 /**
@@ -755,6 +755,28 @@ export function describeStorageEngineContract(
 
         expect((await engine.getCatalogCardPrices('intl', 'c-0'))?.base?.trend).toBe(1);
         expect((await engine.getCatalogCardPrices('intl', 'c-1200'))?.base?.trend).toBe(1201);
+      });
+
+      it('reads many cards’ prices by key, across regions and read batches', async () => {
+        const prices = Object.fromEntries(
+          Array.from({ length: 1201 }, (_, index) => [`c-${String(index)}`, index + 1])
+        );
+        await engine.replaceCatalogPrices(makeContractPricePack('intl', prices));
+        await engine.replaceCatalogPrices(makeContractPricePack('asia', { 'SV2a-001': 0.02 }));
+
+        const read = await engine.getCatalogPricesByKey([
+          ...Object.keys(prices).map((cardId) => catalogKey('intl', cardId)),
+          'asia:SV2a-001',
+          'intl:unpriced',
+          'asia:c-0',
+        ]);
+
+        expect(read.size).toBe(1202);
+        expect(read.get('intl:c-1200')?.base?.trend).toBe(1201);
+        expect(read.get('asia:SV2a-001')?.base?.trend).toBe(0.02);
+        expect(read.has('intl:unpriced')).toBe(false);
+        expect(read.has('asia:c-0')).toBe(false);
+        expect(await engine.getCatalogPricesByKey([])).toEqual(new Map());
       });
 
       it('rolls prices back with the transaction they joined', async () => {

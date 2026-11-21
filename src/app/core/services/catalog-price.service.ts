@@ -31,4 +31,9 @@ export class CatalogPriceService {
   async prices(region: CatalogRegion, cardId: string): Promise<CatalogCardPrices | undefined> {
     return this.storageEngineFactory.getEngine().getCatalogCardPrices(region, cardId);
   }
+
+  /** Many cards' prices by catalog key (`region:cardId`); cards without prices are absent. */
+  async pricesByKey(keys: readonly string[]): Promise<Map<string, CatalogCardPrices>> {
+    return this.storageEngineFactory.getEngine().getCatalogPricesByKey(keys);
+  }
 }
