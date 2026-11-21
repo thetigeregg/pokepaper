@@ -67,10 +67,12 @@ export class CollectionValueSectionComponent {
   readonly values = signal<CatalogValue[] | null>(null);
   /** Set when the prices couldn't be read (until a later read succeeds). */
   readonly failed = signal(false);
-  /** The sum over catalogs, shown when more than one has copies. */
+  /** The sum over catalogs (even €0), shown when more than one has copies. */
   readonly total = computed(() => {
     const values = this.values() ?? [];
-    return values.length > 1 ? values.reduce((sum, value) => sum + value.value, 0) : null;
+    return values.length > 1
+      ? { amount: values.reduce((sum, value) => sum + value.value, 0) }
+      : null;
   });
   /** The newest price used, for the footnote. */
   readonly updated = computed(
@@ -105,6 +107,8 @@ export class CollectionValueSectionComponent {
         .catch((error: unknown) => {
           console.error('collection.value_failed', error);
           if (!stale) {
+            // Not the earlier values: they'd look current.
+            this.values.set(null);
             this.failed.set(true);
           }
         });

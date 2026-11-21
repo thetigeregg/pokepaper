@@ -45,8 +45,11 @@ try {
     signal: controller.signal,
   };
   if (process.argv.includes('--rates')) {
-    if (!(await refreshExchangeRates(options))) {
+    const result = await refreshExchangeRates(options);
+    if (result === 'unchanged') {
       log.info({ date: options.store.getExchangeRates()?.date ?? null }, 'catalog.rates_unchanged');
+    } else if (result === 'failed') {
+      process.exitCode = 1;
     }
   } else if (process.argv.includes('--prices')) {
     await runPriceRefresh(options);

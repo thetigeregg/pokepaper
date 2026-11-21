@@ -162,6 +162,34 @@ describe('CollectionValueSectionComponent', () => {
     expect(currencyService.pick).toHaveBeenCalledWith('CHF');
   });
 
+  it('totals both catalogs even when nothing is priced', async () => {
+    ownedEntries.set([
+      entry({ variant: 'firstEdition' }),
+      entry({ region: 'asia', cardId: 'SV2a-001', language: 'ja' }),
+    ]);
+    const fixture = create();
+    await settle(fixture);
+
+    expect(text(fixture, 'value-total')).toBe('Total €0.00');
+  });
+
+  it('drops values it can no longer read instead of showing them as current', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    ownedEntries.set([entry({})]);
+    stored.set('intl:sv01-001', prices(1));
+    const fixture = create();
+    await settle(fixture);
+    expect(text(fixture, 'value-intl')).toBe('International 1 card €1.00');
+
+    priceService.pricesByKey.mockRejectedValueOnce(new Error('disk'));
+    ownedEntries.set([entry({ quantity: 2 })]);
+    await settle(fixture);
+
+    expect(text(fixture, 'value-intl')).toBeUndefined();
+    expect(text(fixture, 'value-failed')).toBe('Couldn’t read the prices on this device');
+    error.mockRestore();
+  });
+
   it('has no total with one catalog', async () => {
     ownedEntries.set([entry({ quantity: 1 })]);
     stored.set('intl:sv01-001', prices(1234.5));

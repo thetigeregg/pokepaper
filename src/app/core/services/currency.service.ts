@@ -1,9 +1,19 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { isCurrencyCode, isExchangeRates, type ExchangeRates } from '@pokepaper/shared';
+import {
+  isCurrencyCode,
+  isExchangeRates,
+  type ExchangeRates,
+  type UserSettings,
+} from '@pokepaper/shared';
 import { StorageEngineFactory } from '../data/storage-engine.factory';
 import { CatalogSyncService, EXCHANGE_RATES_KEY } from './catalog-sync.service';
 import { UserSettingsService } from './user-settings.service';
+
+/** The currency `settings` pick; euros when they pick none (or garbage). */
+function pickedCurrency(settings: UserSettings): string {
+  return isCurrencyCode(settings.currency) ? settings.currency : 'EUR';
+}
 
 /** A currency the user can pick: its code and English name ("Swiss Franc"). */
 export interface CurrencyOption {
@@ -44,10 +54,7 @@ export class CurrencyService {
   /** The rates on this device; null until read, or when none were downloaded. */
   readonly rates = this._rates.asReadonly();
   /** The picked currency; euros when none is. */
-  readonly preferred = computed(() => {
-    const currency = this.userSettings.settings().currency;
-    return isCurrencyCode(currency) ? currency : 'EUR';
-  });
+  readonly preferred = computed(() => pickedCurrency(this.userSettings.settings()));
   /** The currency amounts are shown in: the picked one when its rate is known, else euros. */
   readonly currency = computed(() => {
     const preferred = this.preferred();
@@ -76,13 +83,17 @@ export class CurrencyService {
     return formatMoney(euros * (this.rate(currency) ?? 1), currency);
   }
 
-  /** Shows prices in `code` from now on, on every device. */
+  /**
+   * Shows prices in `code` from now on, on every device. Compared with the
+   * stored settings, not the shown ones, which may not have loaded yet.
+   */
   async pick(code: string): Promise<void> {
-    if (!isCurrencyCode(code) || code === this.preferred()) {
+    if (!isCurrencyCode(code)) {
       return;
     }
     await this.userSettings.update(
-      (settings) => ({ ...settings, currency: code }),
+      (settings) =>
+        pickedCurrency(settings) === code ? settings : { ...settings, currency: code },
       'currency.save_failed'
     );
   }

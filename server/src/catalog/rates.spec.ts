@@ -29,7 +29,7 @@ describe('refreshExchangeRates', () => {
     const log = logger();
     const fetch = vi.fn(() => Promise.resolve(new Response(ecbXml('2026-11-20', 0.92))));
 
-    expect(await refreshExchangeRates({ store, log, fetch })).toBe(true);
+    expect(await refreshExchangeRates({ store, log, fetch })).toBe('updated');
     expect(fetch).toHaveBeenCalledWith(ECB_RATES_URL, expect.anything());
     expect(store.getExchangeRates()).toEqual({ date: '2026-11-20', rates: { CHF: 0.92 } });
     expect(log.info).toHaveBeenCalledWith(
@@ -37,7 +37,7 @@ describe('refreshExchangeRates', () => {
       'catalog.rates_updated'
     );
 
-    expect(await refreshExchangeRates({ store, log, fetch })).toBe(false);
+    expect(await refreshExchangeRates({ store, log, fetch })).toBe('unchanged');
   });
 
   it.each([
@@ -49,7 +49,7 @@ describe('refreshExchangeRates', () => {
     store.saveExchangeRates({ date: '2026-11-19', rates: { CHF: 0.91 } });
     const log = logger();
 
-    expect(await refreshExchangeRates({ store, log, fetch })).toBe(false);
+    expect(await refreshExchangeRates({ store, log, fetch })).toBe('failed');
     expect(store.getExchangeRates()?.date).toBe('2026-11-19');
     expect(log.warn).toHaveBeenCalledWith(
       expect.objectContaining({ err: expect.any(Error) as unknown }),

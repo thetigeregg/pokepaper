@@ -37,8 +37,9 @@ export class UserSettingsService {
   /**
    * Applies `change`: shown at once, then saved locally (and synced). It's
    * applied again to the stored settings, not the in-memory copy (which may
-   * not have loaded yet), so concurrent changes all land. If saving fails,
-   * it's logged as `failureLog` and the saved settings are shown again.
+   * not have loaded yet), so concurrent changes all land; when `change`
+   * returns the stored settings themselves, nothing is saved. If saving
+   * fails, it's logged as `failureLog` and the saved settings are shown again.
    */
   async update(
     change: (settings: UserSettings) => UserSettings,
@@ -48,7 +49,11 @@ export class UserSettingsService {
     this.pending++;
     this._settings.update(change);
     const save = this.saves.then(async () => {
-      await this.repository.updateSettings(change(await this.repository.getSettings()));
+      const stored = await this.repository.getSettings();
+      const next = change(stored);
+      if (next !== stored) {
+        await this.repository.updateSettings(next);
+      }
     });
     this.saves = save.catch(() => undefined);
     try {

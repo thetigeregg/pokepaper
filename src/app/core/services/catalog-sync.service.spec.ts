@@ -528,6 +528,7 @@ describe('CatalogSyncService', () => {
           statusText: 'Unavailable',
         });
       }
+      await respondRates(); // Fetched even though the prices failed.
       const checkedBefore = service.lastChecked();
       await failing;
       expect(service.status()).toBe('error');
@@ -559,6 +560,7 @@ describe('CatalogSyncService', () => {
           statusText: 'Unavailable',
         });
       }
+      await respondRates();
       await run;
       Reflect.deleteProperty(navigator, 'storage');
 
@@ -577,6 +579,7 @@ describe('CatalogSyncService', () => {
         statusText: 'Not Modified',
       });
       await respondPrices('intl', makeContractPricePack('asia', { 'sv01-001': 9 }));
+      await respondRates();
       await run;
 
       expect(service.status()).toBe('error');
@@ -628,14 +631,17 @@ describe('CatalogSyncService', () => {
         expect(service.status()).toBe('idle');
       });
 
-      it('refuses rates that aren’t rates, keeping the stored ones', async () => {
+      it('refuses rates that aren’t rates, keeping the stored ones, without failing the run', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         await engine.putSyncMeta({ key: EXCHANGE_RATES_KEY, value: JSON.stringify(RATES) });
 
         const { run } = await runToRates();
         await respondRates({ date: 'today', rates: { CHF: -1 } });
         await run;
 
-        expect(service.status()).toBe('error');
+        expect(service.status()).toBe('idle');
+        expect(error).toHaveBeenCalledWith('catalog.rates_sync_failed', expect.any(Error));
+        error.mockRestore();
         expect(JSON.parse((await engine.getSyncMeta(EXCHANGE_RATES_KEY))?.value ?? '')).toEqual(
           RATES
         );

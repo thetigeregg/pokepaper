@@ -282,8 +282,30 @@ export class CatalogSyncService {
     this.ensureCurrent(epoch);
     this._status.set('checking');
     this._progress.set(null);
-    await this.syncPrices(epoch);
-    await this.syncRates(epoch);
+    // Prices and rates don't depend on each other: rates are fetched even
+    // when prices fail (whose error then still fails the run), and a rates
+    // failure is only logged. A superseded run stops at the rates' first check.
+    try {
+      await this.syncPrices(epoch);
+    } finally {
+      await this.syncRatesQuietly(epoch);
+    }
+  }
+
+  /**
+   * `syncRates`, but a failure is only logged (`catalog.rates_sync_failed`):
+   * without new rates, amounts keep the stored ones, or euros, and the
+   * catalog itself is fine.
+   */
+  private async syncRatesQuietly(epoch: number): Promise<void> {
+    try {
+      await this.syncRates(epoch);
+    } catch (error: unknown) {
+      if (error instanceof RunSuperseded) {
+        throw error;
+      }
+      console.error('catalog.rates_sync_failed', error);
+    }
   }
 
   /** The manifest, or null when it's unchanged since `etag` (304). */

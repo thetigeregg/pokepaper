@@ -224,6 +224,7 @@ describe('startCatalogSchedule', () => {
     const store = memoryCatalogStore();
     let day = 20;
     let reachable = true;
+    const createClient = vi.fn((signal: AbortSignal) => fakeClient(fakeTcgdex(), signal));
     const fetchRates = vi.fn(() =>
       reachable
         ? Promise.resolve(new Response(ecbXml(`2026-11-${String(day)}`, 0.92)))
@@ -238,11 +239,15 @@ describe('startCatalogSchedule', () => {
       pricesRefreshHours: 24,
       log: silentLogger(),
       initialDelayMs: 0,
-      createClient: (signal) => fakeClient(fakeTcgdex(), signal),
+      createClient,
     });
 
     await vi.advanceTimersByTimeAsync(0);
     expect(store.getExchangeRates()).toEqual({ date: '2026-11-20', rates: { CHF: 0.92 } });
+    // Before the import, so a new server has rates before its first import ends.
+    expect(fetchRates.mock.invocationCallOrder[0]).toBeLessThan(
+      createClient.mock.invocationCallOrder[0] ?? 0
+    );
 
     day = 21;
     reachable = false;

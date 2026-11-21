@@ -40,12 +40,16 @@ export interface RatesRefreshOptions {
   fetch?: typeof fetch;
 }
 
+export type RatesRefreshResult = 'updated' | 'unchanged' | 'failed';
+
 /**
  * Fetches the ECB's current rates and stores them when they're for a new
- * day. On any failure the stored rates stay (logged as
- * `catalog.rates_failed`); returns whether new rates were stored.
+ * day (`updated`; `unchanged` when they're for the stored day). On any
+ * failure the stored rates stay (`failed`, logged as `catalog.rates_failed`).
  */
-export async function refreshExchangeRates(options: RatesRefreshOptions): Promise<boolean> {
+export async function refreshExchangeRates(
+  options: RatesRefreshOptions
+): Promise<RatesRefreshResult> {
   const { store, log } = options;
   const fetchFn = options.fetch ?? fetch;
   try {
@@ -61,18 +65,18 @@ export async function refreshExchangeRates(options: RatesRefreshOptions): Promis
       throw new Error('ECB rates: unexpected response');
     }
     if (store.getExchangeRates()?.date === rates.date) {
-      return false;
+      return 'unchanged';
     }
     store.saveExchangeRates(rates);
     log.info(
       { date: rates.date, currencies: Object.keys(rates.rates).length },
       'catalog.rates_updated'
     );
-    return true;
+    return 'updated';
   } catch (error: unknown) {
     if (!options.signal?.aborted) {
       log.warn({ err: error }, 'catalog.rates_failed');
     }
-    return false;
+    return 'failed';
   }
 }

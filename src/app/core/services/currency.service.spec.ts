@@ -132,6 +132,38 @@ describe('CurrencyService', () => {
     ]);
   });
 
+  it('saves a pick made before the stored settings have loaded', async () => {
+    settings = { ...DEFAULT_SETTINGS, currency: 'CHF' };
+    let release: () => void = () => undefined;
+    repository.getSettings.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () => {
+            resolve(settings);
+          };
+        })
+    );
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: LocalUserDataRepository, useValue: repository },
+        { provide: SyncService, useValue: { dataChanged$: dataChanged } },
+        { provide: StorageEngineFactory, useValue: { getEngine: () => engine } },
+        { provide: CatalogSyncService, useValue: { ratesChanged$: ratesChanged } },
+      ],
+    });
+    const service = TestBed.inject(CurrencyService);
+    expect(service.preferred()).toBe('EUR'); // Not loaded yet.
+
+    const picked = service.pick('EUR');
+    release();
+    await picked;
+
+    expect(repository.updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ currency: 'EUR' })
+    );
+    expect(service.preferred()).toBe('EUR');
+  });
+
   it('ignores a pick that isn’t a currency, or is the current one', async () => {
     const service = await create();
 
