@@ -415,8 +415,11 @@ describe('CardDetailsComponent', () => {
         ? {
             label: row.querySelector('ion-label')?.firstChild?.textContent?.trim(),
             price: row.querySelector('[data-testid="price"]')?.textContent.trim(),
+            // Each average line's label and amount cells, joined by a space.
             averages: [...row.querySelectorAll('[data-testid="price-average"]')].map((line) =>
-              line.textContent.replace(/\s+/g, ' ').trim()
+              [...line.children]
+                .map((cell) => cell.textContent.replace(/\s+/g, ' ').trim())
+                .join(' ')
             ),
           }
         : null;

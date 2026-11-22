@@ -221,11 +221,21 @@
         >
           <ion-label class="ion-text-wrap">
             {{ row.label }}
-            @if (row.avg7 !== null) {
-              <p data-testid="price-average">7-day avg {{ money(row.avg7) }}</p>
-            }
-            @if (row.avg30 !== null) {
-              <p data-testid="price-average">30-day avg {{ money(row.avg30) }}</p>
+            @if (row.avg7 !== null || row.avg30 !== null) {
+              <p class="averages">
+                @if (row.avg7 !== null) {
+                  <span class="average" data-testid="price-average">
+                    <span>7-day avg</span>
+                    <span class="average-amount">{{ money(row.avg7) }}</span>
+                  </span>
+                }
+                @if (row.avg30 !== null) {
+                  <span class="average" data-testid="price-average">
+                    <span>30-day avg</span>
+                    <span class="average-amount">{{ money(row.avg30) }}</span>
+                  </span>
+                }
+              </p>
             }
           </ion-label>
           <ion-note slot="end" class="amount price" data-testid="price">
