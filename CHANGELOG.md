@@ -193,3 +193,7 @@
 ## v0.32.0 - 2026-11-22
 
 - 1a66d98 feat(cards): filter Cardmarket links by language and finish (#56)
+
+## v0.32.1 - 2026-11-22
+
+- cebc7fd fix(catalog): drop Taiwanese SV-P text filed on Japanese promos (#57)
