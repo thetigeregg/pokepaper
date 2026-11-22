@@ -22,8 +22,8 @@ export interface CatalogScheduleOptions {
   initialDelayMs?: number;
   /** Injected in tests. */
   createClient?: (signal: AbortSignal) => TcgdexClient;
-  /** Fetches the ECB's exchange rates; injected in tests. */
-  fetchRates?: typeof fetch;
+  /** Fetches from the ECB and Cardmarket (TCGdex goes through `createClient`); injected in tests. */
+  fetch?: typeof fetch;
   now?: () => Date;
 }
 
@@ -84,7 +84,7 @@ export function startCatalogSchedule(options: CatalogScheduleOptions): CatalogSc
       store,
       log,
       signal: controller.signal,
-      fetch: options.fetchRates,
+      fetch: options.fetch,
     });
     if (aborted()) {
       return;
@@ -119,6 +119,7 @@ export function startCatalogSchedule(options: CatalogScheduleOptions): CatalogSc
         languages: options.languages,
         log,
         signal: controller.signal,
+        fetch: options.fetch,
         now,
       });
     } catch (error: unknown) {

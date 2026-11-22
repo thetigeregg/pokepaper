@@ -79,7 +79,7 @@ export interface CatalogIngestStats {
 
 const PROGRESS_EVERY = 50;
 /** Consecutive failed sets after which the rest of a region is skipped. */
-export const MAX_CONSECUTIVE_SET_FAILURES = 3;
+const MAX_CONSECUTIVE_SET_FAILURES = 3;
 /** How long a "no scan at the expected path" answer is trusted. */
 const IMAGE_MISS_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -377,7 +377,25 @@ async function ingestSet(
   }
   await resolveUnlinkedImages(context, set.serieId, cards);
   carryBorrowedScans(cards, existing);
-  return store.writeSet(set, cards) ? 'written' : 'unchanged';
+  // Cardmarket products of the cards just fetched, for the price pass
+  // (docs/catalog.md → Prices); one product covers every language. Only a
+  // full run, which fetched every language, may forget one: a light run
+  // fetches just new languages, which may lack it.
+  const products = new Map<string, number | null>();
+  for (const [cardId, printings] of fetched) {
+    const idProduct = [...printings.values()].find((raw) => raw.idProduct !== null)?.idProduct;
+    if (idProduct !== undefined || kind === 'full') {
+      products.set(cardId, idProduct ?? null);
+    }
+  }
+  // One transaction: a set stored without its products would stay unmapped,
+  // since light runs skip stored cards.
+  const written = store.transaction(() => {
+    const changed = store.writeSet(set, cards);
+    store.saveCardmarketProducts(region, products);
+    return changed;
+  });
+  return written ? 'written' : 'unchanged';
 }
 
 /**
@@ -540,7 +558,7 @@ async function resolveUnlinkedImages(
  * Runs a TCGdex request and parses it. Answers retrying can't fix (404,
  * malformed) become `null`; an unavailable TCGdex or an abort propagates.
  */
-export async function fetchContained<T>(
+async function fetchContained<T>(
   request: () => Promise<unknown>,
   parse: (value: unknown) => T | null
 ): Promise<T | null> {
@@ -556,6 +574,6 @@ export async function fetchContained<T>(
 }
 
 /** Failures that skip one set or region rather than ending the run. */
-export function isContainedFailure(error: unknown): boolean {
+function isContainedFailure(error: unknown): boolean {
   return error instanceof TcgdexUnavailableError || error instanceof TcgdexResponseError;
 }

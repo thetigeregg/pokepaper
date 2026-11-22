@@ -13,6 +13,7 @@ import {
   type CatalogVariants,
   type Localized,
 } from '@pokepaper/shared';
+import { parseProductId } from './price-data.js';
 import { TCGDEX_ASSET_BASE } from './tcgdex-client.js';
 
 /**
@@ -134,6 +135,8 @@ export interface RawCard {
   effect: string | null;
   evolveFrom: string | null;
   image: AssetPath | null;
+  /** Cardmarket's product for the printing (`pricing.cardmarket.idProduct`); not part of the card. */
+  idProduct: number | null;
 }
 
 /** `GET /{lang}/series`. Invalid entries are dropped; null if the response isn't a list. */
@@ -309,6 +312,7 @@ export function parseCard(value: unknown): RawCard | null {
     effect: text(value['effect'], MAX_TEXT),
     evolveFrom: text(value['evolveFrom'], MAX_NAME),
     image: assetPath(value['image']),
+    idProduct: parseProductId(value),
   };
 }
 

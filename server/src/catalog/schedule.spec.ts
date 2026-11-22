@@ -3,6 +3,7 @@ import { nextRunKind, pricesDue, startCatalogSchedule } from './schedule.js';
 import type { CatalogStore } from './store.js';
 import {
   ecbXml,
+  fakeCardmarket,
   fakeClient,
   fakeTcgdex,
   memoryCatalogStore,
@@ -11,8 +12,11 @@ import {
 
 const HOUR = 60 * 60 * 1000;
 
-/** The ECB unreachable: schedule tests never touch the network. */
-const ecbOffline = (): Promise<Response> => Promise.reject(new Error('offline'));
+/** Cardmarket's guide, the ECB unreachable: schedule tests never touch the network. */
+let outside = fakeCardmarket();
+beforeEach(() => {
+  outside = fakeCardmarket();
+});
 
 describe('nextRunKind', () => {
   const now = new Date('2026-01-10T00:00:00Z');
@@ -52,7 +56,7 @@ describe('startCatalogSchedule', () => {
     const fake = fakeTcgdex();
     const schedule = startCatalogSchedule({
       store,
-      fetchRates: ecbOffline,
+      fetch: outside.fetch,
       languages: ['en', 'fr'],
       refreshHours: 24,
       fullRefreshDays: 7,
@@ -81,7 +85,7 @@ describe('startCatalogSchedule', () => {
 
     const schedule = startCatalogSchedule({
       store,
-      fetchRates: ecbOffline,
+      fetch: outside.fetch,
       languages: ['en'],
       refreshHours: 24,
       fullRefreshDays: 7,
@@ -109,7 +113,7 @@ describe('startCatalogSchedule', () => {
 
     const schedule = startCatalogSchedule({
       store,
-      fetchRates: ecbOffline,
+      fetch: outside.fetch,
       languages: ['en'],
       refreshHours: 24,
       fullRefreshDays: 7,
@@ -136,7 +140,7 @@ describe('startCatalogSchedule', () => {
 
     const schedule = startCatalogSchedule({
       store,
-      fetchRates: ecbOffline,
+      fetch: outside.fetch,
       languages: ['en'],
       refreshHours: 1,
       fullRefreshDays: 7,
@@ -164,7 +168,7 @@ describe('startCatalogSchedule', () => {
 
     const schedule = startCatalogSchedule({
       store,
-      fetchRates: ecbOffline,
+      fetch: outside.fetch,
       languages: ['en'],
       refreshHours: 1,
       fullRefreshDays: 7,
@@ -190,7 +194,7 @@ describe('startCatalogSchedule', () => {
     let clock = new Date('2026-01-10T00:00:00Z').getTime();
     const schedule = startCatalogSchedule({
       store,
-      fetchRates: ecbOffline,
+      fetch: outside.fetch,
       languages: ['en', 'fr'],
       refreshHours: 12,
       fullRefreshDays: 7,
@@ -232,7 +236,10 @@ describe('startCatalogSchedule', () => {
     );
     const schedule = startCatalogSchedule({
       store,
-      fetchRates,
+      fetch: (input, init) =>
+        (input instanceof Request ? input.url : input.toString()).includes('ecb.europa.eu')
+          ? fetchRates()
+          : outside.fetch(input, init),
       languages: ['en'],
       refreshHours: 12,
       fullRefreshDays: 7,
@@ -280,7 +287,7 @@ describe('startCatalogSchedule', () => {
 
     const schedule = startCatalogSchedule({
       store,
-      fetchRates: ecbOffline,
+      fetch: outside.fetch,
       languages: ['en'],
       refreshHours: 24,
       fullRefreshDays: 7,
@@ -308,7 +315,7 @@ describe('startCatalogSchedule', () => {
 
     const schedule = startCatalogSchedule({
       store,
-      fetchRates: ecbOffline,
+      fetch: outside.fetch,
       languages: ['en'],
       refreshHours: 1,
       fullRefreshDays: 7,
@@ -333,7 +340,7 @@ describe('startCatalogSchedule', () => {
 
     const schedule = startCatalogSchedule({
       store,
-      fetchRates: ecbOffline,
+      fetch: outside.fetch,
       languages: ['en'],
       refreshHours: 24,
       fullRefreshDays: 7,

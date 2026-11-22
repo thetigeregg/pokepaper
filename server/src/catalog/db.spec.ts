@@ -37,4 +37,33 @@ describe('catalog migrations', () => {
       { key: 'prices_version:intl', value: '191' },
     ]);
   });
+
+  it('start each card’s Cardmarket product from the IDs stored with its prices', () => {
+    const location = join(dir, 'catalog.db');
+    const before = loadMigrations(join(import.meta.dirname, 'migrations')).filter(
+      (migration) => migration.version < 5
+    );
+    const old = openDatabase(location, before);
+    const insert = old.prepare(
+      'INSERT INTO catalog_prices (region, card_id, payload) VALUES (?, ?, ?)'
+    );
+    insert.run('intl', 'sv01-001', JSON.stringify({ updated: 'x', idProduct: 483559 }));
+    insert.run('asia', 'SV2a-001', JSON.stringify({ updated: 'x', idProduct: 700001 }));
+    insert.run('intl', 'no-id', JSON.stringify({ updated: 'x', idProduct: null }));
+    insert.run('intl', 'bad-id', JSON.stringify({ updated: 'x', idProduct: -4 }));
+    old.close();
+
+    const db = openCatalogDatabase(location);
+    const products = db
+      .prepare(
+        'SELECT region, card_id, id_product FROM catalog_cardmarket_products ORDER BY card_id'
+      )
+      .all();
+    db.close();
+
+    expect(products).toEqual([
+      { region: 'asia', card_id: 'SV2a-001', id_product: 700001 },
+      { region: 'intl', card_id: 'sv01-001', id_product: 483559 },
+    ]);
+  });
 });

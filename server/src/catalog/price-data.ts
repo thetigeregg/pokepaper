@@ -1,6 +1,6 @@
 import type { CardmarketFigures, CatalogCardPrices } from '@pokepaper/shared';
 
-/** Every figure of Cardmarket's price guide TCGdex reports for one finish, in euros. */
+/** Every figure of Cardmarket's price guide for one finish, in euros. */
 export interface StoredFigures {
   /** Average sale price. */
   avg: number | null;
@@ -14,18 +14,19 @@ export interface StoredFigures {
 }
 
 /**
- * A card's prices as `catalog_prices` stores them: everything TCGdex
- * reports, so clients can be sent more figures later without a refetch.
- * Clients get the subset in `CatalogCardPrices` (`toWirePrices`).
+ * A card's prices as `catalog_prices` stores them: every figure of
+ * Cardmarket's price guide, so clients can be sent more figures later
+ * without a refetch. Clients get the subset in `CatalogCardPrices`
+ * (`toWirePrices`).
  */
 export interface StoredCardPrices {
-  /** When TCGdex last read Cardmarket's price guide (ISO timestamp). */
+  /** When Cardmarket generated the price guide (ISO timestamp). */
   updated: string;
   /** Cardmarket's product ID. */
   idProduct: number | null;
-  /** TCGdex's plain figures: the normal print, or the holo for holo-only cards. */
+  /** The plain figures: the normal print, or the holo for holo-only cards. */
   base: StoredFigures | null;
-  /** TCGdex's `-holo` figures: the reverse holo. */
+  /** The `-holo` figures: the reverse holo. */
   reverseHolo: StoredFigures | null;
 }
 
@@ -59,35 +60,35 @@ function figures(record: Json, suffix: '' | '-holo'): StoredFigures | null {
 }
 
 /**
- * Cardmarket prices from a TCGdex card response (`pricing.cardmarket`), or
- * `null` when it has none usable: missing, not in euros, without a valid
- * `updated` time, or without a single figure.
+ * A card's Cardmarket product ID from a TCGdex card response
+ * (`pricing.cardmarket.idProduct`), or null when it has none.
  */
-export function parseCardmarketPrices(card: unknown): StoredCardPrices | null {
+export function parseProductId(card: unknown): number | null {
   if (!isObject(card) || !isObject(card['pricing'])) {
     return null;
   }
   const cardmarket = card['pricing']['cardmarket'];
-  if (!isObject(cardmarket) || cardmarket['unit'] !== 'EUR') {
+  return isObject(cardmarket) && isProductId(cardmarket['idProduct'])
+    ? cardmarket['idProduct']
+    : null;
+}
+
+/**
+ * A product's prices from one entry of Cardmarket's price guide download
+ * (`priceGuides[]`: `idProduct`, `trend`, `avg30`, …, `trend-holo`, … in
+ * euros), stamped with the guide's `updated` time. Null when the entry isn't
+ * one or has no usable figure.
+ */
+export function parseGuideEntry(entry: unknown, updated: string): StoredCardPrices | null {
+  if (!isObject(entry) || !isProductId(entry['idProduct'])) {
     return null;
   }
-  const updatedAt =
-    typeof cardmarket['updated'] === 'string' ? Date.parse(cardmarket['updated']) : NaN;
-  if (Number.isNaN(updatedAt)) {
-    return null;
-  }
-  const base = figures(cardmarket, '');
-  const reverseHolo = figures(cardmarket, '-holo');
+  const base = figures(entry, '');
+  const reverseHolo = figures(entry, '-holo');
   if (!base && !reverseHolo) {
     return null;
   }
-  const idProduct = cardmarket['idProduct'];
-  return {
-    updated: new Date(updatedAt).toISOString(),
-    idProduct: isProductId(idProduct) ? idProduct : null,
-    base,
-    reverseHolo,
-  };
+  return { updated, idProduct: entry['idProduct'], base, reverseHolo };
 }
 
 function wireFigures(stored: StoredFigures | null): CardmarketFigures | null {

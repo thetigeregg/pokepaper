@@ -14,6 +14,16 @@ import type {
 import type { Db } from '../db.js';
 import { toWirePrices, type StoredCardPrices } from './price-data.js';
 
+/** The Cardmarket price guide download last applied. */
+export interface PriceGuideState {
+  /** Its HTTP ETag, sent back so an unchanged guide costs an empty 304. */
+  etag: string | null;
+  /** When Cardmarket generated it (ISO timestamp). */
+  createdAt: string;
+  /** The products version it was applied with: products changed since, it's applied anew. */
+  productsVersion: number;
+}
+
 export type CatalogRunKind = 'light' | 'full';
 export type CatalogRunStatus = 'ok' | 'partial' | 'failed' | 'aborted';
 
@@ -414,6 +424,136 @@ export class CatalogStore {
       }
       return changed;
     })();
+  }
+
+  /** Every card ID of a region, in no particular order. */
+  listCardIds(region: CatalogRegion): string[] {
+    return (
+      this.db.prepare('SELECT id FROM catalog_cards WHERE region = ?').all(region) as {
+        id: string;
+      }[]
+    ).map((row) => row.id);
+  }
+
+  /** Runs `work` in one transaction (nested store writes join it). */
+  transaction<T>(work: () => T): T {
+    return this.db.transaction(work)();
+  }
+
+  /**
+   * Records the Cardmarket product of cards (from TCGdex's card details), in
+   * one transaction. `null` forgets a card's product, and its prices with
+   * it: the price pass leaves cards without a product alone. Bumps the
+   * products version when anything changed; returns how many cards did.
+   */
+  saveCardmarketProducts(
+    region: CatalogRegion,
+    products: ReadonlyMap<string, number | null>
+  ): number {
+    return this.db.transaction(() => {
+      const upsert = this.db.prepare(
+        `INSERT INTO catalog_cardmarket_products (region, card_id, id_product) VALUES (?, ?, ?)
+         ON CONFLICT (region, card_id) DO UPDATE SET id_product = excluded.id_product
+         WHERE id_product IS NOT excluded.id_product`
+      );
+      const remove = this.db.prepare(
+        'DELETE FROM catalog_cardmarket_products WHERE region = ? AND card_id = ?'
+      );
+      const removePrices = this.db.prepare(
+        'DELETE FROM catalog_prices WHERE region = ? AND card_id = ?'
+      );
+      let changed = 0;
+      let pricesRemoved = 0;
+      for (const [cardId, idProduct] of products) {
+        if (idProduct === null) {
+          changed += remove.run(region, cardId).changes;
+          pricesRemoved += removePrices.run(region, cardId).changes;
+        } else {
+          changed += upsert.run(region, cardId, idProduct).changes;
+        }
+      }
+      if (pricesRemoved > 0) {
+        this.bumpPricesVersion(region);
+      }
+      if (changed > 0) {
+        this.db
+          .prepare(
+            `INSERT INTO catalog_meta (key, value) VALUES ('products_version', '1')
+             ON CONFLICT (key) DO UPDATE SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT)`
+          )
+          .run();
+      }
+      return changed;
+    })();
+  }
+
+  /** Bumped whenever any card's Cardmarket product changes (`catalog_meta` key `products_version`). */
+  productsVersion(): number {
+    const row = this.db
+      .prepare("SELECT value FROM catalog_meta WHERE key = 'products_version'")
+      .get() as { value: string } | undefined;
+    return Number(row?.value ?? 0);
+  }
+
+  /**
+   * Cards of a region without a known Cardmarket product whose set was
+   * released on or after `releasedSince` (`YYYY-MM-DD`), or has no date.
+   */
+  listUnmappedCards(region: CatalogRegion, releasedSince: string): CatalogCard[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT c.payload FROM catalog_cards c
+           JOIN catalog_sets s ON s.region = c.region AND s.id = c.set_id
+           WHERE c.region = ? AND (s.release_date IS NULL OR s.release_date >= ?)
+             AND NOT EXISTS (
+               SELECT 1 FROM catalog_cardmarket_products p
+               WHERE p.region = c.region AND p.card_id = c.id
+             )`
+        )
+        .all(region, releasedSince) as { payload: string }[]
+    ).map((row) => JSON.parse(row.payload) as CatalogCard);
+  }
+
+  /** The Cardmarket product of each of a region's cards that has one, by card ID. */
+  listCardmarketProducts(region: CatalogRegion): Map<string, number> {
+    const rows = this.db
+      .prepare(
+        `SELECT p.card_id, p.id_product FROM catalog_cardmarket_products p
+         JOIN catalog_cards c ON c.region = p.region AND c.id = p.card_id
+         WHERE p.region = ?`
+      )
+      .all(region) as { card_id: string; id_product: number }[];
+    return new Map(rows.map((row) => [row.card_id, row.id_product]));
+  }
+
+  /** Forgets the products of cards the catalog no longer has. Returns how many. */
+  pruneOrphanProducts(region: CatalogRegion): number {
+    return this.db
+      .prepare(
+        `DELETE FROM catalog_cardmarket_products WHERE region = ? AND NOT EXISTS (
+           SELECT 1 FROM catalog_cards c
+           WHERE c.region = catalog_cardmarket_products.region AND c.id = catalog_cardmarket_products.card_id
+         )`
+      )
+      .run(region).changes;
+  }
+
+  /** The Cardmarket price guide last applied (`catalog_meta` key `price_guide`), if any. */
+  getPriceGuideState(): PriceGuideState | undefined {
+    const row = this.db
+      .prepare("SELECT value FROM catalog_meta WHERE key = 'price_guide'")
+      .get() as { value: string } | undefined;
+    return row ? (JSON.parse(row.value) as PriceGuideState) : undefined;
+  }
+
+  savePriceGuideState(state: PriceGuideState): void {
+    this.db
+      .prepare(
+        `INSERT INTO catalog_meta (key, value) VALUES ('price_guide', ?)
+         ON CONFLICT (key) DO UPDATE SET value = excluded.value`
+      )
+      .run(stableStringify(state));
   }
 
   /** Removes prices of cards the catalog no longer has. Returns how many. */

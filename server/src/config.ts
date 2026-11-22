@@ -35,8 +35,8 @@ export interface CatalogConfig {
   /** Days between full refreshes (which refetch every card). */
   fullRefreshDays: number;
   /**
-   * Hours between price passes (which fetch every card once). A pass runs
-   * after a scheduled import, so effectively at least `refreshHours`.
+   * Hours between price passes (one download of Cardmarket's price guide).
+   * A pass runs after a scheduled import, so effectively at least `refreshHours`.
    */
   pricesRefreshHours: number;
 }

@@ -52,7 +52,9 @@ try {
       process.exitCode = 1;
     }
   } else if (process.argv.includes('--prices')) {
-    await runPriceRefresh(options);
+    if ((await runPriceRefresh(options)).status === 'failed') {
+      process.exitCode = 1;
+    }
   } else {
     await runCatalogIngest({
       ...options,
