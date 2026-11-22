@@ -1,6 +1,9 @@
 import {
   basicEnergyType,
   basicEnergyTypeOf,
+  CATALOG_LANGUAGES,
+  CARDMARKET_LANGUAGE_IDS,
+  cardmarketProductUrl,
   catalogCardImageUrl,
   DEFAULT_SETTINGS,
   isExchangeRates,
@@ -148,6 +151,31 @@ describe('catalogCardImageUrl', () => {
     expect(catalogCardImageUrl(borrowed, 'en', 'high')).toBe(
       '/images/catalog/cards/intl/sv01-001/en/high.webp?from=sve%202'
     );
+  });
+});
+
+describe('cardmarketProductUrl', () => {
+  const page = 'https://www.cardmarket.com/en/Pokemon/Products';
+
+  it('opens a product’s page with every offer', () => {
+    expect(cardmarketProductUrl(483559)).toBe(`${page}?idProduct=483559`);
+  });
+
+  it('filters the offers to a language and to reverse holos', () => {
+    expect(cardmarketProductUrl(483559, { language: 'de' })).toBe(
+      `${page}?idProduct=483559&language=3`
+    );
+    expect(cardmarketProductUrl(483559, { reverseHolo: true })).toBe(
+      `${page}?idProduct=483559&isReverseHolo=Y`
+    );
+    expect(cardmarketProductUrl(483559, { language: 'de', reverseHolo: true })).toBe(
+      `${page}?idProduct=483559&language=3&isReverseHolo=Y`
+    );
+  });
+
+  it('knows a distinct Cardmarket language for every catalog language', () => {
+    const ids = CATALOG_LANGUAGES.map((language) => CARDMARKET_LANGUAGE_IDS[language]);
+    expect(new Set(ids).size).toBe(CATALOG_LANGUAGES.length);
   });
 });
 

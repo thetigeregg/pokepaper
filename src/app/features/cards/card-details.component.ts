@@ -40,6 +40,7 @@ import {
   cardText,
   collectionTarget,
   priceRows,
+  type PriceRow,
   retreatCost,
   retreatLabel,
   setLine,
@@ -139,12 +140,21 @@ export class CardDetailsComponent {
   readonly convertedOn = computed(() =>
     this.currencyService.currency() === 'EUR' ? null : (this.currencyService.rates()?.date ?? null)
   );
-  /** The card's Cardmarket page, when its product ID is known (packs aren't checked per card). */
-  readonly cardmarketUrl = computed(() => {
+  /**
+   * The card's Cardmarket page, offers filtered to its language: all
+   * finishes (`base`) or reverse holos only. Null when its product ID isn't
+   * known (packs aren't checked per card).
+   */
+  readonly cardmarketUrls = computed(() => {
     const id = this.prices()?.idProduct;
-    return typeof id === 'number' && Number.isSafeInteger(id) && id > 0
-      ? cardmarketProductUrl(id)
-      : null;
+    if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) {
+      return null;
+    }
+    const language = this.language();
+    return {
+      base: cardmarketProductUrl(id, { language }),
+      reverseHolo: cardmarketProductUrl(id, { language, reverseHolo: true }),
+    } satisfies Record<PriceRow['finish'], string>;
   });
   readonly legal = computed(() => {
     const { standard, expanded } = this.card().legal;

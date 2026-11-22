@@ -89,6 +89,26 @@
   font-size: 1.05rem;
 }
 
+/* A finish's averages: one line each, label then amount, the amounts
+   right-aligned with each other. One hint paragraph (so it keeps Ionic's
+   hint color) laid out as a two-column grid; each line's spans are its
+   cells. */
+.averages {
+  display: grid;
+  grid-template-columns: auto auto;
+  column-gap: 12px;
+  width: fit-content;
+}
+
+.average {
+  display: contents;
+}
+
+.average-amount {
+  justify-self: end;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Collection stepper: − count +, the count wide enough for three digits so
    the buttons don't move. */
 .stepper {

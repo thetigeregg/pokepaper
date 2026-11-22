@@ -415,10 +415,12 @@ describe('CardDetailsComponent', () => {
         ? {
             label: row.querySelector('ion-label')?.firstChild?.textContent?.trim(),
             price: row.querySelector('[data-testid="price"]')?.textContent.trim(),
-            averages: row
-              .querySelector('[data-testid="price-averages"]')
-              ?.textContent.replace(/\s+/g, ' ')
-              .trim(),
+            // Each average line's label and amount cells, joined by a space.
+            averages: [...row.querySelectorAll('[data-testid="price-average"]')].map((line) =>
+              [...line.children]
+                .map((cell) => cell.textContent.replace(/\s+/g, ' ').trim())
+                .join(' ')
+            ),
           }
         : null;
     };
@@ -438,19 +440,19 @@ describe('CardDetailsComponent', () => {
       expect(priceRow(fixture, 'base')).toEqual({
         label: 'Normal',
         price: '€0.14',
-        averages: '7-day avg €0.10 · 30-day avg €0.08',
+        averages: ['7-day avg €0.10', '30-day avg €0.08'],
       });
       expect(priceRow(fixture, 'reverseHolo')).toEqual({
         label: 'Reverse holo',
         price: '€1.50',
-        averages: '30-day avg €1.25',
+        averages: ['30-day avg €1.25'],
       });
       expect(
         element(fixture).querySelector('[data-testid="price-updated"]')?.textContent.trim()
       ).toBe('Updated Nov 21, 2026');
     });
 
-    it('links to the card’s Cardmarket page, opening outside the app', async () => {
+    it('links to the card’s Cardmarket offers in its language, opening outside the app', async () => {
       storedPrices.set(base.id, prices());
       const fixture = create(base);
       await settle(fixture);
@@ -458,11 +460,34 @@ describe('CardDetailsComponent', () => {
       const link = element(fixture).querySelector<HTMLIonItemElement>(
         '[data-testid="price-cardmarket"]'
       );
-      expect(link?.href).toBe('https://www.cardmarket.com/en/Pokemon/Products?idProduct=483559');
+      expect(link?.href).toBe(
+        'https://www.cardmarket.com/en/Pokemon/Products?idProduct=483559&language=1'
+      );
       expect(link?.target).toBe('_blank');
       expect(link?.rel).toBe('noopener noreferrer');
       expect(link?.detailIcon).toBe('open-outline');
       expect(link?.textContent.trim()).toBe('View on Cardmarket');
+    });
+
+    it('links each finish’s row to its offers in the card’s language', async () => {
+      storedPrices.set(base.id, prices());
+      const fixture = create(base, 'de');
+      await settle(fixture);
+
+      const row = (finish: string) =>
+        element(fixture).querySelector<HTMLIonItemElement>(`[data-testid="price-${finish}"]`);
+      const page = 'https://www.cardmarket.com/en/Pokemon/Products?idProduct=483559';
+      expect(row('base')?.href).toBe(`${page}&language=3`);
+      expect(row('reverseHolo')?.href).toBe(`${page}&language=3&isReverseHolo=Y`);
+      for (const finish of ['base', 'reverseHolo']) {
+        expect(row(finish)?.target).toBe('_blank');
+        expect(row(finish)?.rel).toBe('noopener noreferrer');
+        expect(row(finish)?.detail).toBe(true);
+        expect(row(finish)?.detailIcon).toBe('open-outline');
+      }
+      expect(
+        element(fixture).querySelector<HTMLIonItemElement>('[data-testid="price-cardmarket"]')?.href
+      ).toBe(`${page}&language=3`);
     });
 
     it.each([
@@ -475,6 +500,13 @@ describe('CardDetailsComponent', () => {
 
       expect(element(fixture).querySelector('[data-testid="price-header"]')).not.toBeNull();
       expect(element(fixture).querySelector('[data-testid="price-cardmarket"]')).toBeNull();
+      for (const finish of ['base', 'reverseHolo']) {
+        const row = element(fixture).querySelector<HTMLIonItemElement>(
+          `[data-testid="price-${finish}"]`
+        );
+        expect(row?.href).toBeUndefined();
+        expect(row?.detail).toBe(false);
+      }
     });
 
     it('shows prices in the currency picked in Settings, noting the conversion', async () => {
@@ -487,7 +519,7 @@ describe('CardDetailsComponent', () => {
       expect(priceRow(fixture, 'base')).toEqual({
         label: 'Normal',
         price: 'CHF\u00a00.13',
-        averages: '7-day avg CHF 0.09 · 30-day avg CHF 0.07', // normalized whitespace
+        averages: ['7-day avg CHF 0.09', '30-day avg CHF 0.07'], // normalized whitespace
       });
       expect(
         element(fixture)

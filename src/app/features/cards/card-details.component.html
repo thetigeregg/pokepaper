@@ -209,19 +209,31 @@
         <ion-label data-testid="price-header">Price · Cardmarket</ion-label>
       </ion-list-header>
       @for (row of priceRows(); track row.finish) {
-        <ion-item lines="inset" [attr.data-testid]="'price-' + row.finish">
+        <!-- A link to the finish's offers in this language, when the product is known. -->
+        <ion-item
+          lines="inset"
+          [href]="cardmarketUrls()?.[row.finish]"
+          target="_blank"
+          rel="noopener noreferrer"
+          [detail]="cardmarketUrls() !== null"
+          detailIcon="open-outline"
+          [attr.data-testid]="'price-' + row.finish"
+        >
           <ion-label class="ion-text-wrap">
             {{ row.label }}
             @if (row.avg7 !== null || row.avg30 !== null) {
-              <p data-testid="price-averages">
+              <p class="averages">
                 @if (row.avg7 !== null) {
-                  <span>7-day avg {{ money(row.avg7) }}</span>
-                }
-                @if (row.avg7 !== null && row.avg30 !== null) {
-                  ·
+                  <span class="average" data-testid="price-average">
+                    <span>7-day avg</span>
+                    <span class="average-amount">{{ money(row.avg7) }}</span>
+                  </span>
                 }
                 @if (row.avg30 !== null) {
-                  <span>30-day avg {{ money(row.avg30) }}</span>
+                  <span class="average" data-testid="price-average">
+                    <span>30-day avg</span>
+                    <span class="average-amount">{{ money(row.avg30) }}</span>
+                  </span>
                 }
               </p>
             }
@@ -243,9 +255,9 @@
           </ion-label>
         </ion-item>
       }
-      @if (cardmarketUrl(); as url) {
+      @if (cardmarketUrls(); as urls) {
         <ion-item
-          [href]="url"
+          [href]="urls.base"
           target="_blank"
           rel="noopener noreferrer"
           [detail]="true"
