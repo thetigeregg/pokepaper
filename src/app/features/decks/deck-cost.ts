@@ -15,57 +15,42 @@ export function slotPrice(prices: CatalogCardPrices | undefined): number | null 
   return base ?? (prices.reverseHolo ? headlinePrice(prices.reverseHolo) : null);
 }
 
-/** What a set of copies costs in euros (summed in cents), and how many have no price. */
-export interface CostTotal {
+/** What the copies a deck still needs cost (docs/decks.md → Cost to complete). */
+export interface CostToComplete {
+  /** Euros, summed in cents. */
   euros: number;
+  /** Copies still needed. */
+  copies: number;
+  /** How many of `copies` have no price. */
   unpriced: number;
 }
 
-/** Deck cost (docs/decks.md → Cost): the whole deck, and the copies still needed. */
-export interface DeckCost {
-  deck: CostTotal;
-  /** The copies the collection doesn't cover (cards on this device); null until compared. */
-  toComplete: (CostTotal & { copies: number }) | null;
-}
-
 /**
- * The cost of `cards` (the deck, not its Considering pile) at `prices`
- * (keyed `region:cardId`), and of the copies `owned` says are still needed.
+ * What the copies of `cards` (the deck, not its Considering pile) that
+ * `owned` says are still needed cost at `prices` (keyed `region:cardId`).
+ * Cards not on this device aren't compared, so they aren't counted.
  */
-export function deckCost(
+export function costToComplete(
   cards: readonly DeckCard[],
   prices: ReadonlyMap<string, CatalogCardPrices>,
-  owned: DeckOwned | undefined
-): DeckCost {
-  const deck = { cents: 0, unpriced: 0 };
-  const needed = { cents: 0, unpriced: 0, copies: 0 };
+  owned: DeckOwned
+): CostToComplete {
+  let cents = 0;
+  let copies = 0;
+  let unpriced = 0;
   for (const card of cards) {
     const key = deckCardKey(card);
+    const missing = owned.slots.get(key)?.missing ?? 0;
+    if (missing === 0) {
+      continue;
+    }
+    copies += missing;
     const price = slotPrice(prices.get(key));
-    const cents = price === null ? null : Math.round(price * 100);
-    add(deck, cents, card.count);
-    const missing = owned?.slots.get(key)?.missing ?? 0;
-    if (missing > 0) {
-      needed.copies += missing;
-      add(needed, cents, missing);
+    if (price === null) {
+      unpriced += missing;
+    } else {
+      cents += Math.round(price * 100) * missing;
     }
   }
-  return {
-    deck: { euros: deck.cents / 100, unpriced: deck.unpriced },
-    toComplete: owned
-      ? { euros: needed.cents / 100, unpriced: needed.unpriced, copies: needed.copies }
-      : null,
-  };
-}
-
-function add(
-  total: { cents: number; unpriced: number },
-  cents: number | null,
-  copies: number
-): void {
-  if (cents === null) {
-    total.unpriced += copies;
-  } else {
-    total.cents += cents * copies;
-  }
+  return { euros: cents / 100, copies, unpriced };
 }

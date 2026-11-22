@@ -412,29 +412,45 @@ describe('DeckPage', () => {
     checks.check.mockReturnValue(undefined);
   });
 
-  describe('cost', () => {
+  describe('cost to complete', () => {
     const trend = (euros: number): CatalogCardPrices => ({
       updated: '2026-11-22T01:43:59.000Z',
       base: { trend: euros, avg7: null, avg30: null },
       reverseHolo: null,
     });
-    /** "label · hint · amount": the row's title, its hint line (if any) and its amount. */
-    const text = (testId: string) => {
-      const row = query(`[data-testid="${testId}"]`);
+    /** What the collection covers: copies still needed per printing. */
+    const missing = (counts: Record<string, number>): DeckOwned => ({
+      slots: new Map(
+        Object.entries(counts).map(([key, count]) => [
+          key,
+          { owned: 0, fromOther: 0, missing: count },
+        ])
+      ),
+      considering: new Map(),
+      missing: Object.values(counts).reduce((sum, count) => sum + count, 0),
+      unknown: 0,
+    });
+    const SOME_MISSING = { 'intl:sv01-001': 2, 'intl:sv01-166': 1, 'intl:sv01-258': 9 };
+    /** "title · hint · amount" of the row. */
+    const text = () => {
+      const row = query('[data-testid="deck-to-complete"]');
       const normalize = (value: string | null | undefined) =>
         (value ?? '').replace(/\s+/g, ' ').trim();
       if (!row) {
         return undefined;
       }
       const label = row.querySelector('ion-label');
-      const title = normalize(label?.firstChild?.textContent);
-      const hint = normalize(label?.querySelector('p')?.textContent);
-      const amount = normalize(row.querySelector('ion-note')?.textContent);
-      return [title, hint, amount].filter(Boolean).join(' · ');
+      return [
+        normalize(label?.firstChild?.textContent),
+        normalize(label?.querySelector('p')?.textContent),
+        normalize(row.querySelector('ion-note')?.textContent),
+      ]
+        .filter(Boolean)
+        .join(' · ');
     };
 
     beforeEach(() => {
-      // sv01-166 ×4 and sv01-001 ×3 are priced; the 9 Energy aren't.
+      // sv01-166 and sv01-001 are priced; the Energy (sv01-258) isn't.
       storedPrices = new Map([
         ['intl:sv01-166', trend(2.5)],
         ['intl:sv01-001', trend(0.1)],
@@ -449,7 +465,8 @@ describe('DeckPage', () => {
       ownedNow.set(undefined);
     });
 
-    it('shows what the deck costs, counting cards without a price', async () => {
+    it('shows what the missing copies cost, counting those without a price', async () => {
+      ownedNow.set(missing(SOME_MISSING));
       await create();
 
       expect(priceService.pricesByKey).toHaveBeenCalledWith([
@@ -457,55 +474,34 @@ describe('DeckPage', () => {
         'intl:sv01-166',
         'intl:sv01-258',
       ]);
-      expect(text('deck-cost')).toBe('Cost · 9 without a price · €10.30');
-      expect(query('[data-testid="deck-to-complete"]')).toBeNull(); // Not compared yet.
+      expect(text()).toBe('To complete · 12 missing copies · 9 without a price · €2.70');
     });
 
-    it('shows what the missing copies cost once the collection’s been compared', async () => {
-      ownedNow.set({
-        slots: new Map([
-          ['intl:sv01-001', { owned: 1, fromOther: 0, missing: 2 }],
-          ['intl:sv01-166', { owned: 3, fromOther: 0, missing: 1 }],
-          ['intl:sv01-258', { owned: 0, fromOther: 0, missing: 9 }],
-        ]),
-        considering: new Map(),
-        missing: 12,
-        unknown: 0,
-      });
+    it('shows nothing until the collection’s been compared', async () => {
       await create();
 
-      expect(text('deck-to-complete')).toBe(
-        'To complete · 12 missing copies · 9 without a price · €2.70'
-      );
-    });
-
-    it('has no To complete row when the collection covers the deck', async () => {
-      ownedNow.set({
-        slots: new Map([
-          ['intl:sv01-001', { owned: 3, fromOther: 0, missing: 0 }],
-          ['intl:sv01-166', { owned: 4, fromOther: 0, missing: 0 }],
-          ['intl:sv01-258', { owned: 9, fromOther: 0, missing: 0 }],
-        ]),
-        considering: new Map(),
-        missing: 0,
-        unknown: 0,
-      });
-      await create();
-
-      expect(query('[data-testid="deck-cost"]')).not.toBeNull();
       expect(query('[data-testid="deck-to-complete"]')).toBeNull();
     });
 
-    it('shows amounts in the currency picked in Settings', async () => {
-      currency.set('CHF');
-      rate = 0.9;
+    it('shows nothing when the collection covers the deck', async () => {
+      ownedNow.set(missing({ 'intl:sv01-001': 0, 'intl:sv01-166': 0, 'intl:sv01-258': 0 }));
       await create();
 
-      // `text` normalizes whitespace, the no-break space after CHF too.
-      expect(text('deck-cost')).toBe('Cost · 9 without a price · CHF 9.27');
+      expect(query('[data-testid="deck-to-complete"]')).toBeNull();
+    });
+
+    it('shows the amount in the currency picked in Settings', async () => {
+      currency.set('CHF');
+      rate = 0.9;
+      ownedNow.set(missing({ 'intl:sv01-166': 1 }));
+      await create();
+
+      // Normalized whitespace: the no-break space after CHF too.
+      expect(text()).toBe('To complete · 1 missing copy · CHF 2.25');
     });
 
     it('reads prices again when a sync stores new ones', async () => {
+      ownedNow.set(missing(SOME_MISSING));
       await create();
       storedPrices.set('intl:sv01-258', trend(0.05));
 
@@ -513,14 +509,7 @@ describe('DeckPage', () => {
       fixture.detectChanges();
       await settle();
 
-      expect(text('deck-cost')).toBe('Cost · €10.75');
-    });
-
-    it('has no Cost row for an empty deck', async () => {
-      current.set(makeDeck({ cards: [] }));
-      await create();
-
-      expect(query('[data-testid="deck-cost"]')).toBeNull();
+      expect(text()).toBe('To complete · 12 missing copies · €3.15');
     });
   });
 

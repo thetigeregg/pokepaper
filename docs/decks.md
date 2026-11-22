@@ -62,13 +62,13 @@ Any card released in the US, with no bans (handbook §4.2). The deck rules above
 - **The 4-copy limit is enforced** when adding (Add cards and the deck page's +), with a message ("A deck holds at most 4 cards named Iono."). A deck that already breaks it (e.g. synced from an older build) shows a warning. Everything else is a warning.
 - **Checks** run on the device (`DeckChecksService`): it reads the catalog cards of every deck's printings, works out their legality (searching for reprints only when a printing's own mark or set isn't legal, by English name through the search rows), and checks each deck (`checkDeck` in `deck-rules.ts`) as it changes. A deck's check appears once all its cards have been looked up; a catalog update looks them up again.
 
-## Cost
+## Cost to complete
 
-The deck page shows what the deck costs at Cardmarket prices (docs/catalog.md → Prices), in the currency picked in Settings:
+Once the collection's been compared (see Owned vs. needed), and while copies are still missing, the deck page shows what they'd cost at Cardmarket prices (docs/catalog.md → Prices), in the currency picked in Settings: a To complete row, "18 missing copies · €38.20".
 
-- **Cost:** every copy in the deck (not its Considering pile). A slot is an exact printing without a variant, so it's priced at its base finish (the normal print, or the holo for cards printed only as holo), else its reverse holo when that's all Cardmarket prices; each is the trend, else the 30-day average (`slotPrice`). Copies without a price are counted ("2 without a price"), not left out silently.
-- **To complete:** what the copies still needed would cost (see Owned vs. needed), once the collection's been compared, and only while some are missing ("18 missing copies"). Cards not on this device aren't compared, so they aren't counted.
-- Amounts are summed in cents (`deckCost`), and update when the deck, the collection or the stored prices change.
+- A slot is an exact printing without a variant, so it's priced at its base finish (the normal print, or the holo for cards printed only as holo), else its reverse holo when that's all Cardmarket prices; each is the trend, else the 30-day average (`slotPrice`).
+- Copies without a price are counted ("· 2 without a price"), not left out silently. Cards not on this device aren't compared, so they aren't counted.
+- Only the deck counts, not its Considering pile. Amounts are summed in cents (`costToComplete`) and update when the deck, the collection or the stored prices change.
 
 ## Owned vs. needed
 

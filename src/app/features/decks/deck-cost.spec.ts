@@ -1,5 +1,5 @@
 import type { CatalogCardPrices, DeckCard } from '@pokepaper/shared';
-import { deckCost, slotPrice } from './deck-cost';
+import { costToComplete, slotPrice } from './deck-cost';
 import type { DeckOwned, SlotOwned } from './deck-owned';
 
 const prices = (base: number | null, reverseHolo: number | null = null): CatalogCardPrices => ({
@@ -30,33 +30,25 @@ describe('slotPrice', () => {
   });
 });
 
-describe('deckCost', () => {
+describe('costToComplete', () => {
   const PRICES = new Map([
     ['intl:a', prices(0.1)],
     ['intl:b', prices(2.5)],
   ]);
 
-  it('totals every copy in the deck, counting those without a price', () => {
-    const cost = deckCost([slot('a', 3), slot('b', 2), slot('c', 4)], PRICES, undefined);
-
-    expect(cost).toEqual({ deck: { euros: 5.3, unpriced: 4 }, toComplete: null });
-  });
-
-  it('totals the copies still needed once the collection’s been compared', () => {
-    const cost = deckCost(
+  it('totals the copies still needed, counting those without a price', () => {
+    const cost = costToComplete(
       [slot('a', 3), slot('b', 2), slot('c', 4)],
       PRICES,
       owned({ 'intl:a': 1, 'intl:b': 2, 'intl:c': 1 })
     );
 
-    expect(cost.toComplete).toEqual({ euros: 5.1, unpriced: 1, copies: 4 });
+    expect(cost).toEqual({ euros: 5.1, copies: 4, unpriced: 1 });
   });
 
-  it('needs nothing when the collection covers the deck', () => {
-    expect(deckCost([slot('a', 3)], PRICES, owned({ 'intl:a': 0 })).toComplete).toEqual({
-      euros: 0,
-      unpriced: 0,
-      copies: 0,
-    });
+  it('needs nothing when the collection covers the deck, or cards aren’t on this device', () => {
+    expect(costToComplete([slot('a', 3), slot('gone', 2)], PRICES, owned({ 'intl:a': 0 }))).toEqual(
+      { euros: 0, copies: 0, unpriced: 0 }
+    );
   });
 });

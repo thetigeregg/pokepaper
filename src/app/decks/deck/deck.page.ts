@@ -66,7 +66,7 @@ import { StorageEngineFactory } from '../../core/data/storage-engine.factory';
 import { CatalogLanguageService } from '../../core/services/catalog-language.service';
 import { CatalogPriceService } from '../../core/services/catalog-price.service';
 import { CurrencyService } from '../../core/services/currency.service';
-import { deckCost } from '../../features/decks/deck-cost';
+import { costToComplete } from '../../features/decks/deck-cost';
 import { CatalogSyncService } from '../../core/services/catalog-sync.service';
 import { DeckChecksService } from '../../features/decks/deck-checks.service';
 import type { DeckOwned } from '../../features/decks/deck-owned';
@@ -314,15 +314,19 @@ export class DeckPage {
   /** Stored prices of the deck's printings; null until read. */
   private readonly prices = signal<ReadonlyMap<string, CatalogCardPrices> | null>(null);
   /**
-   * Deck cost (docs/decks.md → Cost): the whole deck, and the copies still
-   * needed once the collection's been compared. Null until prices are read.
+   * What the copies still needed cost (docs/decks.md → Cost to complete);
+   * null until the collection's been compared and prices read, or when
+   * nothing is missing.
    */
-  readonly cost = computed(() => {
+  readonly toComplete = computed(() => {
     const deck = this.deck();
     const prices = this.prices();
-    return deck && prices && deck.cards.length > 0
-      ? deckCost(deck.cards, prices, this.owned())
-      : null;
+    const owned = this.owned();
+    if (!deck || !prices || !owned) {
+      return null;
+    }
+    const cost = costToComplete(deck.cards, prices, owned);
+    return cost.copies > 0 ? cost : null;
   });
 
   readonly sections = computed<DeckSection[]>(() => {
