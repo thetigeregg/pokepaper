@@ -64,7 +64,7 @@ Any card released in the US, with no bans (handbook §4.2). The deck rules above
 
 ## Cost to complete
 
-Once the collection's been compared (see Owned vs. needed), and while copies are still missing, the deck page shows what they'd cost at Cardmarket prices (docs/catalog.md → Prices), in the currency picked in Settings: a To complete row, "18 missing copies · €38.20".
+Once the collection's been compared (see Owned vs. needed), and while copies are still missing, the deck page shows what they'd cost at Cardmarket prices (docs/catalog.md → Prices), in the currency picked in Settings: a "Cost to complete" row, "18 missing copies · €38.20".
 
 - A slot is an exact printing without a variant, so it's priced at its base finish (the normal print, or the holo for cards printed only as holo), else its reverse holo when that's all Cardmarket prices; each is the trend, else the 30-day average (`slotPrice`).
 - Copies without a price are counted ("· 2 without a price"), not left out silently. Cards not on this device aren't compared, so they aren't counted.

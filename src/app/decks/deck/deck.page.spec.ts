@@ -474,7 +474,7 @@ describe('DeckPage', () => {
         'intl:sv01-166',
         'intl:sv01-258',
       ]);
-      expect(text()).toBe('To complete · 12 missing copies · 9 without a price · €2.70');
+      expect(text()).toBe('Cost to complete · 12 missing copies · 9 without a price · €2.70');
     });
 
     it('shows nothing until the collection’s been compared', async () => {
@@ -497,7 +497,7 @@ describe('DeckPage', () => {
       await create();
 
       // Normalized whitespace: the no-break space after CHF too.
-      expect(text()).toBe('To complete · 1 missing copy · CHF 2.25');
+      expect(text()).toBe('Cost to complete · 1 missing copy · CHF 2.25');
     });
 
     it('reads prices again when a sync stores new ones', async () => {
@@ -509,7 +509,7 @@ describe('DeckPage', () => {
       fixture.detectChanges();
       await settle();
 
-      expect(text()).toBe('To complete · 12 missing copies · €3.15');
+      expect(text()).toBe('Cost to complete · 12 missing copies · €3.15');
     });
   });
 
