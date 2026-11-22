@@ -7,6 +7,7 @@ import {
   fakeClient,
   fakeTcgdex,
   memoryCatalogStore,
+  setDetail,
   silentLogger,
   Status,
   webp,
@@ -158,6 +159,82 @@ describe('runCatalogIngest', () => {
     expect(Object.keys(card(store, 'intl', 'sv01', 'sv01-172')?.text ?? {})).toEqual(['en']);
     expect(card(store, 'asia', 'SV2a', 'SV2a-002')).toBeUndefined();
     expect(stats.cards.skipped).toBe(2);
+  });
+
+  describe('misattributed printings', () => {
+    /** SV-P as TCGdex has it: the Taiwanese promo SV-P-098 filed on the Japanese one. */
+    function withPromos(fake: FakeTcgdex): void {
+      fake.routes.set('/ja/sets', [{ id: 'SV2a' }, { id: 'SV-P' }]);
+      fake.routes.set('/zh-tw/sets', [{ id: 'SV2a' }, { id: 'SV-P' }]);
+      fake.routes.set(
+        '/ja/sets/SV-P',
+        setDetail('ja', 'SV-P', 'スカーレット&バイオレット プロモ', 'SV', 'SV/SV-P', [
+          ['SV-P-098', '098'],
+        ])
+      );
+      fake.routes.set(
+        '/zh-tw/sets/SV-P',
+        setDetail('zh-tw', 'SV-P', '特典卡 朱&紫', 'SV', 'SV/SV-P', [
+          ['SV-P-098', '098'],
+          ['SV-P-56', '56'],
+        ])
+      );
+      const promo = { localId: '098', category: 'Pokemon', hp: 90, dexId: [25] };
+      fake.routes.set('/ja/cards/SV-P-098', { ...promo, id: 'SV-P-098', name: '名探偵ピカチュウ' });
+      fake.routes.set('/zh-tw/cards/SV-P-098', { ...promo, id: 'SV-P-098', name: '拉帝亞斯' });
+      fake.routes.set('/zh-tw/cards/SV-P-56', {
+        id: 'SV-P-56',
+        localId: '56',
+        name: '摩托蜥',
+        category: 'Pokemon',
+        hp: 120,
+      });
+    }
+
+    it('leaves out a set language’s printings of cards other languages have', async () => {
+      const store = memoryCatalogStore();
+      const fake = fakeTcgdex();
+      withPromos(fake);
+
+      await ingest(store, fake);
+
+      expect(card(store, 'asia', 'SV-P', 'SV-P-098')?.text).toEqual({
+        ja: expect.objectContaining({ name: '名探偵ピカチュウ' }) as unknown,
+      });
+      expect(fake.calls).not.toContain('/zh-tw/cards/SV-P-098');
+      // Cards only that language has stay, and so does the set's name in it.
+      expect(card(store, 'asia', 'SV-P', 'SV-P-56')?.text['zh-tw']?.name).toBe('摩托蜥');
+      expect(store.getSet('asia', 'SV-P')?.set).toMatchObject({
+        names: { ja: 'スカーレット&バイオレット プロモ', 'zh-tw': '特典卡 朱&紫' },
+        languages: ['ja', 'zh-tw'],
+      });
+      // Other sets keep every language.
+      expect(Object.keys(card(store, 'asia', 'SV2a', 'SV2a-001')?.text ?? {})).toEqual([
+        'ja',
+        'zh-tw',
+      ]);
+    });
+
+    it('drops stored misattributed text on a light pass', async () => {
+      const store = memoryCatalogStore();
+      const fake = fakeTcgdex();
+      withPromos(fake);
+      await ingest(store, fake);
+      const stored = store.getSet('asia', 'SV-P');
+      const cards = store.listSetCards('asia', 'SV-P');
+      const promo = cards.find((entry) => entry.id === 'SV-P-098');
+      const ja = promo?.text.ja;
+      if (!stored || !promo || !ja) {
+        throw new Error('SV-P-098 not imported');
+      }
+      // As imported before the rule: the Taiwanese text on the Japanese card.
+      promo.text['zh-tw'] = { ...ja, name: '拉帝亞斯' };
+      store.writeSet(stored.set, cards);
+
+      await ingest(store, fake, { kind: 'light' });
+
+      expect(Object.keys(card(store, 'asia', 'SV-P', 'SV-P-098')?.text ?? {})).toEqual(['ja']);
+    });
   });
 
   it('fetches only listings on a light pass when nothing is new', async () => {

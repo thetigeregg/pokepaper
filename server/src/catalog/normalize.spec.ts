@@ -7,6 +7,7 @@ import {
   parseSeriesList,
   parseSetDetail,
   parseSetList,
+  trustedLanguages,
   type RawCard,
 } from './normalize.js';
 
@@ -107,6 +108,24 @@ describe('parsers', () => {
     expect(card?.description).toHaveLength(4000);
     expect(parseCard({ id: 'x', localId: '1', name: 'No category' })).toBeNull();
     expect(parseCard([])).toBeNull();
+  });
+});
+
+describe('trustedLanguages', () => {
+  it('leaves out a set’s misattributed languages', () => {
+    expect(trustedLanguages('asia', 'SV-P', ['ja', 'zh-tw'])).toEqual(['ja']);
+  });
+
+  it('keeps a card only the misattributed language has', () => {
+    expect(trustedLanguages('asia', 'SV-P', ['zh-tw'])).toEqual(['zh-tw']);
+  });
+
+  it.each([
+    ['another set', 'asia', 'SV2a'],
+    ['the same set ID in another region', 'intl', 'SV-P'],
+    ['a set ID named like an object property', 'asia', 'constructor'],
+  ] as const)('keeps every language of %s', (_label, region, setId) => {
+    expect(trustedLanguages(region, setId, ['ja', 'zh-tw'])).toEqual(['ja', 'zh-tw']);
   });
 });
 

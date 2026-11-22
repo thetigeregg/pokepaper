@@ -192,7 +192,7 @@ function brief(id: string, localId: string, language: string, path: string) {
   return { id, localId, name: id, image: `${ASSETS}/${language}/${path}/${localId}` };
 }
 
-function setDetail(
+export function setDetail(
   language: string,
   id: string,
   name: string,

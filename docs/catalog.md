@@ -37,6 +37,12 @@ In all, 24,005 international and 16,611 Asian cards. TCGdex's own set totals cla
 
 Sets TCGdex lists without any cards are skipped, and they appear automatically if TCGdex fills them in later.
 
+### Misattributed printings
+
+Sharing IDs across a region's languages assumes a card number means the same card in each. Japan and Taiwan number their Scarlet & Violet promos (`SV-P`) independently, though, and TCGdex filed the Taiwanese names and texts on the Japanese cards: Traditional Chinese SV-P-098 is named Latias (拉帝亞斯) but carries Detective Pikachu's HP, Pokédex number and illustrator. All 81 SV-P cards TCGdex has in both languages were affected (measured November 2026). Every other Asian set, including the promo sets S10P and SV2P, passed a check of each card's Japanese and Chinese names against the rest of the catalog.
+
+`MISATTRIBUTED_PRINTINGS` (`server/src/catalog/normalize.ts`) lists such set languages. The import neither fetches nor keeps their printings of cards that other languages have, so those cards are Japanese only. Cards only that language has (13 in SV-P: Motoliz, basic Energy, Trainers) are kept, and so is the set's name in it. Stored text from before the rule is dropped on the next pass. Since TCGdex gives both printings the same language-neutral data, the import can't detect this case by itself.
+
 ## Import
 
 The server runs an import **10 seconds after startup**, then **every `CATALOG_REFRESH_HOURS`** (default 24) after the previous one finished, so runs never overlap.
