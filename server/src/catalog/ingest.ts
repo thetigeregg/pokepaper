@@ -377,18 +377,24 @@ async function ingestSet(
   }
   await resolveUnlinkedImages(context, set.serieId, cards);
   carryBorrowedScans(cards, existing);
-  const written = store.writeSet(set, cards);
   // Cardmarket products of the cards just fetched, for the price pass
-  // (docs/catalog.md → Prices). One product covers every language.
-  store.saveCardmarketProducts(
-    region,
-    new Map(
-      [...fetched].map(([cardId, printings]) => [
-        cardId,
-        [...printings.values()].find((raw) => raw.idProduct !== null)?.idProduct ?? null,
-      ])
-    )
-  );
+  // (docs/catalog.md → Prices); one product covers every language. Only a
+  // full run, which fetched every language, may forget one: a light run
+  // fetches just new languages, which may lack it.
+  const products = new Map<string, number | null>();
+  for (const [cardId, printings] of fetched) {
+    const idProduct = [...printings.values()].find((raw) => raw.idProduct !== null)?.idProduct;
+    if (idProduct !== undefined || kind === 'full') {
+      products.set(cardId, idProduct ?? null);
+    }
+  }
+  // One transaction: a set stored without its products would stay unmapped,
+  // since light runs skip stored cards.
+  const written = store.transaction(() => {
+    const changed = store.writeSet(set, cards);
+    store.saveCardmarketProducts(region, products);
+    return changed;
+  });
   return written ? 'written' : 'unchanged';
 }
 

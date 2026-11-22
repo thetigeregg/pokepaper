@@ -1,7 +1,8 @@
 import type { CatalogLanguage } from '@pokepaper/shared';
 import { vi } from 'vitest';
 import { runCatalogIngest } from './ingest.js';
-import { CARDMARKET_PRICE_GUIDE_URL, parseGuide, runPriceRefresh } from './prices.js';
+import { parseGuideEntry } from './price-data.js';
+import { CARDMARKET_PRICE_GUIDE_URL, parseGuide, readCapped, runPriceRefresh } from './prices.js';
 import type { CatalogStore } from './store.js';
 import {
   cardmarketGuide,
@@ -20,14 +21,21 @@ import {
 const LANGUAGES: CatalogLanguage[] = ['en', 'fr', 'ja', 'zh-tw'];
 const GUIDE_CREATED = '2026-11-20T01:43:56.000Z';
 
-async function importCatalog(store: CatalogStore, fake: FakeTcgdex = fakeTcgdex()): Promise<void> {
-  await runCatalogIngest({
-    store,
-    client: fakeClient(fake),
-    languages: LANGUAGES,
-    kind: 'full',
-    log: silentLogger(),
-  });
+async function importCatalog(
+  store: CatalogStore,
+  fake: FakeTcgdex = fakeTcgdex(),
+  languages: CatalogLanguage[] = LANGUAGES,
+  kind: 'full' | 'light' = 'full'
+): Promise<void> {
+  await runCatalogIngest({ store, client: fakeClient(fake), languages, kind, log: silentLogger() });
+}
+
+/** Makes TCGdex report no Cardmarket data for these card details. */
+function withoutPricing(fake: FakeTcgdex, ...paths: string[]): void {
+  for (const path of paths) {
+    const card = fake.routes.get(path) as Record<string, unknown>;
+    fake.routes.set(path, { ...card, pricing: { cardmarket: null } });
+  }
 }
 
 async function setup() {
@@ -53,18 +61,30 @@ describe('the import', () => {
     });
   });
 
-  it('forgets a card’s product once TCGdex no longer reports one', async () => {
+  it('forgets a card’s product, and its prices, once a full run finds none', async () => {
     const store = memoryCatalogStore();
     const fake = fakeTcgdex();
     await importCatalog(store, fake);
-    for (const path of ['/en/cards/sv01-001', '/fr/cards/sv01-001']) {
-      const card = fake.routes.get(path) as Record<string, unknown>;
-      fake.routes.set(path, { ...card, pricing: { cardmarket: null } });
-    }
+    await runPriceRefresh({ store, log: silentLogger(), fetch: fakeCardmarket().fetch });
+    const version = store.pricesVersion('intl');
+    withoutPricing(fake, '/en/cards/sv01-001', '/fr/cards/sv01-001');
 
     await importCatalog(store, fake);
 
     expect(store.listCardmarketProducts('intl').has('sv01-001')).toBe(false);
+    expect(store.getCardPrices('intl', 'sv01-001')).toBeUndefined();
+    expect(store.pricesVersion('intl')).toBeGreaterThan(version);
+  });
+
+  it('never forgets a product in a light run, which fetches only new languages', async () => {
+    const store = memoryCatalogStore();
+    const fake = fakeTcgdex();
+    await importCatalog(store, fake, ['en', 'ja']);
+    withoutPricing(fake, '/fr/cards/sv01-001');
+
+    await importCatalog(store, fake, LANGUAGES, 'light');
+
+    expect(store.listCardmarketProducts('intl').get('sv01-001')).toBe(PRODUCTS.pineco);
   });
 });
 
@@ -254,6 +274,104 @@ describe('runPriceRefresh', () => {
     expect(store.listCardmarketProducts('intl').has('2019sm-fr-1')).toBe(false);
   });
 
+  it('leaves a card without a product as it was', async () => {
+    const { store, refresh } = await setup();
+    await refresh();
+    // Prices from before it had no product (sv01-172 has none).
+    const earlier = parseGuideEntry({ idProduct: 1, ...guideFigures(3) }, GUIDE_CREATED);
+    store.writeCardPrices('intl', [{ cardId: 'sv01-172', prices: earlier }]);
+
+    const stats = await refresh({
+      fetch: fakeCardmarket(fixtureGuide('2026-11-21T02:43:56+0100')).fetch,
+    });
+
+    expect(stats.cards.unmapped).toBe(1);
+    expect(store.getCardPrices('intl', 'sv01-172')).toBeDefined();
+  });
+
+  it('applies an unchanged guide anew once products changed', async () => {
+    const { store, cardmarket, refresh } = await setup();
+    await refresh();
+    store.saveCardmarketProducts('intl', new Map([['sv01-172', PRODUCTS.pineco]]));
+
+    const stats = await refresh();
+
+    expect(cardmarket.requests).toBe(2);
+    expect(stats.status).toBe('ok');
+    expect(store.getCardPrices('intl', 'sv01-172')?.base?.trend).toBe(0.14);
+  });
+
+  describe('recent cards without a product', () => {
+    const SOON_AFTER_RELEASE = new Date('2023-04-20T03:00:00.000Z'); // Fixture sets: 2023-03-31.
+
+    async function importedWithoutProducts() {
+      const store = memoryCatalogStore();
+      const fake = fakeTcgdex();
+      withoutPricing(fake, '/en/cards/sv01-001', '/fr/cards/sv01-001');
+      await importCatalog(store, fake);
+      // TCGdex adds Cardmarket data some days after the release.
+      const original = fakeTcgdex().routes;
+      for (const path of ['/en/cards/sv01-001', '/fr/cards/sv01-001']) {
+        fake.routes.set(path, original.get(path));
+      }
+      fake.calls.length = 0;
+      return { store, fake };
+    }
+
+    it('are looked up on TCGdex, in their first language, and priced', async () => {
+      const { store, fake } = await importedWithoutProducts();
+
+      const stats = await runPriceRefresh({
+        store,
+        client: fakeClient(fake),
+        languages: LANGUAGES,
+        log: silentLogger(),
+        fetch: fakeCardmarket().fetch,
+        now: () => SOON_AFTER_RELEASE,
+      });
+
+      // sv01-172 has no Cardmarket data at all.
+      expect([...fake.calls].sort()).toEqual(['/en/cards/sv01-001', '/en/cards/sv01-172']);
+      expect(stats.lookups).toEqual({ checked: 2, mapped: 1, failed: 0 });
+      expect(store.getCardPrices('intl', 'sv01-001')?.base?.trend).toBe(0.14);
+    });
+
+    it('are left to the weekly refresh once their set is older', async () => {
+      const { store, fake } = await importedWithoutProducts();
+
+      const stats = await runPriceRefresh({
+        store,
+        client: fakeClient(fake),
+        languages: LANGUAGES,
+        log: silentLogger(),
+        fetch: fakeCardmarket().fetch,
+        now: () => new Date('2023-06-30T03:00:00.000Z'),
+      });
+
+      expect(fake.calls).toEqual([]);
+      expect(stats.lookups.checked).toBe(0);
+    });
+
+    it('are counted and skipped when TCGdex can’t serve them', async () => {
+      const { store, fake } = await importedWithoutProducts();
+      fake.routes.set('/en/cards/sv01-001', new Status(500));
+      const log = silentLogger();
+
+      const stats = await runPriceRefresh({
+        store,
+        client: fakeClient(fake),
+        languages: LANGUAGES,
+        log,
+        fetch: fakeCardmarket().fetch,
+        now: () => SOON_AFTER_RELEASE,
+      });
+
+      expect(stats.status).toBe('ok');
+      expect(stats.lookups.failed).toBe(1);
+      expect(log.warnings).toContain('catalog.product_lookups_failed');
+    });
+  });
+
   it('records each pass with the time it started', async () => {
     const { store, refresh } = await setup();
     const started = new Date('2026-11-21T03:00:00.000Z');
@@ -311,6 +429,23 @@ describe('runPriceRefresh', () => {
     await refresh({ fetch });
 
     expect(fetch).toHaveBeenCalledWith(CARDMARKET_PRICE_GUIDE_URL, expect.anything());
+  });
+});
+
+describe('readCapped', () => {
+  it('reads a body up to the limit, and refuses a longer one without a length header', async () => {
+    const chunked = (text: string) =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(text));
+            controller.close();
+          },
+        })
+      );
+
+    expect(await readCapped(chunked('{"ok":true}'), 64)).toBe('{"ok":true}');
+    await expect(readCapped(chunked('x'.repeat(65)), 64)).rejects.toThrow('too large');
   });
 });
 
