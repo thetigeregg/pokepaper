@@ -185,3 +185,7 @@
 ## v0.30.0 - 2026-11-22
 
 - 6ba54b9 feat(catalog): price cards from Cardmarket's daily price guide (#54)
+
+## v0.31.0 - 2026-11-22
+
+- 901e870 feat(decks): show the cost to complete a deck (#55)
