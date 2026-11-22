@@ -41,6 +41,34 @@
           <ion-label>Cards</ion-label>
           <ion-note slot="end" data-testid="deck-total">{{ total() }}</ion-note>
         </ion-item>
+        @if (cost(); as cost) {
+          <ion-item data-testid="deck-cost">
+            <ion-label>
+              Cost
+              @if (cost.deck.unpriced > 0) {
+                <p>{{ cost.deck.unpriced }} without a price</p>
+              }
+            </ion-label>
+            <ion-note slot="end" class="amount">{{ money(cost.deck.euros) }}</ion-note>
+          </ion-item>
+          @if (cost.toComplete; as toComplete) {
+            @if (toComplete.copies > 0) {
+              <ion-item data-testid="deck-to-complete">
+                <ion-label>
+                  To complete
+                  <p>
+                    {{ toComplete.copies }} missing
+                    {{ toComplete.copies === 1 ? 'copy' : 'copies' }}
+                    @if (toComplete.unpriced > 0) {
+                      · {{ toComplete.unpriced }} without a price
+                    }
+                  </p>
+                </ion-label>
+                <ion-note slot="end" class="amount">{{ money(toComplete.euros) }}</ion-note>
+              </ion-item>
+            }
+          }
+        }
         @if (owned(); as owned) {
           <ion-item data-testid="missing-only">
             <ion-toggle

@@ -32,7 +32,6 @@ import { collectionValue, type CatalogValue } from '../../core/utils/catalog-pri
 @Component({
   selector: 'app-collection-value-section',
   templateUrl: 'collection-value-section.component.html',
-  styleUrl: 'collection-value-section.component.scss',
   imports: [
     DatePipe,
     DecimalPipe,

@@ -15,7 +15,7 @@
             }
           </p>
         </ion-label>
-        <ion-note slot="end" class="value" data-testid="value-amount">
+        <ion-note slot="end" class="amount" data-testid="value-amount">
           {{ money(value.value) }}
         </ion-note>
       </ion-item>
@@ -27,7 +27,7 @@
     @if (total(); as total) {
       <ion-item data-testid="value-total">
         <ion-label><strong>Total</strong></ion-label>
-        <ion-note slot="end" class="value" data-testid="value-amount">
+        <ion-note slot="end" class="amount" data-testid="value-amount">
           {{ money(total.amount) }}
         </ion-note>
       </ion-item>

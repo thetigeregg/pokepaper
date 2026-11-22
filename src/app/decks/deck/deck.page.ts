@@ -40,6 +40,7 @@ import {
   deckCardKey,
   isDeckFormat,
   type CatalogCard,
+  type CatalogCardPrices,
   type CatalogLanguage,
   type CatalogRegion,
   type CatalogSet,
@@ -63,6 +64,9 @@ import { debounceTime } from 'rxjs';
 import { catalogKey, type StorageEngine } from '../../core/data/storage-engine';
 import { StorageEngineFactory } from '../../core/data/storage-engine.factory';
 import { CatalogLanguageService } from '../../core/services/catalog-language.service';
+import { CatalogPriceService } from '../../core/services/catalog-price.service';
+import { CurrencyService } from '../../core/services/currency.service';
+import { deckCost } from '../../features/decks/deck-cost';
 import { CatalogSyncService } from '../../core/services/catalog-sync.service';
 import { DeckChecksService } from '../../features/decks/deck-checks.service';
 import type { DeckOwned } from '../../features/decks/deck-owned';
@@ -213,6 +217,8 @@ export class DeckPage {
   private readonly modals = inject(ModalController);
   private readonly nav = inject(NavController);
   private readonly layout = inject(LayoutService);
+  private readonly priceService = inject(CatalogPriceService);
+  private readonly currencyService = inject(CurrencyService);
 
   /** Route parameter (component input binding). */
   readonly id = input.required<string>();
@@ -300,6 +306,24 @@ export class DeckPage {
     return [...new Set([...(deck?.cards ?? []), ...(deck?.considering ?? [])].map(deckCardKey))];
   });
   private readonly cardKeysJoined = computed(() => this.cardKeys().join('\n'));
+
+  /** The deck's printings (not its pile's), as one string: changes when cards are added or removed. */
+  private readonly deckKeysJoined = computed(() =>
+    [...new Set((this.deck()?.cards ?? []).map(deckCardKey))].sort().join('\n')
+  );
+  /** Stored prices of the deck's printings; null until read. */
+  private readonly prices = signal<ReadonlyMap<string, CatalogCardPrices> | null>(null);
+  /**
+   * Deck cost (docs/decks.md → Cost): the whole deck, and the copies still
+   * needed once the collection's been compared. Null until prices are read.
+   */
+  readonly cost = computed(() => {
+    const deck = this.deck();
+    const prices = this.prices();
+    return deck && prices && deck.cards.length > 0
+      ? deckCost(deck.cards, prices, this.owned())
+      : null;
+  });
 
   readonly sections = computed<DeckSection[]>(() => {
     const deck = this.deck();
@@ -458,10 +482,34 @@ export class DeckPage {
       this.cardKeysJoined();
       untracked(() => void this.loadCards());
     });
+    // The deck's prices, read again when its cards change or a sync stores new ones.
+    effect((onCleanup) => {
+      const joined = this.deckKeysJoined();
+      this.priceService.version();
+      let stale = false;
+      onCleanup(() => {
+        stale = true;
+      });
+      this.priceService
+        .pricesByKey(joined ? joined.split('\n') : [])
+        .then((prices) => {
+          if (!stale) {
+            this.prices.set(prices);
+          }
+        })
+        .catch((error: unknown) => {
+          console.error('deck.prices_failed', error);
+        });
+    });
     // Follow catalog updates (a card's set replaced, or arriving on first run).
     inject(CatalogSyncService)
       .changed$.pipe(debounceTime(300), takeUntilDestroyed(inject(DestroyRef)))
       .subscribe(() => void this.loadCards());
+  }
+
+  /** An amount in euros, in the currency picked in Settings ("CHF 38.20"). */
+  money(euros: number): string {
+    return this.currencyService.format(euros);
   }
 
   /**
