@@ -306,9 +306,44 @@ export function isExchangeRates(value: unknown): value is ExchangeRates {
   );
 }
 
-/** The Cardmarket page of a product (a card printing), with its prices and offers. */
-export function cardmarketProductUrl(idProduct: number): string {
-  return `https://www.cardmarket.com/en/Pokemon/Products?idProduct=${String(idProduct)}`;
+/**
+ * Cardmarket's ID for each catalog language, as its offer filter
+ * (`language=`) takes it.
+ */
+export const CARDMARKET_LANGUAGE_IDS: Readonly<Record<CatalogLanguage, number>> = {
+  en: 1,
+  fr: 2,
+  de: 3,
+  it: 5,
+  'zh-cn': 6,
+  ja: 7,
+  'zh-tw': 11,
+};
+
+/** Offer filters for a Cardmarket product page. */
+export interface CardmarketOfferFilters {
+  /** Only offers in this language. */
+  language?: CatalogLanguage;
+  /** Only reverse holo offers. */
+  reverseHolo?: boolean;
+}
+
+/**
+ * The Cardmarket page of a product (a card printing), with its prices and
+ * offers, filtered to a language or to reverse holos when asked.
+ */
+export function cardmarketProductUrl(
+  idProduct: number,
+  filters: CardmarketOfferFilters = {}
+): string {
+  const params = new URLSearchParams({ idProduct: String(idProduct) });
+  if (filters.language) {
+    params.set('language', String(CARDMARKET_LANGUAGE_IDS[filters.language]));
+  }
+  if (filters.reverseHolo) {
+    params.set('isReverseHolo', 'Y');
+  }
+  return `https://www.cardmarket.com/en/Pokemon/Products?${params.toString()}`;
 }
 
 export type CatalogImageQuality = 'low' | 'high';
