@@ -181,3 +181,7 @@
 ## v0.29.0 - 2026-11-21
 
 - 48760f8 feat(collection): show collection value in a preferred currency (#53)
+
+## v0.30.0 - 2026-11-22
+
+- 6ba54b9 feat(catalog): price cards from Cardmarket's daily price guide (#54)
