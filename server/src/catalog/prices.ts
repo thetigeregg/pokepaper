@@ -1,123 +1,148 @@
-import {
-  CATALOG_LANGUAGE_REGION,
-  CATALOG_REGIONS,
-  type CatalogLanguage,
-  type CatalogRegion,
-} from '@pokepaper/shared';
-import {
-  fetchContained,
-  isContainedFailure,
-  MAX_CONSECUTIVE_SET_FAILURES,
-  type CatalogLogger,
-} from './ingest.js';
-import { inLanguageOrder } from './normalize.js';
-import { parseCardmarketPrices, type StoredCardPrices } from './price-data.js';
+import { CATALOG_REGIONS, type CatalogRegion } from '@pokepaper/shared';
+import type { CatalogLogger } from './ingest.js';
+import { parseGuideEntry, type StoredCardPrices } from './price-data.js';
 import type { CatalogStore } from './store.js';
-import { TcgdexUnavailableError, type TcgdexClient } from './tcgdex-client.js';
+
+/** Cardmarket's price guide for Pokémon (game 6): every product's figures, regenerated daily. */
+export const CARDMARKET_PRICE_GUIDE_URL =
+  'https://downloads.s3.cardmarket.com/productCatalog/priceGuide/price_guide_6.json';
+const FETCH_TIMEOUT_MS = 120_000;
+/** The guide is about 16 MB; anything far larger isn't it. */
+const MAX_GUIDE_BYTES = 128 * 1024 * 1024;
+/**
+ * A guide holding fewer than this share of the products the catalog's cards
+ * map to is refused, rather than unpricing most cards: a truncated or
+ * otherwise broken download, not a market that vanished overnight.
+ */
+const MIN_FOUND_SHARE = 0.5;
+/** …once the catalog maps enough products for the share to mean something. */
+const MIN_PRODUCTS_FOR_SHARE = 100;
 
 export interface PriceRefreshOptions {
   store: CatalogStore;
-  client: TcgdexClient;
-  /** Languages the catalog imports: each card is fetched in the first one it has. */
-  languages: readonly CatalogLanguage[];
   log: CatalogLogger;
   signal?: AbortSignal;
   /** Injected in tests. */
+  fetch?: typeof fetch;
   now?: () => Date;
 }
 
 export interface PriceRefreshStats {
   /**
-   * `partial`: some sets or cards couldn't be refreshed. `failed`: none
-   * could (TCGdex looked down throughout), so the pass doesn't count as
-   * done and the next scheduled run tries again.
+   * `unchanged`: the guide is the one last applied (304). `failed`: it
+   * couldn't be downloaded or wasn't usable; prices stay as they were, the
+   * pass doesn't count as done, and the next scheduled run tries again.
    */
-  status: 'ok' | 'partial' | 'failed';
+  status: 'ok' | 'unchanged' | 'failed';
+  /** When Cardmarket generated the guide applied (ISO timestamp). */
+  guideCreatedAt: string | null;
+  /** Products in the guide. */
+  products: number;
   /**
-   * `refreshed`: stored. `failed`: TCGdex was unavailable for the set, which
-   * keeps its previous prices. `skipped`: not attempted because several
-   * sets in a row failed.
+   * `priced`: has prices. `unpriced`: its product has no figures, or isn't in
+   * the guide. `unmapped`: no known Cardmarket product (TCGdex has none).
+   * `changed`: stored prices that changed.
    */
-  sets: { seen: number; refreshed: number; failed: number; skipped: number };
-  /**
-   * Counted for refreshed sets only. `priced`/`unpriced`: fetched, with or
-   * without Cardmarket prices. `skipped`: TCGdex couldn't serve the card
-   * (404, malformed) or it has no imported language; it keeps its previous
-   * prices. `unavailable`: TCGdex kept failing for the card (a few per set
-   * are tolerated); it keeps its previous prices. `changed`: stored prices
-   * that changed.
-   */
-  cards: {
-    priced: number;
-    unpriced: number;
-    skipped: number;
-    unavailable: number;
-    changed: number;
-  };
+  cards: { priced: number; unpriced: number; unmapped: number; changed: number };
   /** Prices removed because their card left the catalog. */
   pruned: number;
-  requests: number;
   durationMs: number;
   /** Each region's prices version after the pass. */
   versions: Partial<Record<CatalogRegion, number>>;
 }
 
-const PROGRESS_EVERY = 50;
-/**
- * Cards in one set TCGdex may be unavailable for (after retries) before the
- * whole set fails: one broken card shouldn't freeze a set's prices, but
- * several mean TCGdex is struggling, and the set's remaining requests are
- * cancelled.
- */
-const MAX_UNAVAILABLE_CARDS = 3;
-
 type Json = Record<string, unknown>;
 
 /**
- * Refreshes Cardmarket prices for every card in the catalog. TCGdex has
- * prices only in card details, and they're the same in every language of a
- * region, so each card is fetched once: in the first imported language it
- * has (English, else French, Italian, German; Japanese, else Chinese).
+ * Refreshes every card's Cardmarket prices from Cardmarket's own price guide
+ * download: one request (an empty 304 when unchanged since the last one
+ * applied), looked up by each card's Cardmarket product, which the import
+ * records from TCGdex's card details (docs/catalog.md → Prices).
  *
- * Failures are contained like the import's: a card TCGdex can't serve
- * keeps its previous prices; a set fails, keeping its previous prices, when
- * TCGdex is unavailable for MAX_UNAVAILABLE_CARDS of its cards or all of
- * them; after MAX_CONSECUTIVE_SET_FAILURES failed sets in a row the rest of
- * the region is skipped. Only an abort or a database error ends the pass
- * early.
+ * A guide that can't be downloaded, isn't one, or lacks most of the
+ * catalog's products changes nothing (`failed`). Only an abort or a
+ * database error throws.
  */
 export async function runPriceRefresh(options: PriceRefreshOptions): Promise<PriceRefreshStats> {
-  const { store, client, log, signal } = options;
+  const { store, log, signal } = options;
   const now = options.now ?? ((): Date => new Date());
   const startedAt = Date.now();
-  const requestsBefore = client.requests;
   const runId = store.startPriceRun(now());
   const stats: PriceRefreshStats = {
     status: 'ok',
-    sets: { seen: 0, refreshed: 0, failed: 0, skipped: 0 },
-    cards: { priced: 0, unpriced: 0, skipped: 0, unavailable: 0, changed: 0 },
+    guideCreatedAt: null,
+    products: 0,
+    cards: { priced: 0, unpriced: 0, unmapped: 0, changed: 0 },
     pruned: 0,
-    requests: 0,
     durationMs: 0,
     versions: {},
   };
-  const measure = (): void => {
-    stats.requests = client.requests - requestsBefore;
+  const finish = (status: PriceRefreshStats['status']): PriceRefreshStats => {
+    stats.status = status;
     stats.durationMs = Date.now() - startedAt;
+    store.finishPriceRun(runId, status === 'failed' ? 'failed' : 'ok', stats, now());
+    log[status === 'failed' ? 'warn' : 'info']({ stats }, 'catalog.prices_finished');
+    return stats;
   };
 
-  log.info({ languages: options.languages }, 'catalog.prices_started');
+  log.info({}, 'catalog.prices_started');
   try {
-    for (const region of CATALOG_REGIONS) {
-      const languages = inLanguageOrder(
-        options.languages.filter((language) => CATALOG_LANGUAGE_REGION[language] === region)
-      );
-      if (languages.length > 0) {
-        await refreshRegion({ ...options, region, languages, stats });
+    const previous = store.getPriceGuideState();
+    let download: GuideDownload | 'unchanged';
+    try {
+      download = await downloadGuide(options, previous?.etag ?? null);
+    } catch (error: unknown) {
+      if (signal?.aborted) {
+        throw error;
       }
+      log.warn({ err: error }, 'catalog.price_guide_failed');
+      return finish('failed');
     }
+    if (download === 'unchanged') {
+      stats.guideCreatedAt = previous?.createdAt ?? null;
+      return finish('unchanged');
+    }
+    stats.guideCreatedAt = download.createdAt;
+    stats.products = download.entries.size;
+
+    const regions = CATALOG_REGIONS.map((region) => ({
+      region,
+      products: store.listCardmarketProducts(region),
+    }));
+    const mapped = new Set(regions.flatMap(({ products }) => [...products.values()]));
+    const found = [...mapped].filter((idProduct) => download.entries.has(idProduct)).length;
+    if (mapped.size >= MIN_PRODUCTS_FOR_SHARE && found < mapped.size * MIN_FOUND_SHARE) {
+      log.warn(
+        { mapped: mapped.size, found, products: download.entries.size },
+        'catalog.price_guide_incomplete'
+      );
+      return finish('failed');
+    }
+
+    for (const { region, products } of regions) {
+      signal?.throwIfAborted();
+      const entries = store.listCardIds(region).map((cardId) => {
+        const idProduct = products.get(cardId);
+        if (idProduct === undefined) {
+          stats.cards.unmapped += 1;
+          return { cardId, prices: null };
+        }
+        const entry = download.entries.get(idProduct);
+        const prices: StoredCardPrices | null = entry
+          ? parseGuideEntry(entry, download.createdAt)
+          : null;
+        stats.cards[prices ? 'priced' : 'unpriced'] += 1;
+        return { cardId, prices };
+      });
+      stats.cards.changed += store.writeCardPrices(region, entries);
+      stats.pruned += store.pruneOrphanPrices(region);
+      store.pruneOrphanProducts(region);
+      stats.versions[region] = store.pricesVersion(region);
+    }
+    store.savePriceGuideState({ etag: download.etag, createdAt: download.createdAt });
+    return finish('ok');
   } catch (error: unknown) {
-    measure();
+    stats.durationMs = Date.now() - startedAt;
     const aborted = signal?.aborted ?? false;
     if (!aborted) {
       log.error({ err: error, stats }, 'catalog.prices_failed');
@@ -130,124 +155,65 @@ export async function runPriceRefresh(options: PriceRefreshOptions): Promise<Pri
     }
     throw error;
   }
-
-  const missed = stats.sets.failed + stats.sets.skipped;
-  if (missed > 0 && stats.sets.refreshed === 0) {
-    stats.status = 'failed';
-  } else if (missed > 0 || stats.cards.unavailable > 0) {
-    stats.status = 'partial';
-  }
-  measure();
-  store.finishPriceRun(runId, stats.status, stats, now());
-  log.info({ stats }, 'catalog.prices_finished');
-  return stats;
 }
 
-interface RegionContext extends PriceRefreshOptions {
-  region: CatalogRegion;
-  languages: CatalogLanguage[];
-  stats: PriceRefreshStats;
+interface GuideDownload {
+  etag: string | null;
+  createdAt: string;
+  /** Guide entries by product ID. */
+  entries: Map<number, Json>;
 }
 
-async function refreshRegion(context: RegionContext): Promise<void> {
-  const { store, region, stats, log } = context;
-  const setIds = store.listSetIds(region);
-  let consecutiveFailures = 0;
-  let done = 0;
-  for (const setId of setIds) {
-    context.signal?.throwIfAborted();
-    stats.sets.seen += 1;
-    if (consecutiveFailures >= MAX_CONSECUTIVE_SET_FAILURES) {
-      stats.sets.skipped += 1;
-    } else {
-      try {
-        await refreshSet(context, setId);
-        stats.sets.refreshed += 1;
-        consecutiveFailures = 0;
-      } catch (error: unknown) {
-        if (!isContainedFailure(error)) {
-          throw error;
-        }
-        stats.sets.failed += 1;
-        log.warn({ err: error, region, setId }, 'catalog.prices_set_failed');
-        consecutiveFailures += 1;
-        if (consecutiveFailures === MAX_CONSECUTIVE_SET_FAILURES) {
-          log.warn({ region, after: setId }, 'catalog.prices_region_interrupted');
-        }
-      }
-    }
-    done += 1;
-    if (done % PROGRESS_EVERY === 0) {
-      log.info({ region, done, total: setIds.length }, 'catalog.prices_progress');
-    }
-  }
-  stats.pruned += store.pruneOrphanPrices(region);
-  stats.versions[region] = store.pricesVersion(region);
-}
-
-/**
- * Fetches and stores the prices of one set's cards. Throws (storing
- * nothing) when TCGdex is unavailable for MAX_UNAVAILABLE_CARDS cards or for
- * every card it was asked for; fewer such cards keep their previous prices.
- */
-async function refreshSet(context: RegionContext, setId: string): Promise<void> {
-  const { store, client, region, languages, stats, log } = context;
-  const entries: { cardId: string; prices: StoredCardPrices | null }[] = [];
-  let skipped = 0;
-  let unavailable = 0;
-  let firstUnavailable: unknown;
-  // Cancels the set's remaining requests once it's bound to fail.
-  const cancel = new AbortController();
-  const jobs = store.listSetCards(region, setId).map(async (card) => {
-    const language = languages.find((candidate) => card.text[candidate]);
-    if (!language) {
-      skipped += 1;
-      return;
-    }
-    try {
-      const raw = await fetchContained(
-        () => client.card(language, card.id, cancel.signal),
-        (value) => value
-      );
-      if (!isObject(raw) || raw['id'] !== card.id) {
-        skipped += 1;
-        return;
-      }
-      entries.push({ cardId: card.id, prices: parseCardmarketPrices(raw) });
-    } catch (error: unknown) {
-      if (!cancel.signal.aborted && error instanceof TcgdexUnavailableError) {
-        unavailable += 1;
-        firstUnavailable ??= error;
-        if (unavailable < MAX_UNAVAILABLE_CARDS) {
-          return;
-        }
-      }
-      cancel.abort(error);
-      throw error;
-    }
+/** The guide, or `unchanged` when it's still the one with `etag` (304). Throws when unusable. */
+async function downloadGuide(
+  options: PriceRefreshOptions,
+  etag: string | null
+): Promise<GuideDownload | 'unchanged'> {
+  const fetchFn = options.fetch ?? fetch;
+  const timeout = AbortSignal.timeout(FETCH_TIMEOUT_MS);
+  const response = await fetchFn(CARDMARKET_PRICE_GUIDE_URL, {
+    signal: options.signal ? AbortSignal.any([options.signal, timeout]) : timeout,
+    headers: etag ? { 'If-None-Match': etag } : {},
   });
-  // Settle every request before deciding, so none outlives the set.
-  const outcomes = await Promise.allSettled(jobs);
-  const failure = outcomes.find((outcome) => outcome.status === 'rejected');
-  if (failure) {
-    throw failure.reason;
+  if (response.status === 304 && etag) {
+    return 'unchanged';
   }
-  if (unavailable > 0 && entries.length === 0) {
-    throw firstUnavailable;
+  if (!response.ok) {
+    throw new Error(`Cardmarket price guide: HTTP ${String(response.status)}`);
   }
+  if (Number(response.headers.get('content-length') ?? 0) > MAX_GUIDE_BYTES) {
+    throw new Error('Cardmarket price guide: too large');
+  }
+  const guide = parseGuide(JSON.parse(await response.text()));
+  if (!guide) {
+    throw new Error('Cardmarket price guide: unexpected content');
+  }
+  return { etag: response.headers.get('etag'), ...guide };
+}
 
-  stats.cards.changed += store.writeCardPrices(region, entries);
-  for (const entry of entries) {
-    stats.cards[entry.prices ? 'priced' : 'unpriced'] += 1;
+/** `{ createdAt, priceGuides: [{ idProduct, … }] }`, or null when it isn't that. */
+export function parseGuide(
+  value: unknown
+): { createdAt: string; entries: Map<number, Json> } | null {
+  if (!isObject(value) || !Array.isArray(value['priceGuides'])) {
+    return null;
   }
-  stats.cards.skipped += skipped;
-  stats.cards.unavailable += unavailable;
-  if (unavailable > 0) {
-    log.warn(
-      { err: firstUnavailable, region, setId, unavailable },
-      'catalog.prices_cards_unavailable'
-    );
+  const createdAt =
+    typeof value['createdAt'] === 'string' ? Date.parse(value['createdAt']) : Number.NaN;
+  if (Number.isNaN(createdAt)) {
+    return null;
   }
+  const entries = new Map<number, Json>();
+  for (const entry of value['priceGuides'] as unknown[]) {
+    if (
+      isObject(entry) &&
+      typeof entry['idProduct'] === 'number' &&
+      Number.isSafeInteger(entry['idProduct'])
+    ) {
+      entries.set(entry['idProduct'], entry);
+    }
+  }
+  return entries.size > 0 ? { createdAt: new Date(createdAt).toISOString(), entries } : null;
 }
 
 function isObject(value: unknown): value is Json {

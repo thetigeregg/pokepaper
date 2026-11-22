@@ -15,6 +15,7 @@ import { runPriceRefresh } from './prices.js';
 import { CATALOG_RATE_LIMIT } from './routes.js';
 import {
   Bytes,
+  fakeCardmarket,
   fakeClient,
   fakeTcgdex,
   memoryCatalogStore,
@@ -145,7 +146,7 @@ describe('catalog routes', () => {
   });
 
   it('serve a region’s prices, revalidated by its prices version', async () => {
-    const { app, headers, store, fake } = await catalogApp();
+    const { app, headers, store } = await catalogApp();
     const url = '/api/catalog/prices/intl';
 
     const empty = await app.inject({ method: 'GET', url, headers });
@@ -157,12 +158,7 @@ describe('catalog routes', () => {
       prices: {},
     });
 
-    await runPriceRefresh({
-      store,
-      client: fakeClient(fake),
-      languages: ['en', 'fr', 'ja', 'zh-tw'],
-      log: silentLogger(),
-    });
+    await runPriceRefresh({ store, log: silentLogger(), fetch: fakeCardmarket().fetch });
     const stale = await app.inject({
       method: 'GET',
       url,
@@ -174,7 +170,7 @@ describe('catalog routes', () => {
     expect(stale.headers.etag).toBe(`"prices-intl-${String(store.pricesVersion('intl'))}"`);
     expect(pack.version).toBe(store.pricesVersion('intl'));
     expect(pack.prices['sv01-001']).toEqual({
-      updated: '2026-11-20T22:24:05.881Z',
+      updated: '2026-11-20T01:43:56.000Z',
       idProduct: 483559,
       base: { trend: 0.14, avg7: 0.14, avg30: 0.14 },
       reverseHolo: { trend: 0.28, avg7: 0.28, avg30: 0.28 },

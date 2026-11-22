@@ -88,32 +88,104 @@ export function silentLogger(): CatalogLogger & { warnings: string[]; errors: st
   };
 }
 
+/** The fixture cards' Cardmarket products. */
+export const PRODUCTS = { pineco: 483559, promo: 400001, japanese: 700001 } as const;
+
 /**
- * A card's `pricing` in TCGdex's real response shape: Cardmarket's price
- * guide in euros, with `-holo` figures for the reverse holo (0 or null when
- * Cardmarket has none).
+ * Figures of one product in Cardmarket's price guide shape (TCGdex relays
+ * the same ones): euros, with `-holo` figures for the reverse holo (0 or
+ * null when Cardmarket has none).
  */
-export function tcgdexPricing(trend: number, trendHolo = 0, updated = '2026-11-20T22:24:05.881Z') {
+export function guideFigures(trend: number, trendHolo = 0) {
   return {
-    cardmarket: {
-      updated,
-      unit: 'EUR',
-      idProduct: 483559,
-      avg: trend,
-      low: 0.02,
-      trend,
-      avg1: trend,
-      avg7: trend,
-      avg30: trend,
-      'avg-holo': trendHolo || null,
-      'low-holo': trendHolo ? 0.02 : null,
-      'trend-holo': trendHolo,
-      'avg1-holo': trendHolo || null,
-      'avg7-holo': trendHolo || null,
-      'avg30-holo': trendHolo || null,
-    },
+    avg: trend,
+    low: 0.02,
+    trend,
+    avg1: trend,
+    avg7: trend,
+    avg30: trend,
+    'avg-holo': trendHolo || null,
+    'low-holo': trendHolo ? 0.02 : null,
+    'trend-holo': trendHolo,
+    'avg1-holo': trendHolo || null,
+    'avg7-holo': trendHolo || null,
+    'avg30-holo': trendHolo || null,
+  };
+}
+
+/** A card's `pricing` in TCGdex's real response shape: Cardmarket's product and its figures. */
+export function tcgdexPricing(
+  trend: number,
+  trendHolo = 0,
+  idProduct: number = PRODUCTS.pineco,
+  updated = '2026-11-20T22:24:05.881Z'
+) {
+  return {
+    cardmarket: { updated, unit: 'EUR', idProduct, ...guideFigures(trend, trendHolo) },
     tcgplayer: null,
   };
+}
+
+/** Cardmarket's price guide download (`price_guide_6.json`) with `products`' figures. */
+export function cardmarketGuide(
+  products: Readonly<Record<number, ReturnType<typeof guideFigures>>>,
+  createdAt = '2026-11-20T02:43:56+0100'
+) {
+  return {
+    version: 1,
+    createdAt,
+    priceGuides: Object.entries(products).map(([idProduct, figures]) => ({
+      idProduct: Number(idProduct),
+      idCategory: 51,
+      ...figures,
+    })),
+  };
+}
+
+/** The guide matching the fixture cards' TCGdex pricing. */
+export function fixtureGuide(createdAt?: string) {
+  return cardmarketGuide(
+    {
+      [PRODUCTS.pineco]: guideFigures(0.14, 0.28),
+      [PRODUCTS.promo]: guideFigures(1.5),
+      [PRODUCTS.japanese]: guideFigures(0.02, 8.33),
+    },
+    createdAt
+  );
+}
+
+/**
+ * Serves `guide.current` as Cardmarket does, with an ETag of its JSON
+ * (304 when asked with it), and the ECB as unreachable. Counts requests.
+ */
+export function fakeCardmarket(initial: unknown = fixtureGuide()) {
+  const state = { current: initial, requests: 0 };
+  const fetchFn = (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (!url.includes('cardmarket')) {
+      return Promise.reject(new Error(`offline: ${url}`));
+    }
+    state.requests += 1;
+    if (state.current instanceof Status) {
+      return Promise.resolve(new Response(null, { status: state.current.status }));
+    }
+    const body = typeof state.current === 'string' ? state.current : JSON.stringify(state.current);
+    const etag = `"${String(body.length)}-${String(hashString(body))}"`;
+    const headers = new Headers(init?.headers);
+    if (headers.get('If-None-Match') === etag) {
+      return Promise.resolve(new Response(null, { status: 304 }));
+    }
+    return Promise.resolve(new Response(body, { headers: { etag } }));
+  };
+  return Object.assign(state, { fetch: fetchFn });
+}
+
+function hashString(value: string): number {
+  let hash = 0;
+  for (let index = 0; index < value.length; index++) {
+    hash = (hash * 31 + value.charCodeAt(index)) | 0;
+  }
+  return hash;
 }
 
 function brief(id: string, localId: string, language: string, path: string) {
@@ -232,7 +304,7 @@ export function tcgdexFixture(): Record<string, FakeRoute> {
       stage: 'Base',
       attacks: [{ cost: ['Incolore'], name: 'Charge', damage: '10+' }],
       weaknesses: [{ type: 'Feu', value: '×2' }],
-      pricing: tcgdexPricing(1.5),
+      pricing: tcgdexPricing(1.5, 0, PRODUCTS.promo),
     },
 
     '/ja/series': [{ id: 'SV', name: 'スカーレット&バイオレット' }],
@@ -258,7 +330,7 @@ export function tcgdexFixture(): Record<string, FakeRoute> {
       dexId: [1],
       attacks: [{ cost: ['Grass', 'Colorless'], name: 'やどりぎのタネ', damage: 20 }],
       image: `${ASSETS}/ja/SV/SV2a/001`,
-      pricing: tcgdexPricing(0.02, 8.33),
+      pricing: tcgdexPricing(0.02, 8.33, PRODUCTS.japanese),
     },
     '/zh-tw/cards/SV2a-001': {
       id: 'SV2a-001',

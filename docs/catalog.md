@@ -80,9 +80,9 @@ TCGdex has no scan for many basic Energy printings: all 16 cards of Mega Evoluti
 
 ## Prices
 
-Card prices come from [Cardmarket](https://www.cardmarket.com), Europe's main marketplace for singles, as TCGdex reports them in each card's details (`pricing.cardmarket`, in euros, updated by TCGdex daily). TCGdex also reports TCGplayer (US dollars), which isn't imported.
+Card prices come from [Cardmarket](https://www.cardmarket.com), Europe's main marketplace for singles: its daily price guide, in euros (see The price pass). TCGdex relays the same figures in each card's details (`pricing.cardmarket`), and TCGplayer's (US dollars), which aren't imported.
 
-**What a price covers.** One Cardmarket product covers a printing in every language of its region: English, French, Italian and German copies of `sv01-001` share one price, and a Japanese and a Traditional Chinese copy of `SV2a-001` share another (the Japanese product's). Prices aren't per condition either. TCGdex reports two finishes:
+**What a price covers.** One Cardmarket product covers a printing in every language of its region: English, French, Italian and German copies of `sv01-001` share one price, and a Japanese and a Traditional Chinese copy of `SV2a-001` share another (the Japanese product's). Prices aren't per condition either. The guide has two finishes:
 
 | Figures                                 | Finish                                                     |
 | --------------------------------------- | ---------------------------------------------------------- |
@@ -91,18 +91,19 @@ Card prices come from [Cardmarket](https://www.cardmarket.com), Europe's main ma
 
 Each finish has `trend` (Cardmarket's headline price, smoothed over recent sales), `avg` (average sale price), `low` (cheapest listing in any condition or language), and `avg1`, `avg7` and `avg30` (average sale price over the last 1, 7 and 30 days). Cardmarket reports "no data" as 0, which is stored as no figure. In a November 2026 sample, `trend` and `avg30` agreed within 2× on all but 3 of 302 modern international prices, and on all cards worth €5 or more but 4 of 90; they diverge on cheap, rarely sold cards (Japanese and vintage commons), where `trend` often drops to €0.02.
 
-**Coverage** (sampled November 2026): 87% of international cards (the gaps are TCG Pocket's digital sets, some promos and Gym), 92% of Japanese cards from 2011 on, but no Japanese cards from before 2011, and 42% of Traditional Chinese cards.
+**Coverage** (sampled November 2026, from TCGdex's product IDs): 87% of international cards (the gaps are TCG Pocket's digital sets, some promos and Gym), 92% of Japanese cards from 2011 on, but no Japanese cards from before 2011, and 42% of Traditional Chinese cards.
 
-**The price pass.** TCGdex has prices only in card details (not in set listings, and not in its GraphQL API), so a separate pass fetches every card once, in the first imported language it has (English, else French, Italian, German; Japanese, else Chinese): about 41,000 requests, roughly 5 minutes. It runs after the scheduled import when the last completed pass started at least `CATALOG_PRICES_REFRESH_HOURS` ago (default 24), so with the default schedule, once a day; since it follows an import, it never runs more often than `CATALOG_REFRESH_HOURS`. It runs even if the import failed, over whatever the catalog holds.
+**The price pass.** Cardmarket publishes its whole price guide as one download ([`price_guide_6.json`](https://downloads.s3.cardmarket.com/productCatalog/priceGuide/price_guide_6.json), Pokémon: about 81,000 products, 16 MB, regenerated each night around 02:45 CET), the same figures TCGdex relays, keyed by Cardmarket product. TCGdex has each card's product in its card details (`pricing.cardmarket.idProduct`), so:
 
-- Failures are contained like the import's:
-  - **Cards:** a card TCGdex can't serve (404, malformed) keeps its previous prices. So does one TCGdex keeps failing for (network, 5xx, 429 after retries), and the pass ends `partial` (`catalog.prices_cards_unavailable`): one broken card doesn't freeze its set.
-  - **Sets:** when TCGdex is unavailable for 3 of a set's cards, or for all of them, the set's remaining requests are cancelled and the whole set keeps its previous prices (`catalog.prices_set_failed`).
-  - **Outages:** after 3 failed sets in a row, the rest of the region is skipped (`catalog.prices_region_interrupted`). A pass that refreshed no set at all ends `failed` and doesn't count as done, so the next scheduled run tries again.
-- Each set's prices are written in one transaction. A card Cardmarket no longer prices loses its prices, and prices of cards that left the catalog are pruned at the end of each region.
+- **The import records products.** Whenever it fetches a card's details, it stores the card's product (`catalog_cardmarket_products`; one product covers every language of a region), or forgets it when TCGdex no longer reports one. New cards get theirs when their set arrives, and the weekly full refresh refetches them all. Migration `0005` started the table from the IDs the earlier TCGdex price pass had stored.
+- **The pass downloads the guide once** and prices every card by its product (a November 2026 check: every priced card's product was in the guide, with identical figures to TCGdex's). It sends the guide's last ETag, so an unchanged guide costs an empty `304` (`unchanged`, which counts as done). It takes about a second, instead of the roughly 41,000 TCGdex requests (5 minutes) of fetching every card's details.
+- It runs after the scheduled import when the last completed pass started at least `CATALOG_PRICES_REFRESH_HOURS` ago (default 24), so with the default schedule, once a day; since it follows an import, it never runs more often than `CATALOG_REFRESH_HOURS`. It runs even if the import failed, over whatever the catalog holds.
+- **Failures change nothing:** a guide that can't be downloaded or isn't one (`catalog.price_guide_failed`), or that lacks more than half the products the catalog's cards map to (`catalog.price_guide_incomplete`, a truncated download rather than a market that vanished overnight), leaves every price as it was. The pass ends `failed` and doesn't count as done, so the next scheduled run tries again.
+- Each region's prices are written in one transaction. A card whose product has no figures, or isn't in the guide, loses its prices; so does one without a product. Prices and products of cards that left the catalog are pruned.
+- A card's `updated` time is when Cardmarket generated the guide.
 - **Cardmarket links.** TCGdex reports each card's Cardmarket product ID, which is stored and sent with its prices (`idProduct`, absent when unknown). `https://www.cardmarket.com/en/Pokemon/Products?idProduct=<id>` opens the card's page on Cardmarket (`cardmarketProductUrl`); `…/Products/Singles?idProduct=` does not. Catalog migration `0004` bumps every region's prices version once, so devices holding an older pack download it again with the IDs.
 - Prices live in their own table (`catalog_prices`), never in the cards, so they never change a set's hash: daily price changes don't make clients download sets again. Each region has a **prices version**, bumped whenever any of its prices change.
-- Every pass is recorded in `catalog_price_runs` and logged as `catalog.prices_started`, `catalog.prices_progress` and `catalog.prices_finished`.
+- Every pass is recorded in `catalog_price_runs` and logged as `catalog.prices_started` and `catalog.prices_finished`.
 
 ### Running it by hand
 
@@ -241,4 +242,4 @@ Cached images live in `DATA_DIR/images/catalog/` and are also rebuildable (delet
 
 ## Attribution
 
-Card data: [TCGdex](https://github.com/tcgdex/cards-database) (MIT License). Prices: Cardmarket's price guide, via TCGdex. Exchange rates: European Central Bank euro reference rates. Energy symbol icons: from ilkcmp's [Neo Neo Blank Symbolsheet](https://www.deviantart.com/ilkcmp/art/Neo-Neo-Blank-Symbolsheet-486883197) (free for non-commercial use). Rarity symbol icons: collected from community sources. Card images, energy and rarity symbols, and names are © The Pokémon Company, Nintendo, Game Freak and Creatures. PokePaper is a personal, non-commercial project not affiliated with them.
+Card data: [TCGdex](https://github.com/tcgdex/cards-database) (MIT License). Prices: Cardmarket's price guide (products matched to cards via TCGdex). Exchange rates: European Central Bank euro reference rates. Energy symbol icons: from ilkcmp's [Neo Neo Blank Symbolsheet](https://www.deviantart.com/ilkcmp/art/Neo-Neo-Blank-Symbolsheet-486883197) (free for non-commercial use). Rarity symbol icons: collected from community sources. Card images, energy and rarity symbols, and names are © The Pokémon Company, Nintendo, Game Freak and Creatures. PokePaper is a personal, non-commercial project not affiliated with them.
