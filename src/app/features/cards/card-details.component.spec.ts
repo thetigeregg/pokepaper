@@ -415,10 +415,9 @@ describe('CardDetailsComponent', () => {
         ? {
             label: row.querySelector('ion-label')?.firstChild?.textContent?.trim(),
             price: row.querySelector('[data-testid="price"]')?.textContent.trim(),
-            averages: row
-              .querySelector('[data-testid="price-averages"]')
-              ?.textContent.replace(/\s+/g, ' ')
-              .trim(),
+            averages: [...row.querySelectorAll('[data-testid="price-average"]')].map((line) =>
+              line.textContent.replace(/\s+/g, ' ').trim()
+            ),
           }
         : null;
     };
@@ -438,12 +437,12 @@ describe('CardDetailsComponent', () => {
       expect(priceRow(fixture, 'base')).toEqual({
         label: 'Normal',
         price: '€0.14',
-        averages: '7-day avg €0.10 · 30-day avg €0.08',
+        averages: ['7-day avg €0.10', '30-day avg €0.08'],
       });
       expect(priceRow(fixture, 'reverseHolo')).toEqual({
         label: 'Reverse holo',
         price: '€1.50',
-        averages: '30-day avg €1.25',
+        averages: ['30-day avg €1.25'],
       });
       expect(
         element(fixture).querySelector('[data-testid="price-updated"]')?.textContent.trim()
@@ -517,7 +516,7 @@ describe('CardDetailsComponent', () => {
       expect(priceRow(fixture, 'base')).toEqual({
         label: 'Normal',
         price: 'CHF\u00a00.13',
-        averages: '7-day avg CHF 0.09 · 30-day avg CHF 0.07', // normalized whitespace
+        averages: ['7-day avg CHF 0.09', '30-day avg CHF 0.07'], // normalized whitespace
       });
       expect(
         element(fixture)
