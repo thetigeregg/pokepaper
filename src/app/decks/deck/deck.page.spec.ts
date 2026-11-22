@@ -1,12 +1,14 @@
 import { signal } from '@angular/core';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { ModalController, NavController } from '@ionic/angular';
-import type { CatalogCard, CatalogSet, Deck } from '@pokepaper/shared';
+import type { CatalogCard, CatalogCardPrices, CatalogSet, Deck } from '@pokepaper/shared';
 import { Subject } from 'rxjs';
 import { vi } from 'vitest';
 import { makeContractCard, makeContractPack } from '../../core/data/storage-engine.contract';
 import { StorageEngineFactory } from '../../core/data/storage-engine.factory';
 import { CatalogLanguageService } from '../../core/services/catalog-language.service';
+import { CatalogPriceService } from '../../core/services/catalog-price.service';
+import { CurrencyService, formatMoney } from '../../core/services/currency.service';
 import { CatalogSyncService } from '../../core/services/catalog-sync.service';
 import { DeckChecksService } from '../../features/decks/deck-checks.service';
 import { DeckService } from '../../core/services/deck.service';
@@ -111,6 +113,24 @@ describe('DeckPage', () => {
   };
   const changed = new Subject<void>();
   const wide = signal(false);
+  /** Stored prices by `region:cardId`; bump `version` for a sync storing new ones. */
+  let storedPrices = new Map<string, CatalogCardPrices>();
+  const priceService = {
+    version: signal(0),
+    pricesByKey: vi.fn((keys: readonly string[]) =>
+      Promise.resolve(
+        new Map(
+          keys.flatMap((key) => {
+            const prices = storedPrices.get(key);
+            return prices ? [[key, prices] as const] : [];
+          })
+        )
+      )
+    ),
+  };
+  const currency = signal('EUR');
+  let rate = 1;
+  const currencyService = { format: (euros: number) => formatMoney(euros * rate, currency()) };
   let fixture: ComponentFixture<DeckPage>;
 
   async function create(id = 'deck-1'): Promise<DeckPage> {
@@ -155,6 +175,8 @@ describe('DeckPage', () => {
           useValue: { resolve: vi.fn(() => Promise.resolve(null)), release: vi.fn() },
         },
         { provide: VisibilityService, useValue: { whenVisible: () => () => undefined } },
+        { provide: CatalogPriceService, useValue: priceService },
+        { provide: CurrencyService, useValue: currencyService },
       ],
     });
   });
@@ -388,6 +410,107 @@ describe('DeckPage', () => {
 
     expect(query('[data-testid="rules-ok"]')?.textContent.trim()).toBe('Follows Expanded rules');
     checks.check.mockReturnValue(undefined);
+  });
+
+  describe('cost to complete', () => {
+    const trend = (euros: number): CatalogCardPrices => ({
+      updated: '2026-11-22T01:43:59.000Z',
+      base: { trend: euros, avg7: null, avg30: null },
+      reverseHolo: null,
+    });
+    /** What the collection covers: copies still needed per printing. */
+    const missing = (counts: Record<string, number>): DeckOwned => ({
+      slots: new Map(
+        Object.entries(counts).map(([key, count]) => [
+          key,
+          { owned: 0, fromOther: 0, missing: count },
+        ])
+      ),
+      considering: new Map(),
+      missing: Object.values(counts).reduce((sum, count) => sum + count, 0),
+      unknown: 0,
+    });
+    const SOME_MISSING = { 'intl:sv01-001': 2, 'intl:sv01-166': 1, 'intl:sv01-258': 9 };
+    /** "title · hint · amount" of the row. */
+    const text = () => {
+      const row = query('[data-testid="deck-to-complete"]');
+      const normalize = (value: string | null | undefined) =>
+        (value ?? '').replace(/\s+/g, ' ').trim();
+      if (!row) {
+        return undefined;
+      }
+      const label = row.querySelector('ion-label');
+      return [
+        normalize(label?.firstChild?.textContent),
+        normalize(label?.querySelector('p')?.textContent),
+        normalize(row.querySelector('ion-note')?.textContent),
+      ]
+        .filter(Boolean)
+        .join(' · ');
+    };
+
+    beforeEach(() => {
+      // sv01-166 and sv01-001 are priced; the Energy (sv01-258) isn't.
+      storedPrices = new Map([
+        ['intl:sv01-166', trend(2.5)],
+        ['intl:sv01-001', trend(0.1)],
+      ]);
+      priceService.version.set(0);
+      priceService.pricesByKey.mockClear();
+      currency.set('EUR');
+      rate = 1;
+    });
+
+    afterEach(() => {
+      ownedNow.set(undefined);
+    });
+
+    it('shows what the missing copies cost, counting those without a price', async () => {
+      ownedNow.set(missing(SOME_MISSING));
+      await create();
+
+      expect(priceService.pricesByKey).toHaveBeenCalledWith([
+        'intl:sv01-001',
+        'intl:sv01-166',
+        'intl:sv01-258',
+      ]);
+      expect(text()).toBe('Cost to complete · 12 missing copies · 9 without a price · €2.70');
+    });
+
+    it('shows nothing until the collection’s been compared', async () => {
+      await create();
+
+      expect(query('[data-testid="deck-to-complete"]')).toBeNull();
+    });
+
+    it('shows nothing when the collection covers the deck', async () => {
+      ownedNow.set(missing({ 'intl:sv01-001': 0, 'intl:sv01-166': 0, 'intl:sv01-258': 0 }));
+      await create();
+
+      expect(query('[data-testid="deck-to-complete"]')).toBeNull();
+    });
+
+    it('shows the amount in the currency picked in Settings', async () => {
+      currency.set('CHF');
+      rate = 0.9;
+      ownedNow.set(missing({ 'intl:sv01-166': 1 }));
+      await create();
+
+      // Normalized whitespace: the no-break space after CHF too.
+      expect(text()).toBe('Cost to complete · 1 missing copy · CHF 2.25');
+    });
+
+    it('reads prices again when a sync stores new ones', async () => {
+      ownedNow.set(missing(SOME_MISSING));
+      await create();
+      storedPrices.set('intl:sv01-258', trend(0.05));
+
+      priceService.version.set(1);
+      fixture.detectChanges();
+      await settle();
+
+      expect(text()).toBe('Cost to complete · 12 missing copies · €3.15');
+    });
   });
 
   describe('owned vs. needed', () => {

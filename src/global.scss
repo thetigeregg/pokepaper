@@ -123,6 +123,14 @@ ion-label p.hint {
   padding-top: 4px;
 }
 
+/* Amounts (prices, values) at a row's end (docs/ui.md → Lists): the full
+   text color, bold, digits aligned. */
+ion-note.amount {
+  color: var(--ion-text-color);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Readable column on wide (desktop) screens; full width on phones
    (docs/ui.md). On a page's large-title header too, so titles line up. */
 .page-column,
