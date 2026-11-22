@@ -189,3 +189,7 @@
 ## v0.31.0 - 2026-11-22
 
 - 901e870 feat(decks): show the cost to complete a deck (#55)
+
+## v0.32.0 - 2026-11-22
+
+- 1a66d98 feat(cards): filter Cardmarket links by language and finish (#56)
