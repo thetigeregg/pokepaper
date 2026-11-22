@@ -16,6 +16,7 @@ import {
   parseSeriesList,
   parseSetDetail,
   parseSetList,
+  trustedLanguages,
   type RawCard,
   type RawSeries,
   type RawSetDetail,
@@ -300,6 +301,10 @@ async function ingestSet(
       entry.languages.push(language);
       cardLanguages.set(brief.id, entry);
     }
+  }
+  // Printings carrying another card's text are neither fetched nor kept.
+  for (const entry of cardLanguages.values()) {
+    entry.languages = trustedLanguages(region, setId, entry.languages);
   }
 
   const existing = new Map(store.listSetCards(region, setId).map((card) => [card.id, card]));

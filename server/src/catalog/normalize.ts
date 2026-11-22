@@ -327,6 +327,38 @@ export const CANONICAL_ORDER: Readonly<Record<CatalogRegion, readonly CatalogLan
 };
 
 /**
+ * Set languages in which TCGdex gives cards that also exist in other
+ * languages another card's text (docs/catalog.md → Misattributed printings).
+ * Those printings are left out; cards only that language has stay.
+ *
+ * - `SV-P` in Traditional Chinese: Taiwan numbers its Scarlet & Violet promos
+ *   apart from Japan, but TCGdex filed the Taiwanese names and texts on the
+ *   Japanese cards (SV-P-098, Detective Pikachu, carries Latias's).
+ */
+export const MISATTRIBUTED_PRINTINGS: Readonly<
+  Record<CatalogRegion, Readonly<Record<string, readonly CatalogLanguage[]>>>
+> = {
+  intl: {},
+  asia: { 'SV-P': ['zh-tw'] },
+};
+
+/**
+ * The languages of a card's printings worth importing: `languages` without
+ * the set's misattributed ones (`MISATTRIBUTED_PRINTINGS`), unless the card
+ * has no other.
+ */
+export function trustedLanguages<T extends CatalogLanguage>(
+  region: CatalogRegion,
+  setId: string,
+  languages: readonly T[]
+): T[] {
+  const sets = MISATTRIBUTED_PRINTINGS[region];
+  const misattributed = Object.hasOwn(sets, setId) ? sets[setId] : undefined;
+  const trusted = languages.filter((language) => !misattributed?.includes(language));
+  return trusted.length > 0 ? trusted : [...languages];
+}
+
+/**
  * Localized → canonical (English) vocabulary for one language, e.g. `Plante`
  * → `Grass`. Asian-region responses already use English vocabulary, so their
  * map stays empty.
