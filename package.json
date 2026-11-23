@@ -77,7 +77,7 @@
     "@angular/core": "^22.2.6",
     "@angular/forms": "^22.2.6",
     "@angular/platform-browser": "^22.2.6",
-    "@angular/platform-browser-dynamic": "^22.2.6",
+    "@angular/platform-browser-dynamic": "^22.3.0",
     "@angular/router": "^22.2.6",
     "@angular/service-worker": "^22.2.6",
     "@capacitor-community/sqlite": "^8.1.1",
