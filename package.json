@@ -93,7 +93,7 @@
     "@simplewebauthn/browser": "^14.0.0",
     "capacitor-secure-storage-plugin": "^0.14.2",
     "dexie": "^4.4.7",
-    "ionicons": "^8.1.0",
+    "ionicons": "^8.1.1",
     "rxjs": "~7.8.2",
     "swiper": "^14.4.0",
     "tslib": "^2.9.1",
