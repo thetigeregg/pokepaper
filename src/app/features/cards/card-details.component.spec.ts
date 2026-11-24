@@ -379,8 +379,8 @@ describe('CardDetailsComponent', () => {
 
       expect(rows(fixture)).toEqual([
         { variant: 'variant-normal', quantity: '0' },
-        { variant: 'variant-reverse', quantity: '0' },
         { variant: 'variant-holo', quantity: '1' },
+        { variant: 'variant-reverse', quantity: '0' },
       ]);
     });
 
@@ -429,6 +429,7 @@ describe('CardDetailsComponent', () => {
       return row
         ? {
             label: row.querySelector('ion-label')?.firstChild?.textContent?.trim(),
+            hint: row.querySelector('[data-testid="price-hint"]')?.textContent.trim() ?? null,
             price: row.querySelector('[data-testid="price"]')?.textContent.trim(),
             // Each average line's label and amount cells, joined by a space.
             averages: [...row.querySelectorAll('[data-testid="price-average"]')].map((line) =>
@@ -453,12 +454,14 @@ describe('CardDetailsComponent', () => {
         'Price · Cardmarket',
       ]);
       expect(priceRow(fixture, 'base')).toEqual({
-        label: 'Normal',
+        label: 'Standard',
+        hint: 'Every copy not sold as reverse holo',
         price: '€0.14',
         averages: ['7-day avg €0.10', '30-day avg €0.08'],
       });
       expect(priceRow(fixture, 'reverseHolo')).toEqual({
         label: 'Reverse holo',
+        hint: null,
         price: '€1.50',
         averages: ['30-day avg €1.25'],
       });
@@ -532,7 +535,8 @@ describe('CardDetailsComponent', () => {
       await settle(fixture);
 
       expect(priceRow(fixture, 'base')).toEqual({
-        label: 'Normal',
+        label: 'Standard',
+        hint: 'Every copy not sold as reverse holo',
         price: 'CHF\u00a00.13',
         averages: ['7-day avg CHF 0.09', '30-day avg CHF 0.07'], // normalized whitespace
       });

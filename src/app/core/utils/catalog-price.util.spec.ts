@@ -5,6 +5,7 @@ import type {
   CollectionEntry,
 } from '@pokepaper/shared';
 import {
+  beforeReverseHolos,
   collectionValue,
   flagsReverseHolos,
   headlinePrice,
@@ -96,14 +97,18 @@ describe('flagsReverseHolos', () => {
 describe('reverseHoloPossible', () => {
   const modern = { releaseDate: '2016-05-02' };
 
-  it('holds whenever TCGdex flags the card', () => {
+  it('holds whenever TCGdex flags the card, from reverse holos on', () => {
     expect(reverseHoloPossible(printing({ reverse: true }), modern, true)).toBe(true);
     expect(
-      reverseHoloPossible(printing({ reverse: true }), { releaseDate: '1999-01-09' }, false)
+      reverseHoloPossible(printing({ reverse: true }), { releaseDate: '2002-05-24' }, true)
     ).toBe(true);
   });
 
-  it('fails for unflagged cards from before reverse holos', () => {
+  it('fails for cards from before reverse holos, even flagged ones', () => {
+    // Wizards promo 34 Entei: TCGdex flags it reverse holo only.
+    expect(
+      reverseHoloPossible(printing({ reverse: true }), { releaseDate: '1999-07-01' }, false)
+    ).toBe(false);
     expect(reverseHoloPossible(printing(), { releaseDate: '1999-01-09' }, false)).toBe(false);
     expect(reverseHoloPossible(printing(), { releaseDate: '2002-05-24' }, false)).toBe(true);
     expect(reverseHoloPossible(printing(), { releaseDate: null }, false)).toBe(true);
@@ -162,6 +167,21 @@ describe('variantFigures', () => {
     expect(variantFigures(card, 'wPromo')).toBeNull();
     expect(variantFigures(card, 'staff-stamp')).toBeNull(); // a variant from a newer build
   });
+
+  it('values reverse holos by the base finish in a set from before reverse holos', () => {
+    const card = prices(1, 2);
+
+    expect(variantFigures(card, 'reverse', true)?.trend).toBe(1);
+    expect(variantFigures(card, 'normal', true)?.trend).toBe(1);
+  });
+});
+
+describe('beforeReverseHolos', () => {
+  it('holds for sets released before May 24, 2002', () => {
+    expect(beforeReverseHolos({ releaseDate: '2002-05-23' })).toBe(true);
+    expect(beforeReverseHolos({ releaseDate: '2002-05-24' })).toBe(false);
+    expect(beforeReverseHolos({ releaseDate: null })).toBe(false);
+  });
 });
 
 describe('collectionValue', () => {
@@ -206,6 +226,24 @@ describe('collectionValue', () => {
 
     expect(value).toEqual([
       { region: 'intl', copies: 8, unpriced: 6, value: 3, updated: '2026-11-21T05:47:42.306Z' },
+    ]);
+  });
+
+  it('values reverse holo copies in sets from before reverse holos by the base finish', () => {
+    const value = collectionValue(
+      [
+        entry({ cardId: 'basep-34', setId: 'basep', variant: 'reverse', quantity: 1 }),
+        entry({ variant: 'reverse', quantity: 1 }),
+      ],
+      new Map([
+        ['intl:basep-34', prices(55.87, 12.61)],
+        ['intl:sv01-001', prices(0.1, 0.2)],
+      ]),
+      new Set(['intl:basep'])
+    );
+
+    expect(value).toEqual([
+      { region: 'intl', copies: 2, unpriced: 0, value: 56.07, updated: '2026-11-21T05:47:42.306Z' },
     ]);
   });
 

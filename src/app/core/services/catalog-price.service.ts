@@ -3,7 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import type { CatalogCardPrices, CatalogRegion } from '@pokepaper/shared';
 import { catalogKey } from '../data/storage-engine';
 import { StorageEngineFactory } from '../data/storage-engine.factory';
-import { flagsReverseHolos } from '../utils/catalog-price.util';
+import { beforeReverseHolos, flagsReverseHolos } from '../utils/catalog-price.util';
 import { CatalogSyncService } from './catalog-sync.service';
 
 /**
@@ -19,6 +19,8 @@ export class CatalogPriceService {
   readonly version = this._version.asReadonly();
   /** `flagsReverseHolos` by set (`region:setId`), kept until a sync stores or removes a set. */
   private readonly reverseHoloFlags = new Map<string, Promise<boolean>>();
+  /** `setsBeforeReverseHolos`, kept until a sync stores or removes a set. */
+  private earlySets: Promise<Set<string>> | null = null;
 
   constructor() {
     const sync = inject(CatalogSyncService);
@@ -27,6 +29,7 @@ export class CatalogPriceService {
     });
     sync.changed$.pipe(takeUntilDestroyed()).subscribe(() => {
       this.reverseHoloFlags.clear();
+      this.earlySets = null;
     });
   }
 
@@ -63,6 +66,31 @@ export class CatalogPriceService {
       }
     });
     return read;
+  }
+
+  /**
+   * The stored sets from before reverse holos (`beforeReverseHolos`), keyed
+   * `region:setId`: their reverse holo copies are valued by the base finish
+   * (`variantFigures`). Read once, and again after a sync changes the sets.
+   * A failed read isn't kept, so the next one tries again.
+   */
+  setsBeforeReverseHolos(): Promise<Set<string>> {
+    if (this.earlySets) {
+      return this.earlySets;
+    }
+    const read = this.readSetsBeforeReverseHolos();
+    this.earlySets = read;
+    read.catch(() => {
+      if (this.earlySets === read) {
+        this.earlySets = null;
+      }
+    });
+    return read;
+  }
+
+  private async readSetsBeforeReverseHolos(): Promise<Set<string>> {
+    const sets = await this.storageEngineFactory.getEngine().listCatalogSets();
+    return new Set(sets.filter(({ set }) => beforeReverseHolos(set)).map(({ key }) => key));
   }
 
   private async readReverseHoloFlags(region: CatalogRegion, setId: string): Promise<boolean> {

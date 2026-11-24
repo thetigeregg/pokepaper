@@ -12,10 +12,16 @@ import { catalogKey } from '../data/storage-engine';
 
 /**
  * Reverse holos began with Legendary Collection (May 2002). Cardmarket
- * reports reverse holo figures for some older cards too, which match no
- * printing (docs/catalog.md → Reverse holo figures).
+ * reports reverse holo figures for some older cards too, and TCGdex flags
+ * a few as reverse holos, neither matching any printing (docs/catalog.md →
+ * Reverse holo figures).
  */
 export const FIRST_REVERSE_HOLO_DATE = '2002-05-24';
+
+/** Whether a set came out before reverse holos existed (`FIRST_REVERSE_HOLO_DATE`). */
+export function beforeReverseHolos(set: Pick<CatalogSet, 'releaseDate'>): boolean {
+  return set.releaseDate !== null && set.releaseDate < FIRST_REVERSE_HOLO_DATE;
+}
 
 /**
  * The rarities printed in reverse holo, for sets whose TCGdex flags can't
@@ -47,8 +53,8 @@ export function flagsReverseHolos(cards: readonly ReverseHoloFields[]): boolean 
 
 /**
  * Whether `card` can come in reverse holo, as far as the catalog tells:
- * always when TCGdex flags it, never in a set from before reverse holos
- * or one whose flags TCGdex keeps (`setFlagsReverseHolos`, from
+ * never in a set from before reverse holos (whatever TCGdex flags), always
+ * when TCGdex flags it, never in a set whose flags TCGdex keeps (`setFlagsReverseHolos`, from
  * `flagsReverseHolos`), and otherwise, in the international catalog, when
  * it's plain (no suffix) and of a rarity printed in reverse holo. In the
  * Japan & Asia catalog only flagged cards do: TCGdex flags the few sets
@@ -59,11 +65,11 @@ export function reverseHoloPossible(
   set: Pick<CatalogSet, 'releaseDate'>,
   setFlagsReverseHolos: boolean
 ): boolean {
+  if (beforeReverseHolos(set)) {
+    return false;
+  }
   if (card.variants.reverse) {
     return true;
-  }
-  if (set.releaseDate !== null && set.releaseDate < FIRST_REVERSE_HOLO_DATE) {
-    return false;
   }
   return (
     card.region === 'intl' &&
@@ -85,19 +91,22 @@ export function headlinePrice(figures: CardmarketFigures): number | null {
 /**
  * The figures a copy in `variant` is valued by: normal and holo copies by
  * the base finish (Cardmarket prices a holo-only card as its base product),
- * reverse holos by the reverse holo. First edition and W promo copies (and
+ * reverse holos by the reverse holo, except in a set from before reverse
+ * holos (`beforeReverseHolos`), where the copy TCGdex flags as one is
+ * valued by the base finish too. First edition and W promo copies (and
  * variants this build doesn't know) have no Cardmarket figures of their own.
  */
 export function variantFigures(
   prices: CatalogCardPrices,
-  variant: CollectionVariant | (string & {})
+  variant: CollectionVariant | (string & {}),
+  setBeforeReverseHolos = false
 ): CardmarketFigures | null {
   switch (variant) {
     case 'normal':
     case 'holo':
       return prices.base;
     case 'reverse':
-      return prices.reverseHolo;
+      return setBeforeReverseHolos ? prices.base : prices.reverseHolo;
     default:
       return null;
   }
@@ -118,11 +127,14 @@ export interface CatalogValue {
 
 /**
  * The value of each catalog's copies, in every language, by Cardmarket
- * prices keyed `region:cardId`. Catalogs without copies are left out.
+ * prices keyed `region:cardId`. `setsBeforeReverseHolos` holds the sets
+ * (keyed `region:setId`) from before reverse holos (`variantFigures`).
+ * Catalogs without copies are left out.
  */
 export function collectionValue(
   entries: readonly (CollectionEntry & { region: CatalogRegion })[],
-  prices: ReadonlyMap<string, CatalogCardPrices>
+  prices: ReadonlyMap<string, CatalogCardPrices>,
+  setsBeforeReverseHolos: ReadonlySet<string> = new Set()
 ): CatalogValue[] {
   const totals = new Map<CatalogRegion, CatalogValue & { cents: number }>();
   for (const entry of entries) {
@@ -137,7 +149,13 @@ export function collectionValue(
     totals.set(entry.region, total);
     total.copies += entry.quantity;
     const cardPrices = prices.get(catalogKey(entry.region, entry.cardId));
-    const figures = cardPrices ? variantFigures(cardPrices, entry.variant) : null;
+    const figures = cardPrices
+      ? variantFigures(
+          cardPrices,
+          entry.variant,
+          setsBeforeReverseHolos.has(catalogKey(entry.region, entry.setId))
+        )
+      : null;
     const price = figures ? headlinePrice(figures) : null;
     if (!cardPrices || price === null) {
       total.unpriced += entry.quantity;

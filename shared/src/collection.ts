@@ -8,11 +8,15 @@ import type { CatalogVariants } from './catalog';
  * deleted instead.
  */
 
-/** Variants the app offers, in display order: the keys of TCGdex's `variants` flags. */
+/**
+ * Variants the app offers, in display order (a card's holo before its
+ * reverse holo, as Cardmarket lists them): the keys of TCGdex's `variants`
+ * flags.
+ */
 export const COLLECTION_VARIANTS = [
   'normal',
-  'reverse',
   'holo',
+  'reverse',
   'firstEdition',
   'wPromo',
 ] as const satisfies readonly (keyof CatalogVariants)[];

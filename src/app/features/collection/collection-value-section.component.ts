@@ -95,11 +95,10 @@ export class CollectionValueSectionComponent {
         stale = true;
       });
       const keys = [...new Set(entries.map((entry) => catalogKey(entry.region, entry.cardId)))];
-      this.priceService
-        .pricesByKey(keys)
-        .then((prices) => {
+      Promise.all([this.priceService.pricesByKey(keys), this.priceService.setsBeforeReverseHolos()])
+        .then(([prices, earlySets]) => {
           if (!stale) {
-            this.values.set(collectionValue(entries, prices));
+            this.values.set(collectionValue(entries, prices, earlySets));
             this.failed.set(false);
           }
         })

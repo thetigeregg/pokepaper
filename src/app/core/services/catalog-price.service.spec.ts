@@ -108,6 +108,76 @@ describe('CatalogPriceService', () => {
     });
   });
 
+  describe('setsBeforeReverseHolos', () => {
+    const stored = (region: string, id: string, releaseDate: string | null) => ({
+      key: `${region}:${id}`,
+      region,
+      hash: `hash-${id}`,
+      set: { id, releaseDate },
+    });
+    let listCatalogSets: Mock<() => Promise<ReturnType<typeof stored>[]>>;
+
+    beforeEach(() => {
+      listCatalogSets = vi.fn(() =>
+        Promise.resolve([
+          stored('intl', 'basep', '1999-07-01'),
+          stored('intl', 'ecard1', '2002-09-15'),
+          stored('intl', 'unknown', null),
+          stored('asia', 'PMCG1', '1996-10-20'),
+        ])
+      );
+      TestBed.overrideProvider(StorageEngineFactory, {
+        useValue: { getEngine: () => ({ listCatalogSets }) },
+      });
+    });
+
+    it('reads the sets from before reverse holos once, by catalog key', async () => {
+      const service = TestBed.inject(CatalogPriceService);
+
+      expect(await service.setsBeforeReverseHolos()).toEqual(new Set(['intl:basep', 'asia:PMCG1']));
+      await service.setsBeforeReverseHolos();
+      expect(listCatalogSets).toHaveBeenCalledTimes(1);
+    });
+
+    it('reads them again after a sync changes the sets', async () => {
+      const service = TestBed.inject(CatalogPriceService);
+      await service.setsBeforeReverseHolos();
+
+      listCatalogSets.mockResolvedValue([stored('intl', 'base1', '1999-01-09')]);
+      setsChanged.next();
+
+      expect(await service.setsBeforeReverseHolos()).toEqual(new Set(['intl:base1']));
+    });
+
+    it('tries a failed read again', async () => {
+      listCatalogSets.mockRejectedValueOnce(new Error('not initialized'));
+      const service = TestBed.inject(CatalogPriceService);
+
+      await expect(service.setsBeforeReverseHolos()).rejects.toThrow('not initialized');
+      expect(await service.setsBeforeReverseHolos()).toEqual(new Set(['intl:basep', 'asia:PMCG1']));
+      expect(listCatalogSets).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps a newer read when an older one fails', async () => {
+      let fail: (error: Error) => void = () => undefined;
+      listCatalogSets.mockReturnValueOnce(
+        new Promise((_, reject) => {
+          fail = reject;
+        })
+      );
+      const service = TestBed.inject(CatalogPriceService);
+      const older = service.setsBeforeReverseHolos();
+      setsChanged.next();
+      const newer = service.setsBeforeReverseHolos();
+
+      fail(new Error('disk'));
+      await expect(older).rejects.toThrow('disk');
+
+      expect(service.setsBeforeReverseHolos()).toBe(newer);
+      expect(listCatalogSets).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it('bumps its version whenever a sync stores new prices', () => {
     const service = TestBed.inject(CatalogPriceService);
     expect(service.version()).toBe(0);
