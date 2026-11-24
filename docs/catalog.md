@@ -182,7 +182,9 @@ After the sets, each run downloads the [prices](#prices) of every catalog with s
   - Always when TCGdex flags the card as coming in reverse holo.
   - Never in a set released before May 2002.
   - Never in a set whose flags TCGdex keeps: most of its plain (no suffix) commons and uncommons are flagged (`flagsReverseHolos`, read per set from the cards on the device and cached until a sync changes the sets). This covers Scarlet & Violet, Sword & Shield and most older sets.
-  - Otherwise, only for a card without a suffix (EX, GX, V, ex…) of a rarity printed in reverse holo: Common, Uncommon, Rare, Holo Rare. TCGdex's flags can't decide there: in a November 2026 check, dozens of later sets that have reverse holos had no card flagged (every XY set, most of Sun & Moon, EX Delta Species to Power Keepers, Plasma Storm, Plasma Freeze), and Forbidden Light, Team Up, Unbroken Bonds, Unified Minds and Plasma Blast had one or two commons flagged each.
+  - Otherwise, in the international catalog, only for a card without a suffix (EX, GX, V, ex…) of a rarity printed in reverse holo: Common, Uncommon, Rare, Holo Rare (spelled Rare Holo in some Diamond & Pearl sets). TCGdex's flags can't decide there: in a November 2026 check, dozens of later sets that have reverse holos had no card flagged (every XY set, most of Sun & Moon, EX Delta Species to Power Keepers, Plasma Storm, Plasma Freeze), and Forbidden Light, Team Up, Unbroken Bonds, Unified Minds and Plasma Blast had one or two commons flagged each.
+  - In the Japan & Asia catalog, only when flagged: few Japanese sets have mirror holos, and TCGdex flags them (S9a, S10a, S11a, SV2a, SV11B, SV11W in a November 2026 check), while its rarities don't mean the same there (Rarity symbols).
+  - If the set's cards can't be read, the base finish still shows and the reverse holo goes by the card's own flag and rarity.
   - The collection steppers still go by TCGdex's flags (`cardVariants`). The server keeps the figures as reported, and a copy owned in reverse holo is still valued at them (`variantFigures`).
 
 ## Images on the device

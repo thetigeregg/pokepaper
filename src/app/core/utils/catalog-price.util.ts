@@ -49,11 +49,13 @@ export function flagsReverseHolos(cards: readonly ReverseHoloFields[]): boolean 
  * Whether `card` can come in reverse holo, as far as the catalog tells:
  * always when TCGdex flags it, never in a set from before reverse holos
  * or one whose flags TCGdex keeps (`setFlagsReverseHolos`, from
- * `flagsReverseHolos`), and otherwise when it's plain (no suffix) and of a
- * rarity printed in reverse holo.
+ * `flagsReverseHolos`), and otherwise, in the international catalog, when
+ * it's plain (no suffix) and of a rarity printed in reverse holo. In the
+ * Japan & Asia catalog only flagged cards do: TCGdex flags the few sets
+ * with mirror holos, and the rarities don't mean the same there.
  */
 export function reverseHoloPossible(
-  card: ReverseHoloFields,
+  card: ReverseHoloFields & Pick<CatalogCard, 'region'>,
   set: Pick<CatalogSet, 'releaseDate'>,
   setFlagsReverseHolos: boolean
 ): boolean {
@@ -64,6 +66,7 @@ export function reverseHoloPossible(
     return false;
   }
   return (
+    card.region === 'intl' &&
     !setFlagsReverseHolos &&
     card.suffix === null &&
     card.rarity !== null &&

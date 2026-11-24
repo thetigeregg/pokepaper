@@ -597,5 +597,21 @@ describe('CardDetailsComponent', () => {
       expect(headers(fixture)).not.toContain('Price · Cardmarket');
       error.mockRestore();
     });
+
+    it('still shows prices when the set’s reverse holo flags can’t be read', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      priceService.setFlagsReverseHolos.mockRejectedValueOnce(new Error('disk'));
+      storedPrices.set(base.id, prices());
+      const fixture = create(base);
+      await settle(fixture);
+
+      expect(error).toHaveBeenCalledWith(
+        'catalog.set_reverse_holo_flags_failed',
+        expect.any(Error)
+      );
+      expect(priceRow(fixture, 'base')?.price).toBe('€0.14');
+      expect(priceRow(fixture, 'reverseHolo')?.price).toBe('€1.50');
+      error.mockRestore();
+    });
   });
 });

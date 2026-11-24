@@ -183,7 +183,12 @@ export class CardDetailsComponent {
       });
       Promise.all([
         this.priceService.prices(region, id),
-        this.priceService.setFlagsReverseHolos(region, setId),
+        // Without the set's flags, the base finish still shows; the reverse
+        // holo goes by rarity alone (`reverseHoloPossible`).
+        this.priceService.setFlagsReverseHolos(region, setId).catch((error: unknown) => {
+          console.error('catalog.set_reverse_holo_flags_failed', error);
+          return false;
+        }),
       ])
         .then(([prices, setFlagsReverseHolos]) => {
           if (!stale) {

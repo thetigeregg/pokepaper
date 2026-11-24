@@ -44,8 +44,14 @@ describe('headlinePrice', () => {
 
 /** A card's reverse holo fields: plain, normal only, unless `overrides` say otherwise. */
 const printing = (
-  overrides: { rarity?: string | null; suffix?: string | null; reverse?: boolean } = {}
-): Pick<CatalogCard, 'rarity' | 'suffix' | 'variants'> => ({
+  overrides: {
+    region?: CatalogRegion;
+    rarity?: string | null;
+    suffix?: string | null;
+    reverse?: boolean;
+  } = {}
+): Pick<CatalogCard, 'region' | 'rarity' | 'suffix' | 'variants'> => ({
+  region: overrides.region ?? 'intl',
   rarity: overrides.rarity === undefined ? 'Common' : overrides.rarity,
   suffix: overrides.suffix ?? null,
   variants: {
@@ -132,6 +138,16 @@ describe('reverseHoloPossible', () => {
     for (const rarity of ['Secret Rare', 'Promo', 'Shiny rare', 'None', null]) {
       expect(reverseHoloPossible(printing({ rarity }), modern, false)).toBe(false);
     }
+  });
+
+  it('goes only by the flags in the Japan & Asia catalog', () => {
+    expect(reverseHoloPossible(printing({ region: 'asia' }), modern, false)).toBe(false);
+    expect(
+      reverseHoloPossible(printing({ region: 'asia', rarity: 'Holo Rare' }), modern, false)
+    ).toBe(false);
+    expect(reverseHoloPossible(printing({ region: 'asia', reverse: true }), modern, false)).toBe(
+      true
+    );
   });
 });
 
