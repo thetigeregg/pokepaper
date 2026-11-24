@@ -209,3 +209,7 @@
 ## v0.33.1 - 2026-11-24
 
 - d7940c5 fix(cards): hide reverse holo prices cards can't come in (#65)
+
+## v0.34.0 - 2026-11-24
+
+- c81523b feat(catalog): match unpriced cards to Cardmarket products by hand (#66)
