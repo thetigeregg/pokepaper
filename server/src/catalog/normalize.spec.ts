@@ -114,13 +114,15 @@ describe('parsers', () => {
 
 describe('parseTcgplayerFinishes', () => {
   const finishes = (tcgplayer: unknown) => parseTcgplayerFinishes({ pricing: { tcgplayer } });
+  /** A TCGplayer entry with a price. */
+  const priced = { productId: 85495, lowPrice: 11.33, marketPrice: null };
 
   it('reads the finishes TCGplayer prices the card in', () => {
     // BREAKthrough Typhlosion: a holo rare TCGdex lists as normal only.
     expect(
-      finishes({ unit: 'USD', holofoil: { marketPrice: 6.49 }, 'reverse-holofoil': {} })
+      finishes({ unit: 'USD', holofoil: { marketPrice: 6.49 }, 'reverse-holofoil': priced })
     ).toEqual({ normal: false, holo: true, reverse: true, firstEdition: false });
-    expect(finishes({ normal: {}, 'reverse-holofoil': {} })).toMatchObject({
+    expect(finishes({ normal: priced, 'reverse-holofoil': priced })).toMatchObject({
       normal: true,
       holo: false,
       reverse: true,
@@ -128,13 +130,13 @@ describe('parseTcgplayerFinishes', () => {
   });
 
   it('reads WotC-era editions as their finishes', () => {
-    expect(finishes({ '1st-edition': {}, unlimited: {} })).toEqual({
+    expect(finishes({ '1st-edition': priced, unlimited: priced })).toEqual({
       normal: true,
       holo: false,
       reverse: false,
       firstEdition: true,
     });
-    expect(finishes({ '1st-edition-holofoil': {}, 'unlimited-holofoil': {} })).toEqual({
+    expect(finishes({ '1st-edition-holofoil': priced, 'unlimited-holofoil': priced })).toEqual({
       normal: false,
       holo: true,
       reverse: false,
@@ -142,8 +144,18 @@ describe('parseTcgplayerFinishes', () => {
     });
   });
 
+  it('counts only entries with a price', () => {
+    expect(
+      finishes({
+        normal: priced,
+        'reverse-holofoil': { productId: 85495, lowPrice: null, midPrice: 0, marketPrice: 'n/a' },
+      })
+    ).toMatchObject({ normal: true, reverse: false });
+    expect(finishes({ holofoil: {} })).toBeNull();
+  });
+
   it('is null without any finish it knows', () => {
-    expect(finishes({ unit: 'USD', updated: '2026-11-23', 'staff-foil': {} })).toBeNull();
+    expect(finishes({ unit: 'USD', updated: '2026-11-23', 'staff-foil': priced })).toBeNull();
     expect(finishes({ holofoil: null })).toBeNull();
     expect(finishes(null)).toBeNull();
     expect(parseTcgplayerFinishes({ pricing: null })).toBeNull();
@@ -156,7 +168,7 @@ describe('parseTcgplayerFinishes', () => {
       localId: '20',
       name: 'Typhlosion',
       category: 'Pokemon',
-      pricing: { tcgplayer: { holofoil: {} } },
+      pricing: { tcgplayer: { holofoil: { marketPrice: 6.49 } } },
     });
     expect(card?.tcgplayerFinishes).toMatchObject({ holo: true, reverse: false });
     expect(raw().tcgplayerFinishes).toBeNull();
@@ -254,6 +266,52 @@ describe('mergeCard', () => {
       existing: undefined,
     });
     expect(without).not.toHaveProperty('tcgplayerFinishes');
+  });
+
+  it('keeps a finish once TCGplayer has listed it', () => {
+    const stored = mergeCard({
+      ...base,
+      languages: ['en'],
+      fetched: new Map([
+        [
+          'en',
+          raw({
+            tcgplayerFinishes: { normal: false, holo: true, reverse: true, firstEdition: false },
+          }),
+        ],
+      ]),
+      existing: undefined,
+    }) as CatalogCard;
+
+    // The reverse holo's entry dropped out (no recent sales); a normal one appeared.
+    const refetched = mergeCard({
+      ...base,
+      languages: ['en'],
+      fetched: new Map([
+        [
+          'en',
+          raw({
+            tcgplayerFinishes: { normal: true, holo: true, reverse: false, firstEdition: false },
+          }),
+        ],
+      ]),
+      existing: stored,
+    });
+    expect(refetched?.tcgplayerFinishes).toEqual({
+      normal: true,
+      holo: true,
+      reverse: true,
+      firstEdition: false,
+    });
+
+    // None listed now: the stored ones stay.
+    const listedNone = mergeCard({
+      ...base,
+      languages: ['en'],
+      fetched: new Map([['en', raw()]]),
+      existing: stored,
+    });
+    expect(listedNone?.tcgplayerFinishes).toEqual(stored.tcgplayerFinishes);
   });
 
   it('returns null when no language has data', () => {

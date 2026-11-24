@@ -252,9 +252,13 @@ const TCGPLAYER_FINISHES: Readonly<Record<string, readonly (keyof CatalogFinishe
   '1st-edition-holofoil': ['firstEdition', 'holo'],
 };
 
+/** The prices in a TCGplayer entry; one of them makes the entry count. */
+const TCGPLAYER_PRICES = ['lowPrice', 'midPrice', 'highPrice', 'marketPrice', 'directLowPrice'];
+
 /**
  * The finishes TCGplayer prices a card in, from the price entries in
- * TCGdex's `pricing.tcgplayer`; null when it has none it knows.
+ * TCGdex's `pricing.tcgplayer` with at least one price (an empty entry is
+ * no evidence); null when it has none it knows.
  */
 export function parseTcgplayerFinishes(card: Json): CatalogFinishes | null {
   const pricing = card['pricing'];
@@ -271,7 +275,13 @@ export function parseTcgplayerFinishes(card: Json): CatalogFinishes | null {
   let known = false;
   for (const [key, entry] of Object.entries(tcgplayer)) {
     const kinds = Object.hasOwn(TCGPLAYER_FINISHES, key) ? TCGPLAYER_FINISHES[key] : undefined;
-    if (kinds && isObject(entry)) {
+    const priced =
+      isObject(entry) &&
+      TCGPLAYER_PRICES.some((field) => {
+        const price = entry[field];
+        return typeof price === 'number' && Number.isFinite(price) && price > 0;
+      });
+    if (kinds && priced) {
       known = true;
       for (const kind of kinds) {
         finishes[kind] = true;
@@ -581,6 +591,8 @@ export function mergeCard(input: MergeCardInput): CatalogCard | null {
   if (!neutral) {
     return null;
   }
+  const { tcgplayerFinishes: fresh, ...rest } = neutral;
+  const tcgplayerFinishes = keptFinishes(fresh, existing?.tcgplayerFinishes);
 
   return {
     region,
@@ -588,8 +600,30 @@ export function mergeCard(input: MergeCardInput): CatalogCard | null {
     setId: input.setId,
     localId: input.localId,
     sortIndex: input.sortIndex,
-    ...neutral,
+    ...rest,
+    ...(tcgplayerFinishes && { tcgplayerFinishes }),
     text: texts,
+  };
+}
+
+/**
+ * The finishes TCGplayer has listed for a card, fresh or stored: a finish
+ * stays once seen. TCGplayer's entries follow its sales, so one can drop
+ * out for a while; the printing doesn't, and the card (with its set's
+ * hash, which every device downloads by) shouldn't change with it.
+ */
+function keptFinishes(
+  fresh: CatalogFinishes | undefined,
+  stored: CatalogFinishes | undefined
+): CatalogFinishes | undefined {
+  if (!fresh || !stored) {
+    return fresh ?? stored;
+  }
+  return {
+    normal: fresh.normal || stored.normal,
+    holo: fresh.holo || stored.holo,
+    reverse: fresh.reverse || stored.reverse,
+    firstEdition: fresh.firstEdition || stored.firstEdition,
   };
 }
 

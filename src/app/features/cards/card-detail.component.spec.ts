@@ -107,7 +107,7 @@ describe('CardDetailComponent', () => {
           useValue: {
             version: signal(0),
             prices: () => Promise.resolve(undefined),
-            setFlagsReverseHolos: () => Promise.resolve(false),
+            setReverseHolos: () => Promise.resolve({ tcgdexFlags: false, tcgplayerSells: true }),
           },
         },
         {

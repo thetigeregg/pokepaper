@@ -36,7 +36,7 @@ const REVERSE_HOLO_RARITIES: ReadonlySet<string> = new Set([
   'Rare Holo',
 ]);
 
-type ReverseHoloFields = Pick<CatalogCard, 'rarity' | 'suffix' | 'variants'>;
+type ReverseHoloFields = Pick<CatalogCard, 'rarity' | 'suffix' | 'variants' | 'tcgplayerFinishes'>;
 
 /**
  * Whether TCGdex keeps a set's reverse holo flags: most of its plain
@@ -51,13 +51,35 @@ export function flagsReverseHolos(cards: readonly ReverseHoloFields[]): boolean 
   return plain.filter((card) => card.variants.reverse).length * 2 > plain.length;
 }
 
+/** What a set's cards tell about its reverse holos (`setReverseHolos`). */
+export interface SetReverseHolos {
+  /** TCGdex keeps the set's reverse holo flags (`flagsReverseHolos`). */
+  tcgdexFlags: boolean;
+  /** TCGplayer sells some card of the set in reverse holo (`tcgplayerFinishes`). */
+  tcgplayerSells: boolean;
+}
+
+/** What `reverseHoloPossible` needs to know of a card's set, from its cards. */
+export function setReverseHolos(cards: readonly ReverseHoloFields[]): SetReverseHolos {
+  return {
+    tcgdexFlags: flagsReverseHolos(cards),
+    tcgplayerSells: cards.some((card) => card.tcgplayerFinishes?.reverse === true),
+  };
+}
+
+/** For a set whose cards couldn't be read: the reverse holo goes by the card alone. */
+export const UNKNOWN_SET_REVERSE_HOLOS: SetReverseHolos = {
+  tcgdexFlags: false,
+  tcgplayerSells: true,
+};
+
 /**
  * Numbers of special subsets printed without reverse holos: Radiant
  * Collection (RC), Trainer Gallery (TG), Galarian Gallery (GG).
  */
 const SUBSET_WITHOUT_REVERSE_HOLOS = /^(RC|TG|GG)\d/;
 /** Black Star Promos and other promo sets: their cards come one way each. */
-const PROMO_SET_NAME = /\bPromos\b/;
+const PROMO_SET_NAME = /\bPromos?\b/;
 
 /** What `reverseHoloPossible` reads of a card. */
 export type ReverseHoloCard = ReverseHoloFields &
@@ -71,11 +93,14 @@ export type ReverseHoloSet = Pick<CatalogSet, 'releaseDate' | 'names'>;
  *
  * - Never in a set from before reverse holos, whatever TCGdex flags.
  * - Always when TCGdex flags it.
- * - Never in a set whose flags TCGdex keeps (`setFlagsReverseHolos`, from
- *   `flagsReverseHolos`), nor in the Japan & Asia catalog: TCGdex flags the
- *   few sets with mirror holos, and the rarities don't mean the same there.
- * - As TCGplayer says, when it lists the card's finishes
- *   (`tcgplayerFinishes`).
+ * - Never in a set whose flags TCGdex keeps (`setHolos.tcgdexFlags`), nor
+ *   in the Japan & Asia catalog: TCGdex flags the few sets with mirror
+ *   holos, and the rarities don't mean the same there.
+ * - Always when TCGplayer sells it in reverse holo (`tcgplayerFinishes`).
+ * - Never when TCGplayer lists its finishes but sells no card of its set in
+ *   reverse holo (`setHolos.tcgplayerSells`): POP Series, Dragon Vault,
+ *   Celebrations. In a set with reverse holos, a missing entry may just be
+ *   one TCGplayer lacks (a new set's uncommon), so the rule below decides.
  * - Otherwise when it's plain (no suffix) and of a rarity printed in
  *   reverse holo, unless it's a Prism Star (◇), in a subset printed without
  *   them (`SUBSET_WITHOUT_REVERSE_HOLOS`) or in a promo set.
@@ -83,7 +108,7 @@ export type ReverseHoloSet = Pick<CatalogSet, 'releaseDate' | 'names'>;
 export function reverseHoloPossible(
   card: ReverseHoloCard,
   set: ReverseHoloSet,
-  setFlagsReverseHolos: boolean
+  setHolos: SetReverseHolos
 ): boolean {
   if (beforeReverseHolos(set)) {
     return false;
@@ -91,11 +116,14 @@ export function reverseHoloPossible(
   if (card.variants.reverse) {
     return true;
   }
-  if (setFlagsReverseHolos || card.region !== 'intl') {
+  if (setHolos.tcgdexFlags || card.region !== 'intl') {
     return false;
   }
-  if (card.tcgplayerFinishes) {
-    return card.tcgplayerFinishes.reverse;
+  if (card.tcgplayerFinishes?.reverse) {
+    return true;
+  }
+  if (card.tcgplayerFinishes && !setHolos.tcgplayerSells) {
+    return false;
   }
   return (
     card.suffix === null &&

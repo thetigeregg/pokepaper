@@ -3,7 +3,11 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import type { CatalogCardPrices, CatalogRegion } from '@pokepaper/shared';
 import { catalogKey } from '../data/storage-engine';
 import { StorageEngineFactory } from '../data/storage-engine.factory';
-import { beforeReverseHolos, flagsReverseHolos } from '../utils/catalog-price.util';
+import {
+  beforeReverseHolos,
+  setReverseHolos,
+  type SetReverseHolos,
+} from '../utils/catalog-price.util';
 import { CatalogSyncService } from './catalog-sync.service';
 
 /**
@@ -17,8 +21,8 @@ export class CatalogPriceService {
   private readonly _version = signal(0);
   /** Bumped whenever the stored prices change. */
   readonly version = this._version.asReadonly();
-  /** `flagsReverseHolos` by set (`region:setId`), kept until a sync stores or removes a set. */
-  private readonly reverseHoloFlags = new Map<string, Promise<boolean>>();
+  /** `setReverseHolos` by set (`region:setId`), kept until a sync stores or removes a set. */
+  private readonly reverseHolos = new Map<string, Promise<SetReverseHolos>>();
   /** `setsBeforeReverseHolos`, kept until a sync stores or removes a set. */
   private earlySets: Promise<Set<string>> | null = null;
 
@@ -28,7 +32,7 @@ export class CatalogPriceService {
       this._version.update((version) => version + 1);
     });
     sync.changed$.pipe(takeUntilDestroyed()).subscribe(() => {
-      this.reverseHoloFlags.clear();
+      this.reverseHolos.clear();
       this.earlySets = null;
     });
   }
@@ -47,22 +51,22 @@ export class CatalogPriceService {
   }
 
   /**
-   * Whether TCGdex keeps the set's reverse holo flags (`flagsReverseHolos`),
-   * which decides whether its cards' reverse holo prices show. Read from
-   * the set's stored cards once per set, and again after a sync changes
-   * the sets. A failed read isn't kept, so the next one tries again.
+   * What the set's cards tell about its reverse holos (`setReverseHolos`),
+   * which decides whether its cards' reverse holo prices and steppers show.
+   * Read from the set's stored cards once per set, and again after a sync
+   * changes the sets. A failed read isn't kept, so the next one tries again.
    */
-  setFlagsReverseHolos(region: CatalogRegion, setId: string): Promise<boolean> {
+  setReverseHolos(region: CatalogRegion, setId: string): Promise<SetReverseHolos> {
     const key = catalogKey(region, setId);
-    const kept = this.reverseHoloFlags.get(key);
+    const kept = this.reverseHolos.get(key);
     if (kept) {
       return kept;
     }
-    const read = this.readReverseHoloFlags(region, setId);
-    this.reverseHoloFlags.set(key, read);
+    const read = this.readSetReverseHolos(region, setId);
+    this.reverseHolos.set(key, read);
     read.catch(() => {
-      if (this.reverseHoloFlags.get(key) === read) {
-        this.reverseHoloFlags.delete(key);
+      if (this.reverseHolos.get(key) === read) {
+        this.reverseHolos.delete(key);
       }
     });
     return read;
@@ -93,8 +97,11 @@ export class CatalogPriceService {
     return new Set(sets.filter(({ set }) => beforeReverseHolos(set)).map(({ key }) => key));
   }
 
-  private async readReverseHoloFlags(region: CatalogRegion, setId: string): Promise<boolean> {
+  private async readSetReverseHolos(
+    region: CatalogRegion,
+    setId: string
+  ): Promise<SetReverseHolos> {
     const cards = await this.storageEngineFactory.getEngine().listCatalogCards(region, setId);
-    return flagsReverseHolos(cards);
+    return setReverseHolos(cards);
   }
 }

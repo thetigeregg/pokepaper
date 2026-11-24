@@ -58,7 +58,7 @@ describe('CatalogPriceService', () => {
     await expect(service.prices('intl', 'sv01-001')).rejects.toThrow('not initialized');
   });
 
-  describe('setFlagsReverseHolos', () => {
+  describe('setReverseHolos', () => {
     /** A set's cards: plain commons, `flagged` of them flagged reverse holo. */
     const cards = (flagged: number, total: number) =>
       Array.from({ length: total }, (_, index) => {
@@ -74,27 +74,27 @@ describe('CatalogPriceService', () => {
       });
     });
 
-    it('reads whether most of the set’s commons are flagged, once per set', async () => {
+    it('reads what the set’s cards tell about reverse holos, once per set', async () => {
       const service = TestBed.inject(CatalogPriceService);
 
-      expect(await service.setFlagsReverseHolos('intl', 'xy10')).toBe(false);
-      expect(await service.setFlagsReverseHolos('intl', 'xy10')).toBe(false);
+      expect(await service.setReverseHolos('intl', 'xy10')).toMatchObject({ tcgdexFlags: false });
+      expect(await service.setReverseHolos('intl', 'xy10')).toMatchObject({ tcgdexFlags: false });
       expect(listCatalogCards).toHaveBeenCalledTimes(1);
       expect(listCatalogCards).toHaveBeenCalledWith('intl', 'xy10');
 
       listCatalogCards.mockResolvedValue(cards(2, 3));
-      expect(await service.setFlagsReverseHolos('intl', 'sv01')).toBe(true);
+      expect(await service.setReverseHolos('intl', 'sv01')).toMatchObject({ tcgdexFlags: true });
       expect(listCatalogCards).toHaveBeenCalledTimes(2);
     });
 
     it('reads a set again after a sync changes the sets', async () => {
       const service = TestBed.inject(CatalogPriceService);
-      expect(await service.setFlagsReverseHolos('intl', 'xy10')).toBe(false);
+      expect(await service.setReverseHolos('intl', 'xy10')).toMatchObject({ tcgdexFlags: false });
 
       listCatalogCards.mockResolvedValue(cards(3, 3));
       setsChanged.next();
 
-      expect(await service.setFlagsReverseHolos('intl', 'xy10')).toBe(true);
+      expect(await service.setReverseHolos('intl', 'xy10')).toMatchObject({ tcgdexFlags: true });
       expect(listCatalogCards).toHaveBeenCalledTimes(2);
     });
 
@@ -102,8 +102,8 @@ describe('CatalogPriceService', () => {
       listCatalogCards.mockRejectedValueOnce(new Error('not initialized'));
       const service = TestBed.inject(CatalogPriceService);
 
-      await expect(service.setFlagsReverseHolos('intl', 'xy10')).rejects.toThrow('not initialized');
-      expect(await service.setFlagsReverseHolos('intl', 'xy10')).toBe(false);
+      await expect(service.setReverseHolos('intl', 'xy10')).rejects.toThrow('not initialized');
+      expect(await service.setReverseHolos('intl', 'xy10')).toMatchObject({ tcgdexFlags: false });
       expect(listCatalogCards).toHaveBeenCalledTimes(2);
     });
   });

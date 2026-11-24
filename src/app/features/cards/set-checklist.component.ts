@@ -5,10 +5,9 @@ import { addIcons } from 'ionicons';
 import { informationCircleOutline } from 'ionicons/icons';
 import { LANGUAGE_LABELS } from '../../core/services/catalog-language.service';
 import { CollectionService } from '../../core/services/collection.service';
-import { flagsReverseHolos } from '../../core/utils/catalog-price.util';
+import { setReverseHolos } from '../../core/utils/catalog-price.util';
 import {
   cardText,
-  cardVariants,
   collectionTarget,
   offeredVariants,
   setLine,
@@ -173,18 +172,18 @@ export class SetChecklistComponent {
   readonly ready = this.collection.loaded;
   readonly languageName = computed(() => LANGUAGE_LABELS[this.language()].name);
 
-  /** Whether TCGdex keeps the set's reverse holo flags, for the variants offered. */
-  private readonly setFlagsReverseHolos = computed(() => flagsReverseHolos(this.cards()));
+  /** What the set's cards tell about reverse holos, for the variants offered. */
+  private readonly setHolos = computed(() => setReverseHolos(this.cards()));
 
   readonly rows = computed<ChecklistRow[]>(() => {
     const language = this.language();
     const set = this.set();
-    const flags = this.setFlagsReverseHolos();
+    const setHolos = this.setHolos();
     return this.cards().map((card) => ({
       card,
       name: cardText(card, language)?.name ?? card.id,
       setLine: setLine(set, card),
-      variants: variantRows(offeredVariants(card, set, flags), (variant) =>
+      variants: variantRows(offeredVariants(card, set, setHolos), (variant) =>
         this.collection.quantity(collectionTarget(card, variant, language))
       ),
     }));
@@ -250,10 +249,12 @@ export class SetChecklistComponent {
     // Read again: a sync may have added copies while the alert was open, and
     // those cards must keep them rather than be set to one.
     const cards = this.language() === language ? this.missing() : [];
+    const set = this.set();
+    const setHolos = this.setHolos();
     try {
       await this.collection.setQuantities(
         cards.map((card) => ({
-          target: collectionTarget(card, cardVariants(card)[0], language),
+          target: collectionTarget(card, offeredVariants(card, set, setHolos)[0], language),
           quantity: 1,
         }))
       );

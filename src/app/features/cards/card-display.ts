@@ -2,6 +2,7 @@ import {
   headlinePrice,
   reverseHoloPossible,
   type ReverseHoloSet,
+  type SetReverseHolos,
 } from '../../core/utils/catalog-price.util';
 import {
   catalogSetImageUrl,
@@ -88,16 +89,16 @@ export function cardVariants(card: CatalogCard): [CollectionVariant, ...Collecti
  * The variants card detail and the set checklist offer: TCGdex's
  * (`cardVariants`), plus reverse holo whenever the card can come in one
  * (`reverseHoloPossible`), as card detail shows its reverse holo price for:
- * TCGdex lacks reverse holo flags for whole sets. `setFlagsReverseHolos`
- * is `flagsReverseHolos` of the card's set.
+ * TCGdex lacks reverse holo flags for whole sets. `setHolos` is
+ * `setReverseHolos` of the card's set.
  */
 export function offeredVariants(
   card: CatalogCard,
   set: ReverseHoloSet,
-  setFlagsReverseHolos: boolean
+  setHolos: SetReverseHolos
 ): CollectionVariant[] {
   const listed = cardVariants(card);
-  return listed.includes('reverse') || !reverseHoloPossible(card, set, setFlagsReverseHolos)
+  return listed.includes('reverse') || !reverseHoloPossible(card, set, setHolos)
     ? listed
     : COLLECTION_VARIANTS.filter((variant) => variant === 'reverse' || listed.includes(variant));
 }
@@ -153,19 +154,19 @@ export interface PriceRow {
  * reverse holo row beside it, a hint says what it covers. Cardmarket reports
  * reverse holo figures for many cards never printed as one (sales tagged
  * reverse holo by sellers), so the reverse holo is left out unless the
- * card can come in one (`reverseHoloPossible`). `setFlagsReverseHolos` is
- * `flagsReverseHolos` of the card's set.
+ * card can come in one (`reverseHoloPossible`). `setHolos` is
+ * `setReverseHolos` of the card's set.
  */
 export function priceRows(
   card: CatalogCard,
   set: ReverseHoloSet,
   prices: CatalogCardPrices | undefined,
-  setFlagsReverseHolos: boolean
+  setHolos: SetReverseHolos
 ): PriceRow[] {
   if (!prices) {
     return [];
   }
-  const reverseHolo = reverseHoloPossible(card, set, setFlagsReverseHolos);
+  const reverseHolo = reverseHoloPossible(card, set, setHolos);
   const finishes = [
     { finish: 'base', label: 'Standard', figures: prices.base },
     {
