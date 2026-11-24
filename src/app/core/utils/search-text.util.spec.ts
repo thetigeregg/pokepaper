@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   cardMatches,
-  nameMatches,
   normalizeSearchText,
   parseCardNumber,
   prepareName,
@@ -13,7 +12,7 @@ function matches(name: string, query: string): boolean {
   if (!prepared) {
     throw new Error('empty query');
   }
-  return nameMatches(prepareName(normalizeSearchText(name)), prepared);
+  return cardMatches({ names: [prepareName(normalizeSearchText(name))], number: null }, prepared);
 }
 
 describe('normalizeSearchText', () => {
@@ -43,7 +42,7 @@ describe('normalizeSearchText', () => {
   });
 });
 
-describe('nameMatches', () => {
+describe('cardMatches by name', () => {
   it('matches the start of any word', () => {
     expect(matches('Pikachu ex', 'pika')).toBe(true);
     expect(matches('Pikachu ex', 'EX')).toBe(true);

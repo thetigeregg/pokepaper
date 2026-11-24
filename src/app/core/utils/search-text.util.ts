@@ -104,22 +104,14 @@ export function prepareQuery(query: string): PreparedQuery | null {
   };
 }
 
-/**
- * Whether `name` matches: every query word starts a word of the name (or,
- * for Japanese and Chinese, appears anywhere in it), or the whole query
- * starts the name with its spaces and punctuation left out.
- */
-export function nameMatches(name: PreparedName, query: PreparedQuery): boolean {
-  return cardMatches({ names: [name], number: null }, query);
-}
-
 const NO_NAME = prepareName('');
 
 /**
- * Whether a card matches: in one of its names, every query word matches the
- * name (see `nameMatches`) or the card's number ("meowth 67", or just "67").
- * Either will do for a word, so names with numbers in them still match
- * ("energy removal 2").
+ * Whether a card matches: in one of its names, every query word starts a
+ * word of the name (or, for Japanese and Chinese, appears anywhere in it)
+ * or is the card's number ("meowth 67", or just "67"); or the whole query
+ * starts the name with its spaces and punctuation left out. Either will do
+ * for a word, so names with numbers in them still match ("energy removal 2").
  */
 export function cardMatches(
   card: { names: readonly PreparedName[]; number: CardNumber | null },

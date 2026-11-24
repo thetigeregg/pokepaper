@@ -468,6 +468,27 @@ describe('CatalogSearchService', () => {
     );
   });
 
+  it('loads rows an older version wrote without a number, matching them by name only', async () => {
+    await engine.putSyncMeta({
+      key: SEARCH_ROW_VERSION_KEY,
+      value: String(CATALOG_SEARCH_ROW_VERSION),
+    });
+    const row = await db.catalogCardSearch.get('intl:swsh1-1');
+    if (!row) {
+      throw new Error('The set has a search row');
+    }
+    delete row.number; // As another tab on the previous version writes it.
+    await db.catalogCardSearch.put(row);
+
+    const service = await create();
+
+    expect(service.failed()).toBe(false);
+    service.setQuery('pika 1');
+    expect(keys(service)).toEqual(['intl:sv02-1']);
+    service.setQuery('pikachu v');
+    expect(keys(service)).toEqual(['intl:swsh1-1']);
+  });
+
   it('tries the rebuild again on the next load after it fails', async () => {
     await db.catalogCardSearch.clear();
     const reindex = vi.spyOn(engine, 'reindexCatalogSet').mockRejectedValueOnce(new Error('disk'));

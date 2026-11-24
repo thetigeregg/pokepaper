@@ -4,7 +4,7 @@ import { catalogKey, type CatalogSearchRow } from './storage-engine';
 
 /**
  * Bumped whenever `catalogSearchRow()` changes what it stores, so stored rows
- * are rebuilt (`CatalogSearchService`).
+ * are rebuilt (`CatalogSearchIndexService`).
  */
 export const CATALOG_SEARCH_ROW_VERSION = 2;
 

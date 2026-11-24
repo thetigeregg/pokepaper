@@ -85,7 +85,8 @@ export class CatalogSearchIndexService {
         cards: rows.map((row) => ({
           row,
           names: row.names.map(prepareName),
-          number: parseCardNumber(row.number),
+          // A row an older version wrote (another tab) just isn't searchable by number.
+          number: parseCardNumber(row.number ?? ''),
         })),
       });
     } catch (error: unknown) {
