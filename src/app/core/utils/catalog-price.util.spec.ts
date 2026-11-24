@@ -45,6 +45,22 @@ describe('headlinePrice', () => {
     expect(headlinePrice({ trend: null, avg7: 0.1, avg30: 0.08 })).toBe(0.08);
     expect(headlinePrice({ trend: null, avg7: 0.1, avg30: null })).toBeNull();
   });
+
+  it('takes the 30-day average for a trend more than ten times off it', () => {
+    // Team Rocket's Dark Gyarados and Delta Reign's Mega Golisopod ex in a November 2026 guide.
+    expect(headlinePrice({ trend: 0.02, avg7: 88.72, avg30: 162.97 })).toBe(162.97);
+    expect(headlinePrice({ trend: 0.02, avg7: 0.43, avg30: 0.54 })).toBe(0.54);
+    // A trend far above anything sold.
+    expect(headlinePrice({ trend: 6131.07, avg7: null, avg30: 500 })).toBe(500);
+  });
+
+  it('keeps a trend within ten times the 30-day average, or without one', () => {
+    expect(headlinePrice({ trend: 4.61, avg7: 5.15, avg30: 5.75 })).toBe(4.61);
+    expect(headlinePrice({ trend: 1, avg7: null, avg30: 10 })).toBe(1);
+    expect(headlinePrice({ trend: 100, avg7: null, avg30: 10 })).toBe(100);
+    expect(headlinePrice({ trend: 0.02, avg7: 5, avg30: null })).toBe(0.02);
+    expect(headlinePrice({ trend: 0.02, avg7: null, avg30: 0 })).toBe(0.02);
+  });
 });
 
 /** A card's reverse holo fields: plain, normal only, unless `overrides` say otherwise. */

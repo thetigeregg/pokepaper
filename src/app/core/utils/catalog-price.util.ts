@@ -136,11 +136,28 @@ export function reverseHoloPossible(
 }
 
 /**
+ * A trend this many times off the 30-day average, either way, is taken for
+ * an error: Cardmarket reports €0.02 for some cards that sell for over
+ * €100 (Team Rocket's Dark Gyarados), and a few trends far above anything
+ * sold.
+ */
+export const TREND_OUTLIER_FACTOR = 10;
+
+/**
  * The price shown for a finish (docs/catalog.md → Prices): Cardmarket's
- * trend, else the 30-day average; null when it has neither.
+ * trend, else the 30-day average, which also stands in for a trend
+ * `TREND_OUTLIER_FACTOR` times off it; null when it has neither.
  */
 export function headlinePrice(figures: CardmarketFigures): number | null {
-  return figures.trend ?? figures.avg30;
+  const { trend, avg30 } = figures;
+  if (trend === null) {
+    return avg30;
+  }
+  const outlier =
+    avg30 !== null &&
+    avg30 > 0 &&
+    (trend * TREND_OUTLIER_FACTOR < avg30 || trend > avg30 * TREND_OUTLIER_FACTOR);
+  return outlier ? avg30 : trend;
 }
 
 /**
