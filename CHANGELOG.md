@@ -229,3 +229,7 @@
 ## v0.35.1 - 2026-11-24
 
 - 10d477a fix(cards): name holo rares TCGdex lists as normal Holo (#70)
+
+## v0.35.2 - 2026-11-24
+
+- 02bd315 fix(cards): show the 30-day average when the trend is an outlier (#71)
