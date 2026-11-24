@@ -66,4 +66,25 @@ describe('catalog migrations', () => {
       { region: 'intl', card_id: 'sv01-001', id_product: 483559 },
     ]);
   });
+
+  it('forget the price guide last applied, so the next pass downloads and keeps it', () => {
+    const location = join(dir, 'catalog.db');
+    const before = loadMigrations(join(import.meta.dirname, 'migrations')).filter(
+      (migration) => migration.version < 6
+    );
+    const old = openDatabase(location, before);
+    old
+      .prepare('INSERT INTO catalog_meta (key, value) VALUES (?, ?), (?, ?)')
+      .run('price_guide', '{"etag":"\"x\""}', 'products_version', '4');
+    old.close();
+
+    const db = openCatalogDatabase(location);
+    const meta = db.prepare('SELECT key, value FROM catalog_meta ORDER BY key').all();
+    db.close();
+
+    expect(meta).toEqual([
+      { key: 'products_version', value: '4' },
+      { key: 'version', value: '0' },
+    ]);
+  });
 });

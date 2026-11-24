@@ -1,6 +1,6 @@
 import type { CatalogLanguage } from '@pokepaper/shared';
 import { runCatalogIngest, type CatalogLogger } from './ingest.js';
-import { runPriceRefresh } from './prices.js';
+import { runPriceRefresh, type CardmarketMatchSource } from './prices.js';
 import { refreshExchangeRates } from './rates.js';
 import type { CatalogRunKind, CatalogStore } from './store.js';
 import { TcgdexClient } from './tcgdex-client.js';
@@ -17,6 +17,8 @@ export interface CatalogScheduleOptions {
   fullRefreshDays: number;
   /** A run refreshes prices too when the last price pass started at least this long ago. */
   pricesRefreshHours: number;
+  /** Cardmarket products matched by hand, which the price pass applies. */
+  matches?: CardmarketMatchSource;
   log: CatalogLogger;
   /** Delay before the first run, so startup isn't slowed down. */
   initialDelayMs?: number;
@@ -115,6 +117,7 @@ export function startCatalogSchedule(options: CatalogScheduleOptions): CatalogSc
     try {
       await runPriceRefresh({
         store,
+        matches: options.matches,
         client,
         languages: options.languages,
         log,

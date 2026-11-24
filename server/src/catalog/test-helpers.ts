@@ -154,6 +154,82 @@ export function fixtureGuide(createdAt?: string) {
   );
 }
 
+/** Products of Cardmarket's product list fixture that no fixture card maps to. */
+export const UNMAPPED_PRODUCTS = {
+  energySearch: 600001,
+  energySearchFullArt: 600002,
+  energySearchElsewhere: 600003,
+  megaMewtwo: 600004,
+  pomdepik: 600005,
+  pinecoOtherAttack: 600006,
+} as const;
+
+/** Cardmarket expansions of the fixture products. */
+export const EXPANSIONS = { sv01: 5001, promos: 5100, elsewhere: 6000, sv2a: 8000 } as const;
+
+/** Cardmarket's product list download (`products_singles_6.json`) with these single cards. */
+export function cardmarketProductList(
+  products: readonly { idProduct: number; name: string; idExpansion: number; dateAdded?: string }[],
+  createdAt = '2026-11-24T13:07:30+0100'
+) {
+  return {
+    version: 1,
+    createdAt,
+    products: products.map((product) => ({
+      idProduct: product.idProduct,
+      name: product.name,
+      idCategory: 51,
+      categoryName: 'Pokémon Single',
+      idExpansion: product.idExpansion,
+      idMetacard: 1,
+      dateAdded: product.dateAdded ?? '0000-00-00 00:00:00',
+    })),
+  };
+}
+
+/**
+ * The product list for the fixture cards: their products, plus unmapped
+ * ones for Energy Search (`sv01-172`, which TCGdex maps to none).
+ */
+export function fixtureProductList() {
+  return cardmarketProductList([
+    { idProduct: PRODUCTS.pineco, name: 'Pineco [Guard Press]', idExpansion: EXPANSIONS.sv01 },
+    {
+      idProduct: UNMAPPED_PRODUCTS.pinecoOtherAttack,
+      name: 'Pineco [Ram | Tackle]',
+      idExpansion: EXPANSIONS.sv01,
+    },
+    {
+      idProduct: UNMAPPED_PRODUCTS.energySearch,
+      name: 'Energy Search',
+      idExpansion: EXPANSIONS.sv01,
+      dateAdded: '2023-03-31 10:00:00',
+    },
+    {
+      idProduct: UNMAPPED_PRODUCTS.energySearchFullArt,
+      name: 'Energy Search',
+      idExpansion: EXPANSIONS.sv01,
+    },
+    {
+      idProduct: UNMAPPED_PRODUCTS.energySearchElsewhere,
+      name: 'Energy Search',
+      idExpansion: EXPANSIONS.elsewhere,
+    },
+    {
+      idProduct: UNMAPPED_PRODUCTS.megaMewtwo,
+      name: 'MMewtwo EX [Vanishing Strike]',
+      idExpansion: EXPANSIONS.elsewhere,
+    },
+    { idProduct: PRODUCTS.promo, name: 'Pineco [Charge]', idExpansion: EXPANSIONS.promos },
+    {
+      idProduct: UNMAPPED_PRODUCTS.pomdepik,
+      name: 'Pomdepik [Charge]',
+      idExpansion: EXPANSIONS.elsewhere,
+    },
+    { idProduct: PRODUCTS.japanese, name: 'Bulbasaur', idExpansion: EXPANSIONS.sv2a },
+  ]);
+}
+
 /**
  * Serves `guide.current` as Cardmarket does, with an ETag of its JSON
  * (304 when asked with it), and the ECB as unreachable. Counts requests.

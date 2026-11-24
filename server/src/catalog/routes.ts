@@ -6,7 +6,14 @@ import {
   type CatalogRegion,
 } from '@pokepaper/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import {
+  CardmarketProductsUnavailableError,
+  MAX_QUERY_LENGTH,
+  type CardmarketMatcher,
+} from './cardmarket-matcher.js';
 import { ImageUnavailableError, type CatalogImageCache } from './image-cache.js';
+import type { CatalogLogger } from './ingest.js';
+import { isProductId } from './price-data.js';
 import type { CatalogStore } from './store.js';
 
 /**
@@ -29,6 +36,11 @@ export interface CatalogRoutesOptions {
   images: CatalogImageCache;
   /** Languages the server imports (reported in the manifest). */
   languages: CatalogLanguage[];
+  /**
+   * Creates the matcher (with the app's logger) for matching cards to
+   * Cardmarket products by hand; omitted, those routes don't exist.
+   */
+  createMatcher?: (log: CatalogLogger) => CardmarketMatcher;
 }
 
 function isRegion(value: string): value is CatalogRegion {
@@ -78,12 +90,14 @@ function withETag(reply: FastifyReply, etag: string): FastifyReply {
  * - `GET /api/catalog/sets/:region/:setId`: one set with all its cards.
  * - `GET /api/catalog/prices/:region`: Cardmarket prices of a region's cards.
  * - `GET /api/catalog/rates`: the ECB's euro exchange rates.
+ * - `/api/catalog/cardmarket/:region/:cardId/…`: matching a card to a
+ *   Cardmarket product by hand (`candidates`, `match`).
  * - `GET /images/catalog/...`: card scans and set logos/symbols, fetched from
  *   TCGdex once and cached on disk. Only images the catalog links are
  *   served, so this is never an open proxy to TCGdex.
  */
 export function registerCatalogRoutes(app: FastifyInstance, options: CatalogRoutesOptions): void {
-  const { store, images, languages } = options;
+  const { store, images, languages, createMatcher } = options;
 
   const catalogRoute = {
     config: { rateLimit: { max: CATALOG_RATE_LIMIT, timeWindow: '1 minute' } },
@@ -158,6 +172,10 @@ export function registerCatalogRoutes(app: FastifyInstance, options: CatalogRout
     return rates;
   });
 
+  if (createMatcher) {
+    registerMatcherRoutes(app, createMatcher(app.log));
+  }
+
   const sendImage = async (
     request: FastifyRequest,
     reply: FastifyReply,
@@ -223,6 +241,91 @@ export function registerCatalogRoutes(app: FastifyInstance, options: CatalogRout
       }
       const symbol = store.getSet(region, setId)?.set.symbol;
       return sendImage(request, reply, symbol ? `${symbol}.webp` : null);
+    }
+  );
+}
+
+/** Answers 502 when Cardmarket's product list is needed but can't be had. */
+async function withProducts(
+  reply: FastifyReply,
+  work: () => Promise<FastifyReply | object>
+): Promise<FastifyReply | object> {
+  try {
+    return await work();
+  } catch (error: unknown) {
+    if (error instanceof CardmarketProductsUnavailableError) {
+      return reply.code(502).send({ error: 'cardmarket_unavailable' });
+    }
+    throw error;
+  }
+}
+
+/**
+ * Matching by hand (docs/catalog.md → Matching by hand):
+ *
+ * - `GET …/candidates[?q=]`: `CardmarketCandidates`.
+ * - `PUT …/match` `{ idProduct }`: matches the card (204); `422` for a
+ *   product not in Cardmarket's product list.
+ * - `DELETE …/match`: forgets the card's match (204, also when it had none).
+ *
+ * All `404` for an unknown card, and `502` while Cardmarket's product list
+ * can't be downloaded and none is stored.
+ */
+function registerMatcherRoutes(app: FastifyInstance, matcher: CardmarketMatcher): void {
+  app.get<{ Params: { region: string; cardId: string }; Querystring: { q?: unknown } }>(
+    '/api/catalog/cardmarket/:region/:cardId/candidates',
+    (request, reply) => {
+      const { region, cardId } = request.params;
+      const { q } = request.query;
+      if (!isRegion(region) || !validId(cardId)) {
+        return notFound(reply);
+      }
+      if (q !== undefined && (typeof q !== 'string' || q.length > MAX_QUERY_LENGTH)) {
+        return reply.code(400).send({ error: 'invalid_query' });
+      }
+      return withProducts(reply, async () => {
+        const candidates = await matcher.candidates(region, cardId, q);
+        return candidates ?? notFound(reply);
+      });
+    }
+  );
+
+  app.put<{ Params: { region: string; cardId: string }; Body: unknown }>(
+    '/api/catalog/cardmarket/:region/:cardId/match',
+    (request, reply) => {
+      const { region, cardId } = request.params;
+      if (!isRegion(region) || !validId(cardId)) {
+        return notFound(reply);
+      }
+      const body = request.body;
+      const idProduct =
+        typeof body === 'object' && body !== null && 'idProduct' in body
+          ? body.idProduct
+          : undefined;
+      if (!isProductId(idProduct)) {
+        return reply.code(400).send({ error: 'invalid_product' });
+      }
+      return withProducts(reply, async () => {
+        const result = await matcher.match(region, cardId, idProduct);
+        if (result === 'unknown_card') {
+          return notFound(reply);
+        }
+        if (result === 'unknown_product') {
+          return reply.code(422).send({ error: 'unknown_product' });
+        }
+        return reply.code(204).send();
+      });
+    }
+  );
+
+  app.delete<{ Params: { region: string; cardId: string } }>(
+    '/api/catalog/cardmarket/:region/:cardId/match',
+    (request, reply) => {
+      const { region, cardId } = request.params;
+      if (!isRegion(region) || !validId(cardId) || !matcher.clear(region, cardId)) {
+        return notFound(reply);
+      }
+      return reply.code(204).send();
     }
   );
 }

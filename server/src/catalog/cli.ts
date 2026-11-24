@@ -2,13 +2,16 @@
  * Runs one catalog import by hand: `npm run catalog:sync --workspace server
  * [-- --full]`, a price pass with `-- --prices`, or an exchange rates
  * refresh with `-- --rates`. Uses the same
- * configuration as the server (DATA_DIR, CATALOG_LANGUAGES). Safe while the
+ * configuration as the server (DATA_DIR, CATALOG_LANGUAGES), and the
+ * server's database for Cardmarket matches made by hand. Safe while the
  * server runs: SQLite serializes writes.
  */
 import { join } from 'node:path';
 import { loadConfig } from '../config.js';
+import { DB_FILENAME, openDatabase } from '../db.js';
 import { CATALOG_DB_FILENAME, openCatalogDatabase } from './db.js';
 import { runCatalogIngest, type CatalogLogger } from './ingest.js';
+import { CardmarketMatchStore } from './matches-store.js';
 import { runPriceRefresh } from './prices.js';
 import { refreshExchangeRates } from './rates.js';
 import { CatalogStore } from './store.js';
@@ -31,6 +34,7 @@ const log: CatalogLogger = {
 
 const config = loadConfig();
 const db = openCatalogDatabase(join(config.dataDir, CATALOG_DB_FILENAME));
+const serverDb = openDatabase(join(config.dataDir, DB_FILENAME));
 const controller = new AbortController();
 process.once('SIGINT', () => {
   controller.abort(new Error('Interrupted'));
@@ -52,7 +56,8 @@ try {
       process.exitCode = 1;
     }
   } else if (process.argv.includes('--prices')) {
-    if ((await runPriceRefresh(options)).status === 'failed') {
+    const matches = new CardmarketMatchStore(serverDb);
+    if ((await runPriceRefresh({ ...options, matches })).status === 'failed') {
       process.exitCode = 1;
     }
   } else {
@@ -65,4 +70,5 @@ try {
   process.exitCode = 1;
 } finally {
   db.close();
+  serverDb.close();
 }

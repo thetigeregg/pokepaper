@@ -111,6 +111,18 @@ describe('runPriceRefresh', () => {
     expect(store.getCardPrices('intl', 'sv01-172')).toBeUndefined();
   });
 
+  it('keeps the guide’s entries for the matcher', async () => {
+    const { store, refresh } = await setup();
+
+    await refresh();
+
+    expect(store.getPriceGuideEntries([PRODUCTS.promo, 999]).get(PRODUCTS.promo)).toMatchObject({
+      idProduct: PRODUCTS.promo,
+      trend: 1.5,
+    });
+    expect(store.getPriceGuideEntries([999]).size).toBe(0);
+  });
+
   it('serves a region’s prices as one pack', async () => {
     const { store, refresh } = await setup();
     await refresh();
@@ -444,8 +456,10 @@ describe('readCapped', () => {
         })
       );
 
-    expect(await readCapped(chunked('{"ok":true}'), 64)).toBe('{"ok":true}');
-    await expect(readCapped(chunked('x'.repeat(65)), 64)).rejects.toThrow('too large');
+    expect(await readCapped(chunked('{"ok":true}'), 64, 'Test')).toBe('{"ok":true}');
+    await expect(readCapped(chunked('x'.repeat(65)), 64, 'Test')).rejects.toThrow(
+      'Test: too large'
+    );
   });
 });
 
