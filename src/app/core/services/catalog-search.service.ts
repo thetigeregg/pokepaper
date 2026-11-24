@@ -1,7 +1,7 @@
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import type { CatalogSet } from '@pokepaper/shared';
 import { catalogKey, type CatalogSearchRow } from '../data/storage-engine';
-import { nameMatches, prepareQuery } from '../utils/search-text.util';
+import { cardMatches, prepareQuery } from '../utils/search-text.util';
 import { CatalogBrowseService } from './catalog-browse.service';
 import { CatalogLanguageService } from './catalog-language.service';
 import { CatalogSearchIndexService, type IndexedCard } from './catalog-search-index.service';
@@ -187,13 +187,11 @@ export class CatalogSearchService {
     () => new Map(this.browse.groups().map((group) => [group.key, group.name]))
   );
 
-  /** The current catalog's cards matching the query (all of them without one). */
+  /** The current catalog's cards matching the query by name or number (all of them without one). */
   private readonly queryMatches = computed<IndexedCard[]>(() => {
     const cards = this.searchIndex.cards();
     const query = prepareQuery(this._query());
-    return query
-      ? cards.filter((card) => card.names.some((name) => nameMatches(name, query)))
-      : cards;
+    return query ? cards.filter((card) => cardMatches(card, query)) : cards;
   });
 
   readonly results = computed<SearchResults>(() => {

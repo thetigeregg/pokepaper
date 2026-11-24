@@ -201,3 +201,7 @@
 ## v0.32.2 - 2026-11-24
 
 - 284ffc5 chore(deps): update dependencies, Node 24.22.3, rate-limit 11 (#63)
+
+## v0.33.0 - 2026-11-24
+
+- e986b13 feat(cards): search cards by their number in the set (#64)
