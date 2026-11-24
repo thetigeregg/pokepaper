@@ -217,3 +217,7 @@
 ## v0.34.1 - 2026-11-24
 
 - d2e444d fix(catalog): refresh prices when no price guide is stored (#67)
+
+## v0.34.2 - 2026-11-24
+
+- 18b63ed fix(cards): clearer variant and price labels on card detail (#68)
