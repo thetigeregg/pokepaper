@@ -213,3 +213,7 @@
 ## v0.34.0 - 2026-11-24
 
 - c81523b feat(catalog): match unpriced cards to Cardmarket products by hand (#66)
+
+## v0.34.1 - 2026-11-24
+
+- d2e444d fix(catalog): refresh prices when no price guide is stored (#67)
