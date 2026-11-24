@@ -46,13 +46,23 @@ export function nextRunKind(
 }
 
 /**
- * Whether a run should refresh prices: none completed yet, or the last one
- * started at least `pricesRefreshHours` ago. Start times are compared so
- * that runs every 24 hours refresh prices every time, however long each
- * takes.
+ * Whether a run should refresh prices: none completed yet, the last one
+ * started at least `pricesRefreshHours` ago, or no price guide is stored
+ * (a catalog migration forgot it to have it applied anew, and matches made
+ * by hand can't be priced until it is). Start times are compared so that
+ * runs every 24 hours refresh prices every time, however long each takes.
  */
-export function pricesDue(lastStart: Date | null, now: Date, pricesRefreshHours: number): boolean {
-  return !lastStart || now.getTime() - lastStart.getTime() >= pricesRefreshHours * HOUR_MS;
+export function pricesDue(
+  lastStart: Date | null,
+  guideStored: boolean,
+  now: Date,
+  pricesRefreshHours: number
+): boolean {
+  return (
+    !lastStart ||
+    !guideStored ||
+    now.getTime() - lastStart.getTime() >= pricesRefreshHours * HOUR_MS
+  );
 }
 
 /**
@@ -109,7 +119,15 @@ export function startCatalogSchedule(options: CatalogScheduleOptions): CatalogSc
       }
     }
     // Prices are refreshed for whatever the catalog holds, even after a failed import.
-    if (!aborted() && pricesDue(store.lastCompletedPriceRun(), now(), options.pricesRefreshHours)) {
+    if (
+      !aborted() &&
+      pricesDue(
+        store.lastCompletedPriceRun(),
+        store.getPriceGuideState() !== undefined,
+        now(),
+        options.pricesRefreshHours
+      )
+    ) {
       await refreshPrices(client);
     }
   };
