@@ -91,9 +91,12 @@ describe('CardDetailsComponent', () => {
 
   /** Stored prices by card ID; bump `version` to signal a sync stored new ones. */
   let storedPrices: Map<string, CatalogCardPrices>;
+  /** Whether TCGdex keeps every set's reverse holo flags. */
+  let setFlags: boolean;
   const priceService = {
     version: signal(0),
     prices: vi.fn((_region: string, cardId: string) => Promise.resolve(storedPrices.get(cardId))),
+    setFlagsReverseHolos: vi.fn(() => Promise.resolve(setFlags)),
   };
 
   /** Prices show in `currency`, at `rate` per euro, with ECB rates of `ratesDate`. */
@@ -110,6 +113,7 @@ describe('CardDetailsComponent', () => {
     rate = 1;
     stored = new Map();
     storedPrices = new Map();
+    setFlags = false;
     priceService.version.set(0);
     priceService.prices.mockClear();
     repository.setCollectionQuantities.mockClear();
@@ -538,6 +542,17 @@ describe('CardDetailsComponent', () => {
       await settle(fixture);
 
       expect(priceRow(fixture, 'base')?.price).toBe('€2.00');
+      expect(priceRow(fixture, 'reverseHolo')).toBeNull();
+    });
+
+    it('leaves out the reverse holo price of a card that can’t come in one', async () => {
+      storedPrices.set(base.id, prices());
+      setFlags = true;
+      const fixture = create({ ...base, variants: { ...base.variants, reverse: false } });
+      await settle(fixture);
+
+      expect(priceService.setFlagsReverseHolos).toHaveBeenCalledWith('intl', 'sv01');
+      expect(priceRow(fixture, 'base')?.price).toBe('€0.14');
       expect(priceRow(fixture, 'reverseHolo')).toBeNull();
     });
 

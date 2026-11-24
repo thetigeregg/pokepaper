@@ -1,12 +1,75 @@
 import {
   CATALOG_REGIONS,
   type CardmarketFigures,
+  type CatalogCard,
   type CatalogCardPrices,
   type CatalogRegion,
+  type CatalogSet,
   type CollectionEntry,
   type CollectionVariant,
 } from '@pokepaper/shared';
 import { catalogKey } from '../data/storage-engine';
+
+/**
+ * Reverse holos began with Legendary Collection (May 2002). Cardmarket
+ * reports reverse holo figures for some older cards too, which match no
+ * printing (docs/catalog.md → Reverse holo figures).
+ */
+export const FIRST_REVERSE_HOLO_DATE = '2002-05-24';
+
+/**
+ * The rarities printed in reverse holo, for sets whose TCGdex flags can't
+ * tell (`reverseHoloPossible`). Never Ultra or Secret Rares or promos, nor
+ * EX, GX, V, ex and the like, which have a suffix.
+ */
+const REVERSE_HOLO_RARITIES: ReadonlySet<string> = new Set([
+  'Common',
+  'Uncommon',
+  'Rare',
+  'Holo Rare',
+  'Rare Holo',
+]);
+
+type ReverseHoloFields = Pick<CatalogCard, 'rarity' | 'suffix' | 'variants'>;
+
+/**
+ * Whether TCGdex keeps a set's reverse holo flags: most of its plain
+ * (no suffix) commons and uncommons are flagged. One flag isn't enough:
+ * whole sets lack them (every XY set) and some have one card flagged out
+ * of a hundred (Forbidden Light). Docs: docs/catalog.md → Reverse holo figures.
+ */
+export function flagsReverseHolos(cards: readonly ReverseHoloFields[]): boolean {
+  const plain = cards.filter(
+    (card) => (card.rarity === 'Common' || card.rarity === 'Uncommon') && card.suffix === null
+  );
+  return plain.filter((card) => card.variants.reverse).length * 2 > plain.length;
+}
+
+/**
+ * Whether `card` can come in reverse holo, as far as the catalog tells:
+ * always when TCGdex flags it, never in a set from before reverse holos
+ * or one whose flags TCGdex keeps (`setFlagsReverseHolos`, from
+ * `flagsReverseHolos`), and otherwise when it's plain (no suffix) and of a
+ * rarity printed in reverse holo.
+ */
+export function reverseHoloPossible(
+  card: ReverseHoloFields,
+  set: Pick<CatalogSet, 'releaseDate'>,
+  setFlagsReverseHolos: boolean
+): boolean {
+  if (card.variants.reverse) {
+    return true;
+  }
+  if (set.releaseDate !== null && set.releaseDate < FIRST_REVERSE_HOLO_DATE) {
+    return false;
+  }
+  return (
+    !setFlagsReverseHolos &&
+    card.suffix === null &&
+    card.rarity !== null &&
+    REVERSE_HOLO_RARITIES.has(card.rarity)
+  );
+}
 
 /**
  * The price shown for a finish (docs/catalog.md → Prices): Cardmarket's

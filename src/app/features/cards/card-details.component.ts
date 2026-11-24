@@ -123,18 +123,28 @@ export class CardDetailsComponent {
   );
   readonly retreatCost = computed(() => retreatCost(this.card()));
   readonly retreatLabel = computed(() => retreatLabel(this.card()));
-  /** The stored prices of the card they were read for (a slide's card can change). */
+  /**
+   * The stored prices of the card they were read for (a slide's card can
+   * change), and whether TCGdex keeps its set's reverse holo flags.
+   */
   private readonly loadedPrices = signal<{
     key: string;
     prices: CatalogCardPrices | undefined;
+    setFlagsReverseHolos: boolean;
   } | null>(null);
-  private readonly prices = computed(() => {
+  private readonly cardPrices = computed(() => {
     const loaded = this.loadedPrices();
     const card = this.card();
-    return loaded?.key === catalogKey(card.region, card.id) ? loaded.prices : undefined;
+    return loaded?.key === catalogKey(card.region, card.id) ? loaded : null;
   });
+  private readonly prices = computed(() => this.cardPrices()?.prices);
   /** The Price section's rows, one per priced finish (`priceRows`). */
-  readonly priceRows = computed(() => priceRows(this.card(), this.set(), this.prices()));
+  readonly priceRows = computed(() => {
+    const loaded = this.cardPrices();
+    return loaded
+      ? priceRows(this.card(), this.set(), loaded.prices, loaded.setFlagsReverseHolos)
+      : [];
+  });
   readonly pricesUpdated = computed(() => this.prices()?.updated ?? null);
   /** The ECB rates' day when prices are converted from euros, else null. */
   readonly convertedOn = computed(() =>
@@ -165,17 +175,19 @@ export class CardDetailsComponent {
     addIcons({ addCircleOutline, openOutline, removeCircleOutline });
     // Reads the card's prices, and again whenever a sync stores new ones.
     effect((onCleanup) => {
-      const { region, id } = this.card();
+      const { region, id, setId } = this.card();
       this.priceService.version();
       let stale = false;
       onCleanup(() => {
         stale = true;
       });
-      this.priceService
-        .prices(region, id)
-        .then((prices) => {
+      Promise.all([
+        this.priceService.prices(region, id),
+        this.priceService.setFlagsReverseHolos(region, setId),
+      ])
+        .then(([prices, setFlagsReverseHolos]) => {
           if (!stale) {
-            this.loadedPrices.set({ key: catalogKey(region, id), prices });
+            this.loadedPrices.set({ key: catalogKey(region, id), prices, setFlagsReverseHolos });
           }
         })
         .catch((error: unknown) => {
