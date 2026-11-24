@@ -205,3 +205,7 @@
 ## v0.33.0 - 2026-11-24
 
 - e986b13 feat(cards): search cards by their number in the set (#64)
+
+## v0.33.1 - 2026-11-24
+
+- d7940c5 fix(cards): hide reverse holo prices cards can't come in (#65)
