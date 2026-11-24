@@ -83,7 +83,8 @@ describe('prices', () => {
       priceRows(
         card({ variants: variants({ normal: true, reverse: true }) }),
         modern,
-        prices(figures(0.14, 0.1, 0.08), figures(0.28, null, 0.3))
+        prices(figures(0.14, 0.1, 0.08), figures(0.28, null, 0.3)),
+        true
       )
     ).toEqual([
       { finish: 'base', label: 'Normal', price: 0.14, avg7: 0.1, avg30: 0.08 },
@@ -95,30 +96,44 @@ describe('prices', () => {
     const rows = priceRows(
       card({ variants: variants({ holo: true, reverse: true }) }),
       modern,
-      prices(figures(313.78, null, null))
+      prices(figures(313.78, null, null)),
+      true
     );
 
     expect(rows.map((row) => row.label)).toEqual(['Holo']);
   });
 
-  it('leaves out reverse holo figures from before reverse holos existed', () => {
-    const both = prices(figures(441.79, null, null), figures(123.63, null, null));
-    const finishes = (set: { releaseDate: string | null }, reverse = false) =>
-      priceRows(card({ variants: variants({ holo: true, reverse }) }), set, both).map(
-        (row) => row.finish
-      );
+  it('leaves out reverse holo figures for cards that can’t come in one', () => {
+    const both = prices(figures(21.11, null, null), figures(6.84, null, null));
+    const fatesCollide = { releaseDate: '2016-05-02' };
+    const normalOnly = { variants: variants({ normal: true }) };
+    const finishes = (
+      overrides: Partial<CatalogCard>,
+      set: { releaseDate: string | null },
+      setFlagsReverseHolos: boolean
+    ) => priceRows(card(overrides), set, both, setFlagsReverseHolos).map((row) => row.finish);
 
-    expect(finishes({ releaseDate: '1999-01-09' })).toEqual(['base']);
-    expect(finishes({ releaseDate: '1999-01-09' }, true)).toEqual(['base', 'reverseHolo']);
-    expect(finishes({ releaseDate: '2002-05-24' })).toEqual(['base', 'reverseHolo']);
-    expect(finishes({ releaseDate: null })).toEqual(['base', 'reverseHolo']);
+    // Fates Collide's full art Kingdra-EX: its set has no reverse holo flags…
+    expect(
+      finishes({ ...normalOnly, rarity: 'Ultra Rare', suffix: 'EX' }, fatesCollide, false)
+    ).toEqual(['base']);
+    // …but its commons do come in reverse holo.
+    expect(finishes(normalOnly, fatesCollide, false)).toEqual(['base', 'reverseHolo']);
+    // An unflagged card in a set whose flags TCGdex keeps.
+    expect(finishes(normalOnly, modern, true)).toEqual(['base']);
+    // Base Set: before reverse holos, unless TCGdex flags one.
+    const baseSet = { releaseDate: '1999-01-09' };
+    expect(finishes(normalOnly, baseSet, false)).toEqual(['base']);
+    expect(finishes({ variants: variants({ holo: true, reverse: true }) }, baseSet, false)).toEqual(
+      ['base', 'reverseHolo']
+    );
   });
 
   it('skips finishes without a headline price, and cards without prices', () => {
-    expect(priceRows(card({}), modern, prices(figures(null, 2, null), figures(1, 1, 1)))).toEqual([
-      { finish: 'reverseHolo', label: 'Reverse holo', price: 1, avg7: 1, avg30: 1 },
-    ]);
-    expect(priceRows(card({}), modern, undefined)).toEqual([]);
+    expect(
+      priceRows(card({}), modern, prices(figures(null, 2, null), figures(1, 1, 1)), true)
+    ).toEqual([{ finish: 'reverseHolo', label: 'Reverse holo', price: 1, avg7: 1, avg30: 1 }]);
+    expect(priceRows(card({}), modern, undefined, true)).toEqual([]);
   });
 });
 

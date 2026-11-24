@@ -91,9 +91,12 @@ describe('CardDetailsComponent', () => {
 
   /** Stored prices by card ID; bump `version` to signal a sync stored new ones. */
   let storedPrices: Map<string, CatalogCardPrices>;
+  /** Whether TCGdex keeps every set's reverse holo flags. */
+  let setFlags: boolean;
   const priceService = {
     version: signal(0),
     prices: vi.fn((_region: string, cardId: string) => Promise.resolve(storedPrices.get(cardId))),
+    setFlagsReverseHolos: vi.fn(() => Promise.resolve(setFlags)),
   };
 
   /** Prices show in `currency`, at `rate` per euro, with ECB rates of `ratesDate`. */
@@ -110,6 +113,7 @@ describe('CardDetailsComponent', () => {
     rate = 1;
     stored = new Map();
     storedPrices = new Map();
+    setFlags = false;
     priceService.version.set(0);
     priceService.prices.mockClear();
     repository.setCollectionQuantities.mockClear();
@@ -541,6 +545,17 @@ describe('CardDetailsComponent', () => {
       expect(priceRow(fixture, 'reverseHolo')).toBeNull();
     });
 
+    it('leaves out the reverse holo price of a card that can’t come in one', async () => {
+      storedPrices.set(base.id, prices());
+      setFlags = true;
+      const fixture = create({ ...base, variants: { ...base.variants, reverse: false } });
+      await settle(fixture);
+
+      expect(priceService.setFlagsReverseHolos).toHaveBeenCalledWith('intl', 'sv01');
+      expect(priceRow(fixture, 'base')?.price).toBe('€0.14');
+      expect(priceRow(fixture, 'reverseHolo')).toBeNull();
+    });
+
     it('has no Price section for a card Cardmarket doesn’t price', async () => {
       const fixture = create(base);
       await settle(fixture);
@@ -580,6 +595,22 @@ describe('CardDetailsComponent', () => {
 
       expect(error).toHaveBeenCalledWith('catalog.card_prices_failed', expect.any(Error));
       expect(headers(fixture)).not.toContain('Price · Cardmarket');
+      error.mockRestore();
+    });
+
+    it('still shows prices when the set’s reverse holo flags can’t be read', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      priceService.setFlagsReverseHolos.mockRejectedValueOnce(new Error('disk'));
+      storedPrices.set(base.id, prices());
+      const fixture = create(base);
+      await settle(fixture);
+
+      expect(error).toHaveBeenCalledWith(
+        'catalog.set_reverse_holo_flags_failed',
+        expect.any(Error)
+      );
+      expect(priceRow(fixture, 'base')?.price).toBe('€0.14');
+      expect(priceRow(fixture, 'reverseHolo')?.price).toBe('€1.50');
       error.mockRestore();
     });
   });

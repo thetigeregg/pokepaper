@@ -1,5 +1,16 @@
-import type { CatalogCardPrices, CatalogRegion, CollectionEntry } from '@pokepaper/shared';
-import { collectionValue, headlinePrice, variantFigures } from './catalog-price.util';
+import type {
+  CatalogCard,
+  CatalogCardPrices,
+  CatalogRegion,
+  CollectionEntry,
+} from '@pokepaper/shared';
+import {
+  collectionValue,
+  flagsReverseHolos,
+  headlinePrice,
+  reverseHoloPossible,
+  variantFigures,
+} from './catalog-price.util';
 
 const prices = (
   base: number | null,
@@ -28,6 +39,115 @@ describe('headlinePrice', () => {
     expect(headlinePrice({ trend: 0.14, avg7: 0.1, avg30: 0.08 })).toBe(0.14);
     expect(headlinePrice({ trend: null, avg7: 0.1, avg30: 0.08 })).toBe(0.08);
     expect(headlinePrice({ trend: null, avg7: 0.1, avg30: null })).toBeNull();
+  });
+});
+
+/** A card's reverse holo fields: plain, normal only, unless `overrides` say otherwise. */
+const printing = (
+  overrides: {
+    region?: CatalogRegion;
+    rarity?: string | null;
+    suffix?: string | null;
+    reverse?: boolean;
+  } = {}
+): Pick<CatalogCard, 'region' | 'rarity' | 'suffix' | 'variants'> => ({
+  region: overrides.region ?? 'intl',
+  rarity: overrides.rarity === undefined ? 'Common' : overrides.rarity,
+  suffix: overrides.suffix ?? null,
+  variants: {
+    normal: true,
+    reverse: overrides.reverse ?? false,
+    holo: false,
+    firstEdition: false,
+    wPromo: false,
+  },
+});
+
+describe('flagsReverseHolos', () => {
+  it('holds when most of a set’s plain commons and uncommons are flagged', () => {
+    const flagged = printing({ reverse: true });
+    const unflagged = printing();
+
+    expect(flagsReverseHolos([flagged, flagged, printing({ rarity: 'Uncommon' })])).toBe(true);
+    // Forbidden Light: one flagged common in a set of unflagged ones.
+    expect(flagsReverseHolos([flagged, unflagged, unflagged])).toBe(false);
+    expect(flagsReverseHolos([flagged, unflagged])).toBe(false);
+    expect(flagsReverseHolos([])).toBe(false);
+  });
+
+  it('counts only plain commons and uncommons', () => {
+    const others = [
+      printing({ rarity: 'Rare' }),
+      printing({ rarity: 'Ultra Rare', suffix: 'EX' }),
+      printing({ suffix: 'EX' }), // a promo Tornadus-EX listed as Common
+      printing({ rarity: null }),
+    ];
+
+    expect(flagsReverseHolos([printing({ reverse: true }), ...others])).toBe(true);
+    expect(
+      flagsReverseHolos([
+        printing(),
+        ...others.map((card) => ({ ...card, variants: { ...card.variants, reverse: true } })),
+      ])
+    ).toBe(false);
+  });
+});
+
+describe('reverseHoloPossible', () => {
+  const modern = { releaseDate: '2016-05-02' };
+
+  it('holds whenever TCGdex flags the card', () => {
+    expect(reverseHoloPossible(printing({ reverse: true }), modern, true)).toBe(true);
+    expect(
+      reverseHoloPossible(printing({ reverse: true }), { releaseDate: '1999-01-09' }, false)
+    ).toBe(true);
+  });
+
+  it('fails for unflagged cards from before reverse holos', () => {
+    expect(reverseHoloPossible(printing(), { releaseDate: '1999-01-09' }, false)).toBe(false);
+    expect(reverseHoloPossible(printing(), { releaseDate: '2002-05-24' }, false)).toBe(true);
+    expect(reverseHoloPossible(printing(), { releaseDate: null }, false)).toBe(true);
+  });
+
+  it('fails for unflagged cards in a set whose flags TCGdex keeps', () => {
+    // EX Dragon's Kingdra ex: holo only, in a set with flagged commons.
+    expect(
+      reverseHoloPossible(
+        {
+          ...printing({ rarity: 'Rare', suffix: 'ex' }),
+          variants: { ...printing().variants, normal: false, holo: true },
+        },
+        { releaseDate: '2003-11-24' },
+        true
+      )
+    ).toBe(false);
+    expect(reverseHoloPossible(printing(), modern, true)).toBe(false);
+  });
+
+  it('goes by rarity and suffix in a set without flags', () => {
+    for (const rarity of ['Common', 'Uncommon', 'Rare', 'Holo Rare', 'Rare Holo']) {
+      expect(reverseHoloPossible(printing({ rarity }), modern, false)).toBe(true);
+    }
+    // Fates Collide's full art Kingdra-EX.
+    expect(
+      reverseHoloPossible(printing({ rarity: 'Ultra Rare', suffix: 'EX' }), modern, false)
+    ).toBe(false);
+    expect(reverseHoloPossible(printing({ rarity: 'Rare', suffix: 'EX' }), modern, false)).toBe(
+      false
+    );
+    for (const rarity of ['Secret Rare', 'Promo', 'Shiny rare', 'None', null]) {
+      expect(reverseHoloPossible(printing({ rarity }), modern, false)).toBe(false);
+    }
+  });
+
+  it('goes only by the flags in the Japan & Asia catalog', () => {
+    expect(reverseHoloPossible(printing({ region: 'asia' }), modern, false)).toBe(false);
+    expect(
+      reverseHoloPossible(printing({ region: 'asia', rarity: 'Holo Rare' }), modern, false)
+    ).toBe(false);
+    expect(reverseHoloPossible(printing({ region: 'asia', reverse: true }), modern, false)).toBe(
+      true
+    );
   });
 });
 
