@@ -8,6 +8,7 @@
   <ion-toolbar>
     <ion-searchbar
       placeholder="Search Cardmarket"
+      [attr.maxlength]="maxQueryLength"
       [debounce]="300"
       (ionInput)="search($event)"
       data-testid="matcher-search"
@@ -61,7 +62,7 @@
 
     <ion-list-header>
       <ion-label data-testid="matcher-results-header">
-        {{ query().trim() ? 'Results' : 'Suggestions' }}
+        {{ result()?.searched ? 'Results' : 'Suggestions' }}
       </ion-label>
     </ion-list-header>
     @switch (state()) {
@@ -99,12 +100,12 @@
             >
               <ion-icon slot="icon-only" name="open-outline"></ion-icon>
             </ion-button>
-            @if (current()?.idProduct === product.idProduct && current()?.matchedByHand) {
+            @if (current()?.idProduct === product.idProduct) {
               <ion-icon
                 slot="end"
                 name="checkmark-outline"
                 color="primary"
-                aria-label="Matched"
+                aria-label="Current match"
                 data-testid="candidate-matched"
               ></ion-icon>
             } @else {

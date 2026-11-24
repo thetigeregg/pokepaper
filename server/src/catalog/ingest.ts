@@ -23,6 +23,7 @@ import {
   type Vocabulary,
 } from './normalize.js';
 import { applyEnergyScans, planEnergyScans, type EnergyScanChange } from './energy-scans.js';
+import type { CardmarketMatchSource } from './prices.js';
 import type { CatalogRunKind, CatalogStore } from './store.js';
 import { TcgdexResponseError, TcgdexUnavailableError, type TcgdexClient } from './tcgdex-client.js';
 
@@ -43,6 +44,11 @@ export interface CatalogIngestOptions {
    * refetch every card, picking up corrections.
    */
   kind: CatalogRunKind;
+  /**
+   * Cardmarket matches made by hand: a card matched by hand keeps its
+   * prices when TCGdex stops reporting a product for it.
+   */
+  matches?: Pick<CardmarketMatchSource, 'list'>;
   log: CatalogLogger;
   signal?: AbortSignal;
 }
@@ -395,9 +401,11 @@ async function ingestSet(
   }
   // One transaction: a set stored without its products would stay unmapped,
   // since light runs skip stored cards.
+  const forgets = [...products.values()].includes(null);
+  const matchedByHand = new Set(forgets ? context.matches?.list(region).keys() : []);
   const written = store.transaction(() => {
     const changed = store.writeSet(set, cards);
-    store.saveCardmarketProducts(region, products);
+    store.saveCardmarketProducts(region, products, matchedByHand);
     return changed;
   });
   return written ? 'written' : 'unchanged';

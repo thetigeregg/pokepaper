@@ -168,9 +168,6 @@ export async function runPriceRefresh(options: PriceRefreshOptions): Promise<Pri
       return finish('failed');
     }
 
-    // Kept for the matcher, which shows any product's prices and prices a
-    // card as soon as it's matched.
-    store.replacePriceGuideEntries(download.entries);
     for (const { region, products, byHand } of regions) {
       signal?.throwIfAborted();
       const entries = store.listCardIds(region).map((cardId) => {
@@ -192,11 +189,17 @@ export async function runPriceRefresh(options: PriceRefreshOptions): Promise<Pri
       store.pruneOrphanProducts(region);
       stats.versions[region] = store.pricesVersion(region);
     }
-    store.savePriceGuideState({
-      etag: download.etag,
-      createdAt: download.createdAt,
-      productsVersion,
-      matchesVersion,
+    // The entries are kept for the matcher, which shows any product's prices
+    // and prices a card as soon as it's matched; saved with the guide's
+    // state, so they always carry its date.
+    store.transaction(() => {
+      store.replacePriceGuideEntries(download.entries);
+      store.savePriceGuideState({
+        etag: download.etag,
+        createdAt: download.createdAt,
+        productsVersion,
+        matchesVersion,
+      });
     });
     return finish('ok');
   } catch (error: unknown) {

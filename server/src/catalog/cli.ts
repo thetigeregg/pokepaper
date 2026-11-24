@@ -3,12 +3,14 @@
  * [-- --full]`, a price pass with `-- --prices`, or an exchange rates
  * refresh with `-- --rates`. Uses the same
  * configuration as the server (DATA_DIR, CATALOG_LANGUAGES), and the
- * server's database for Cardmarket matches made by hand. Safe while the
- * server runs: SQLite serializes writes.
+ * server's database, when there is one, for Cardmarket matches made by hand
+ * (imports and price passes). Safe while the server runs: SQLite serializes
+ * writes.
  */
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadConfig } from '../config.js';
-import { DB_FILENAME, openDatabase } from '../db.js';
+import { DB_FILENAME, openDatabase, type Db } from '../db.js';
 import { CATALOG_DB_FILENAME, openCatalogDatabase } from './db.js';
 import { runCatalogIngest, type CatalogLogger } from './ingest.js';
 import { CardmarketMatchStore } from './matches-store.js';
@@ -34,7 +36,8 @@ const log: CatalogLogger = {
 
 const config = loadConfig();
 const db = openCatalogDatabase(join(config.dataDir, CATALOG_DB_FILENAME));
-const serverDb = openDatabase(join(config.dataDir, DB_FILENAME));
+const serverDbPath = join(config.dataDir, DB_FILENAME);
+let serverDb: Db | undefined;
 const controller = new AbortController();
 process.once('SIGINT', () => {
   controller.abort(new Error('Interrupted'));
@@ -55,20 +58,25 @@ try {
     } else if (result === 'failed') {
       process.exitCode = 1;
     }
-  } else if (process.argv.includes('--prices')) {
-    const matches = new CardmarketMatchStore(serverDb);
-    if ((await runPriceRefresh({ ...options, matches })).status === 'failed') {
-      process.exitCode = 1;
-    }
   } else {
-    await runCatalogIngest({
-      ...options,
-      kind: process.argv.includes('--full') ? 'full' : 'light',
-    });
+    // Matches made by hand live in the server's database; without one, there are none.
+    serverDb = existsSync(serverDbPath) ? openDatabase(serverDbPath) : undefined;
+    const matches = serverDb ? new CardmarketMatchStore(serverDb) : undefined;
+    if (process.argv.includes('--prices')) {
+      if ((await runPriceRefresh({ ...options, matches })).status === 'failed') {
+        process.exitCode = 1;
+      }
+    } else {
+      await runCatalogIngest({
+        ...options,
+        matches,
+        kind: process.argv.includes('--full') ? 'full' : 'light',
+      });
+    }
   }
 } catch {
   process.exitCode = 1;
 } finally {
   db.close();
-  serverDb.close();
+  serverDb?.close();
 }

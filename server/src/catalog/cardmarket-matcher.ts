@@ -1,8 +1,9 @@
-import type {
-  CardmarketCandidate,
-  CardmarketCandidates,
-  CatalogCard,
-  CatalogRegion,
+import {
+  MAX_CARDMARKET_QUERY_LENGTH,
+  type CardmarketCandidate,
+  type CardmarketCandidates,
+  type CatalogCard,
+  type CatalogRegion,
 } from '@pokepaper/shared';
 import type { CatalogLogger } from './ingest.js';
 import { isProductId, parseGuideEntry, toWirePrices } from './price-data.js';
@@ -22,11 +23,13 @@ const FETCH_TIMEOUT_MS = 120_000;
 const MAX_PRODUCTS_BYTES = 128 * 1024 * 1024;
 /** The stored list is checked for a newer one (with its ETag) once it's this old. */
 export const PRODUCTS_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+/** After a failed check, a stored list isn't checked again for this long. */
+export const PRODUCTS_RETRY_MS = 60 * 60 * 1000;
 /** At most this many candidates per answer (`truncated` beyond). */
 export const MAX_CANDIDATES = 50;
 /** Searches shorter than this (after `cardmarketSearchText`) get the suggestions instead. */
 export const MIN_QUERY_LENGTH = 2;
-export const MAX_QUERY_LENGTH = 100;
+export const MAX_QUERY_LENGTH = MAX_CARDMARKET_QUERY_LENGTH;
 
 /** Writes to `cardmarket_matches` (`CardmarketMatchStore`). */
 export interface CardmarketMatchWriter extends CardmarketMatchSource {
@@ -57,6 +60,8 @@ type Json = Record<string, unknown>;
 export class CardmarketMatcher {
   private readonly now: () => Date;
   private refreshing: Promise<void> | null = null;
+  /** When the last check of the product list failed (ms since the epoch), if one did. */
+  private lastFailure: number | null = null;
 
   constructor(private readonly options: CardmarketMatcherOptions) {
     this.now = options.now ?? ((): Date => new Date());
@@ -108,6 +113,7 @@ export class CardmarketMatcher {
             },
       products,
       truncated: found.length > MAX_CANDIDATES,
+      searched: search.length >= MIN_QUERY_LENGTH,
     };
   }
 
@@ -198,36 +204,60 @@ export class CardmarketMatcher {
     return [];
   }
 
+  /** Resolves once a check of the product list in progress has finished (tests). */
+  async settled(): Promise<void> {
+    await this.refreshing?.catch(() => undefined);
+  }
+
   /**
-   * Makes sure a product list is stored, checking for a newer one once the
-   * stored one is `PRODUCTS_MAX_AGE_MS` old. Concurrent calls share one
-   * download. A failed check keeps the stored list (logged); with none
-   * stored, throws `CardmarketProductsUnavailableError`.
+   * Makes sure a product list is stored. With none stored, waits for the
+   * download, throwing `CardmarketProductsUnavailableError` if it fails.
+   * Once the stored one is `PRODUCTS_MAX_AGE_MS` old, it's checked for a
+   * newer one in the background, so answers never wait on Cardmarket; after
+   * a failed check, not again for `PRODUCTS_RETRY_MS`.
    */
   private async ensureProducts(): Promise<void> {
     const state = this.options.store.getCardmarketProductsState();
-    if (state && this.now().getTime() - Date.parse(state.checkedAt) < PRODUCTS_MAX_AGE_MS) {
-      return;
-    }
-    this.refreshing ??= this.refreshProducts().finally(() => {
-      this.refreshing = null;
-    });
-    try {
-      await this.refreshing;
-    } catch (error: unknown) {
-      this.options.log.warn({ err: error }, 'catalog.cardmarket_products_failed');
-      if (!state) {
+    const now = this.now().getTime();
+    if (!state) {
+      try {
+        await this.refresh();
+      } catch (error: unknown) {
         throw new CardmarketProductsUnavailableError('Cardmarket product list unavailable', {
           cause: error,
         });
       }
+      return;
     }
+    const due = now - Date.parse(state.checkedAt) >= PRODUCTS_MAX_AGE_MS;
+    const retrying = this.lastFailure !== null && now - this.lastFailure < PRODUCTS_RETRY_MS;
+    if (due && !retrying) {
+      this.refresh().catch(() => undefined); // Logged in refresh().
+    }
+  }
+
+  /** Downloads the product list; concurrent calls share one download. Failures are logged. */
+  private refresh(): Promise<void> {
+    this.refreshing ??= this.refreshProducts()
+      .then(() => {
+        this.lastFailure = null;
+      })
+      .catch((error: unknown) => {
+        this.lastFailure = this.now().getTime();
+        this.options.log.warn({ err: error }, 'catalog.cardmarket_products_failed');
+        throw error;
+      })
+      .finally(() => {
+        this.refreshing = null;
+      });
+    return this.refreshing;
   }
 
   private async refreshProducts(): Promise<void> {
     const { store, log } = this.options;
     const fetchFn = this.options.fetch ?? fetch;
     const previous = store.getCardmarketProductsState();
+    const startedAt = Date.now();
     const response = await fetchFn(CARDMARKET_PRODUCTS_URL, {
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       headers: previous?.etag ? { 'If-None-Match': previous.etag } : {},
@@ -251,7 +281,11 @@ export class CardmarketMatcher {
       createdAt: list.createdAt,
       checkedAt,
     });
-    log.info({ products: list.products.length }, 'catalog.cardmarket_products_stored');
+    // Parsing and storing run on the server's event loop: about a second, daily at most.
+    log.info(
+      { products: list.products.length, durationMs: Date.now() - startedAt },
+      'catalog.cardmarket_products_stored'
+    );
   }
 }
 

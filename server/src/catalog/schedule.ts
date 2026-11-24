@@ -99,6 +99,7 @@ export function startCatalogSchedule(options: CatalogScheduleOptions): CatalogSc
         client,
         languages: options.languages,
         kind,
+        matches: options.matches,
         log,
         signal: controller.signal,
       });

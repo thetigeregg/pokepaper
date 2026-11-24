@@ -29,6 +29,7 @@ import {
 } from '@ionic/angular';
 import {
   cardmarketProductUrl,
+  MAX_CARDMARKET_QUERY_LENGTH,
   type CardmarketCandidate,
   type CardmarketCandidates,
   type CatalogCard,
@@ -100,6 +101,8 @@ export class CardmarketMatcherComponent implements OnInit {
   /** The language the card is shown in: names it, and filters Cardmarket's offers. */
   languageProp!: CatalogLanguage;
 
+  /** The server refuses longer searches. */
+  readonly maxQueryLength = MAX_CARDMARKET_QUERY_LENGTH;
   readonly query = signal('');
   readonly state = signal<LoadState>('loading');
   readonly result = signal<CardmarketCandidates | null>(null);
@@ -151,10 +154,11 @@ export class CardmarketMatcherComponent implements OnInit {
     }
   }
 
-  /** The product's headline price in the picked currency: base finish, else reverse holo. */
+  /** The product's headline price in the picked currency: base finish's, else reverse holo's. */
   price(product: CardmarketCandidate): string | null {
-    const figures = product.prices?.base ?? product.prices?.reverseHolo;
-    const euros = figures ? headlinePrice(figures) : null;
+    const { base, reverseHolo } = product.prices ?? {};
+    const euros =
+      (base ? headlinePrice(base) : null) ?? (reverseHolo ? headlinePrice(reverseHolo) : null);
     return euros === null ? null : this.currencyService.format(euros);
   }
 

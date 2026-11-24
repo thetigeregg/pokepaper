@@ -49,6 +49,7 @@ describe('CardmarketMatcherComponent', () => {
     current: null,
     products: [product(286309), product(363682, { added: null, inSet: false, prices: null })],
     truncated: false,
+    searched: false,
     ...overrides,
   });
 
@@ -125,7 +126,7 @@ describe('CardmarketMatcherComponent', () => {
         resolveOld = resolve;
       })
     );
-    matches.candidates.mockResolvedValueOnce(answer({ products: [product(1)] }));
+    matches.candidates.mockResolvedValueOnce(answer({ products: [product(1)], searched: true }));
     const searchbar = query('matcher-search');
 
     searchbar?.dispatchEvent(new CustomEvent('ionInput', { detail: { value: 'MMew' } }));
@@ -138,6 +139,41 @@ describe('CardmarketMatcherComponent', () => {
     expect(query('candidate-1')).not.toBeNull();
     expect(query('candidate-2')).toBeNull();
     expect(text('matcher-results-header')).toBe('Results');
+  });
+
+  it('heads suggestions as such when the search was too short to run', async () => {
+    await create();
+    expect(text('matcher-results-header')).toBe('Suggestions');
+
+    matches.candidates.mockResolvedValueOnce(answer({ searched: false }));
+    query('matcher-search')?.dispatchEvent(new CustomEvent('ionInput', { detail: { value: 'M' } }));
+    await settle();
+
+    expect(text('matcher-results-header')).toBe('Suggestions');
+  });
+
+  it('limits searches to the length the server takes', async () => {
+    await create();
+
+    expect(query('matcher-search')?.getAttribute('maxlength')).toBe('100');
+  });
+
+  it('shows the reverse holo price when the base finish has no headline price', async () => {
+    await create(
+      answer({
+        products: [
+          product(7, {
+            prices: {
+              updated: '2026-11-24T01:45:23.000Z',
+              base: { trend: null, avg7: 0.2, avg30: null },
+              reverseHolo: { trend: 0.5, avg7: null, avg30: null },
+            },
+          }),
+        ],
+      })
+    );
+
+    expect(text('candidate-7')).toContain('€0.50');
   });
 
   it('matches a product and closes', async () => {
@@ -171,15 +207,16 @@ describe('CardmarketMatcherComponent', () => {
     expect(modals.dismiss).toHaveBeenCalledWith(undefined, 'clear');
   });
 
-  it('shows TCGdex’s product as the current one, without removing it', async () => {
+  it('shows TCGdex’s product as the current one, without removing or matching it', async () => {
     await create(answer({ current: { idProduct: 286309, matchedByHand: false, name: null } }));
 
     expect(text('matcher-current')).toContain('Product 286309');
     expect(text('matcher-current')).toContain('From TCGdex');
     expect(query('matcher-clear')).toBeNull();
     expect(
-      query('candidate-286309')?.querySelector('[data-testid="candidate-match"]')
+      query('candidate-286309')?.querySelector('[data-testid="candidate-matched"]')
     ).not.toBeNull();
+    expect(query('candidate-286309')?.querySelector('[data-testid="candidate-match"]')).toBeNull();
   });
 
   it('reports a match it couldn’t save and stays open', async () => {

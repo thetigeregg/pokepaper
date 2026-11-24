@@ -287,7 +287,16 @@ export interface CardmarketCandidates {
   products: CardmarketCandidate[];
   /** More products matched than `products` holds: narrow the search. */
   truncated: boolean;
+  /**
+   * Whether `products` are search results. False when they're the
+   * suggestions: without `q`, or with one too short to search (fewer than
+   * two letters or digits once spaces and punctuation are dropped).
+   */
+  searched: boolean;
 }
+
+/** The longest `q` the candidates route takes (characters). */
+export const MAX_CARDMARKET_QUERY_LENGTH = 100;
 
 /** `PUT /api/catalog/cardmarket/:region/:cardId/match` body. */
 export interface CardmarketMatchRequest {

@@ -412,6 +412,27 @@ describe('runPriceRefresh', () => {
     expect(store.lastCompletedPriceRun()).toBeNull();
   });
 
+  it('keeps the guide’s entries only with its state, never one without the other', async () => {
+    const { store, refresh } = await setup();
+    await refresh();
+    const state = store.getPriceGuideState();
+    const cardmarket = fakeCardmarket(
+      cardmarketGuide({ [PRODUCTS.promo]: guideFigures(9) }, '2026-11-21T02:43:56+0100')
+    );
+    // Fails after the per-region writes began, before the guide was kept.
+    const writeCardPrices = vi.spyOn(store, 'writeCardPrices').mockImplementationOnce(() => {
+      throw new Error('disk full');
+    });
+
+    await expect(refresh({ fetch: cardmarket.fetch })).rejects.toThrow('disk full');
+
+    expect(store.getPriceGuideState()).toEqual(state);
+    expect(store.getPriceGuideEntries([PRODUCTS.promo]).get(PRODUCTS.promo)).toMatchObject({
+      trend: 1.5,
+    });
+    writeCardPrices.mockRestore();
+  });
+
   it('records a failed pass and rethrows database errors, even if recording fails too', async () => {
     const { store, refresh } = await setup();
     const log = silentLogger();

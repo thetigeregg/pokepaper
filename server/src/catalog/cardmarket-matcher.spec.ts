@@ -7,6 +7,7 @@ import {
   MAX_CANDIDATES,
   parseProductList,
   PRODUCTS_MAX_AGE_MS,
+  PRODUCTS_RETRY_MS,
 } from './cardmarket-matcher.js';
 import { runCatalogIngest } from './ingest.js';
 import { CardmarketMatchStore } from './matches-store.js';
@@ -64,7 +65,7 @@ async function setup(options: { priced?: boolean; productList?: unknown } = {}) 
     store,
     matches,
     log,
-    fetch: products.fetch,
+    fetch: (input, init) => products.fetch(input, init), // Swappable in tests.
     now: () => clock.now,
   });
   return { store, matches, matcher, products, prices, refresh, log, clock };
@@ -89,6 +90,7 @@ describe('CardmarketMatcher.candidates', () => {
     expect(candidates).toEqual({
       current: null,
       truncated: false,
+      searched: false,
       products: [
         {
           idProduct: UNMAPPED_PRODUCTS.energySearch,
@@ -155,7 +157,12 @@ describe('CardmarketMatcher.candidates', () => {
 
     const candidates = await matcher.candidates('asia', 'SV2a-001');
 
-    expect(candidates).toEqual({ current: null, products: [], truncated: false });
+    expect(candidates).toEqual({
+      current: null,
+      products: [],
+      truncated: false,
+      searched: false,
+    });
   });
 
   it('searches every product name, the set’s expansions first, ignoring spaces', async () => {
@@ -174,12 +181,15 @@ describe('CardmarketMatcher.candidates', () => {
     ]);
   });
 
-  it('treats a search shorter than two letters as none', async () => {
+  it('treats a search shorter than two letters as none, and says so', async () => {
     const { matcher } = await setup();
 
-    const candidates = await matcher.candidates('intl', 'sv01-172', ' e ');
+    const short = await matcher.candidates('intl', 'sv01-172', ' e ');
+    const japanese = await matcher.candidates('intl', 'sv01-172', 'フシギダネ');
+    const searched = await matcher.candidates('intl', 'sv01-172', 'energy');
 
-    expect(candidates?.products).toHaveLength(2);
+    expect(short?.products).toHaveLength(2);
+    expect([short?.searched, japanese?.searched, searched?.searched]).toEqual([false, false, true]);
   });
 
   it('caps the products offered and says so', async () => {
@@ -242,6 +252,7 @@ describe('Cardmarket’s product list', () => {
 
     clock.now = new Date(clock.now.getTime() + PRODUCTS_MAX_AGE_MS);
     await matcher.candidates('intl', 'sv01-172');
+    await matcher.settled();
 
     expect(products.requests).toBe(2); // An empty 304.
     expect(store.getCardmarketProductsState()).toMatchObject({
@@ -269,24 +280,57 @@ describe('Cardmarket’s product list', () => {
     ]);
 
     clock.now = new Date(clock.now.getTime() + PRODUCTS_MAX_AGE_MS);
-    const candidates = await matcher.candidates('intl', 'sv01-172');
+    // Answered from the stored list while the newer one downloads.
+    const stale = await matcher.candidates('intl', 'sv01-172');
+    await matcher.settled();
+    const fresh = await matcher.candidates('intl', 'sv01-172');
 
+    expect(stale?.products).toHaveLength(2);
     // Pineco's product is gone too, so the set maps to no expansion now.
-    expect(candidates?.products.map((product) => [product.idProduct, product.inSet])).toEqual([
+    expect(fresh?.products.map((product) => [product.idProduct, product.inSet])).toEqual([
       [600099, false],
     ]);
   });
 
-  it('keeps the stored list when a check fails', async () => {
+  it('keeps the stored list when a check fails, checking again an hour later', async () => {
     const { matcher, products, clock, log } = await setup();
     await matcher.candidates('intl', 'sv01-172');
     products.current = new Status(503);
 
     clock.now = new Date(clock.now.getTime() + PRODUCTS_MAX_AGE_MS);
     const candidates = await matcher.candidates('intl', 'sv01-172');
+    await matcher.settled();
+    await matcher.candidates('intl', 'sv01-172');
 
     expect(candidates?.products).toHaveLength(2);
     expect(log.warnings).toEqual(['catalog.cardmarket_products_failed']);
+    expect(products.requests).toBe(2);
+
+    clock.now = new Date(clock.now.getTime() + PRODUCTS_RETRY_MS);
+    products.current = fixtureProductList();
+    await matcher.candidates('intl', 'sv01-172');
+    await matcher.settled();
+    expect(products.requests).toBe(3);
+    expect(log.warnings).toHaveLength(1);
+  });
+
+  it('never makes an answer wait for a check', async () => {
+    const { matcher, products, clock } = await setup();
+    await matcher.candidates('intl', 'sv01-172');
+    let release: () => void = () => undefined;
+    products.fetch = () =>
+      new Promise((resolve) => {
+        release = () => {
+          resolve(new Response(null, { status: 503 }));
+        };
+      });
+
+    clock.now = new Date(clock.now.getTime() + PRODUCTS_MAX_AGE_MS);
+    const candidates = await matcher.candidates('intl', 'sv01-172');
+
+    expect(candidates?.products).toHaveLength(2);
+    release();
+    await matcher.settled();
   });
 
   it('is unavailable when it can’t be downloaded and none is stored', async () => {
@@ -368,6 +412,33 @@ describe('CardmarketMatcher.match / clear', () => {
     await matcher.match('intl', 'sv01-172', UNMAPPED_PRODUCTS.energySearchFullArt);
 
     expect(store.getCardPrices('intl', 'sv01-172')).toBeUndefined();
+  });
+
+  it('keep their prices when a full import forgets TCGdex’s product', async () => {
+    const { store, matcher, matches } = await setup();
+    await matcher.match('intl', 'sv01-001', UNMAPPED_PRODUCTS.megaMewtwo);
+    const fake = fakeTcgdex();
+    for (const path of ['/en/cards/sv01-001', '/fr/cards/sv01-001']) {
+      fake.routes.set(path, {
+        ...(fake.routes.get(path) as object),
+        pricing: { cardmarket: null },
+      });
+    }
+
+    await runCatalogIngest({
+      store,
+      client: fakeClient(fake),
+      languages: LANGUAGES,
+      kind: 'full',
+      matches,
+      log: silentLogger(),
+    });
+
+    expect(store.getCardmarketProductOf('intl', 'sv01-001')).toBeUndefined();
+    expect(store.getCardPrices('intl', 'sv01-001')).toMatchObject({
+      idProduct: UNMAPPED_PRODUCTS.megaMewtwo,
+      matchedByHand: true,
+    });
   });
 
   it('are kept by later price passes', async () => {

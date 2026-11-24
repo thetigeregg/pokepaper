@@ -510,12 +510,14 @@ export class CatalogStore {
   /**
    * Records the Cardmarket product of cards (from TCGdex's card details), in
    * one transaction. `null` forgets a card's product, and its prices with
-   * it: the price pass leaves cards without a product alone. Bumps the
-   * products version when anything changed; returns how many cards did.
+   * it (the price pass leaves cards without a product alone), except for
+   * cards in `matchedByHand`, priced by their own match. Bumps the products
+   * version when anything changed; returns how many cards did.
    */
   saveCardmarketProducts(
     region: CatalogRegion,
-    products: ReadonlyMap<string, number | null>
+    products: ReadonlyMap<string, number | null>,
+    matchedByHand: ReadonlySet<string> = new Set()
   ): number {
     return this.db.transaction(() => {
       const upsert = this.db.prepare(
@@ -534,7 +536,9 @@ export class CatalogStore {
       for (const [cardId, idProduct] of products) {
         if (idProduct === null) {
           changed += remove.run(region, cardId).changes;
-          pricesRemoved += removePrices.run(region, cardId).changes;
+          if (!matchedByHand.has(cardId)) {
+            pricesRemoved += removePrices.run(region, cardId).changes;
+          }
         } else {
           changed += upsert.run(region, cardId, idProduct).changes;
         }
