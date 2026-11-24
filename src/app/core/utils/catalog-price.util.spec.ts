@@ -45,6 +45,41 @@ describe('headlinePrice', () => {
     expect(headlinePrice({ trend: null, avg7: 0.1, avg30: 0.08 })).toBe(0.08);
     expect(headlinePrice({ trend: null, avg7: 0.1, avg30: null })).toBeNull();
   });
+
+  it('takes the 30-day average for a trend more than ten times off it', () => {
+    // Team Rocket's Dark Gyarados and Delta Reign's Mega Golisopod ex in a November 2026 guide.
+    expect(headlinePrice({ trend: 0.02, avg7: 88.72, avg30: 162.97 })).toBe(162.97);
+    expect(headlinePrice({ trend: 0.02, avg7: 0.43, avg30: 0.54 })).toBe(0.54);
+    // A trend far above anything sold.
+    expect(headlinePrice({ trend: 6131.07, avg7: null, avg30: 500 })).toBe(500);
+    expect(headlinePrice({ trend: 3.24, avg7: 0.33, avg30: 0.24 })).toBe(0.24);
+  });
+
+  it('keeps the trend when the 7-day average is closer to it than the 30-day one', () => {
+    // One inflated sale in the 30-day average.
+    expect(headlinePrice({ trend: 7.69, avg7: 14.46, avg30: 79.68 })).toBe(7.69);
+    // Bulk commons: €0.02, padded to €0.45 over 30 days.
+    expect(headlinePrice({ trend: 0.02, avg7: 0.08, avg30: 0.45 })).toBe(0.02);
+    expect(headlinePrice({ trend: 104.14, avg7: 118.86, avg30: 7.06 })).toBe(104.14);
+  });
+
+  it('checks against the 7-day average when there’s no 30-day one', () => {
+    expect(headlinePrice({ trend: 0.02, avg7: 120, avg30: null })).toBe(120);
+    expect(headlinePrice({ trend: 0.02, avg7: 120, avg30: 0 })).toBe(120);
+    expect(headlinePrice({ trend: 15, avg7: 120, avg30: null })).toBe(15);
+  });
+
+  it('keeps a trend within ten times the averages, or without any', () => {
+    expect(headlinePrice({ trend: 4.61, avg7: 5.15, avg30: 5.75 })).toBe(4.61);
+    expect(headlinePrice({ trend: 1, avg7: null, avg30: 10 })).toBe(1);
+    expect(headlinePrice({ trend: 100, avg7: null, avg30: 10 })).toBe(100);
+    expect(headlinePrice({ trend: 0.02, avg7: null, avg30: null })).toBe(0.02);
+    expect(headlinePrice({ trend: 0, avg7: 0, avg30: 0 })).toBe(0);
+  });
+
+  it('takes the average for a zero trend', () => {
+    expect(headlinePrice({ trend: 0, avg7: 2, avg30: 3 })).toBe(3);
+  });
 });
 
 /** A card's reverse holo fields: plain, normal only, unless `overrides` say otherwise. */

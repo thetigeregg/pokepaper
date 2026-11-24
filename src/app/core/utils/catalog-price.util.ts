@@ -136,11 +136,47 @@ export function reverseHoloPossible(
 }
 
 /**
+ * A trend more than this many times off the 30-day average, either way, is
+ * suspect: Cardmarket reports €0.02 for some cards that sell for over €100
+ * (Team Rocket's Dark Gyarados), and a few trends far above anything sold.
+ */
+export const TREND_OUTLIER_FACTOR = 10;
+
+/** A positive figure, else null (a 0 average is no reference). */
+function positive(value: number | null): number | null {
+  return value !== null && value > 0 ? value : null;
+}
+
+/** How many times apart two positive figures are, as a log ratio. */
+function distance(a: number, b: number): number {
+  return Math.abs(Math.log(a / b));
+}
+
+/**
  * The price shown for a finish (docs/catalog.md → Prices): Cardmarket's
- * trend, else the 30-day average; null when it has neither.
+ * trend, else the 30-day average; null when it has neither. A trend more
+ * than `TREND_OUTLIER_FACTOR` times off the 30-day average (else the 7-day
+ * one, when there's no 30-day one) gives way to that average, unless the
+ * 7-day average is closer to the trend: then the 30-day one is what's off
+ * (one inflated sale, or bulk commons padded by bundles).
  */
 export function headlinePrice(figures: CardmarketFigures): number | null {
-  return figures.trend ?? figures.avg30;
+  const { trend } = figures;
+  const avg7 = positive(figures.avg7);
+  const avg30 = positive(figures.avg30);
+  if (trend === null) {
+    return figures.avg30;
+  }
+  const reference = avg30 ?? avg7;
+  const outlier =
+    reference !== null &&
+    (trend * TREND_OUTLIER_FACTOR < reference || trend > reference * TREND_OUTLIER_FACTOR);
+  if (!outlier) {
+    return trend;
+  }
+  const trendBacked =
+    avg30 !== null && avg7 !== null && trend > 0 && distance(avg7, trend) < distance(avg7, avg30);
+  return trendBacked ? trend : reference;
 }
 
 /**
