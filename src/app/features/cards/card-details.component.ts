@@ -45,8 +45,8 @@ import { POCKET_SERIES } from '../decks/deck-rules';
 import {
   cardSubtitle,
   cardText,
-  cardVariants,
   collectionTarget,
+  listedVariants,
   offeredVariants,
   priceRows,
   type PriceRow,
@@ -112,7 +112,7 @@ export class CardDetailsComponent {
   readonly variants = computed(() => {
     const card = this.card();
     const setHolos = this.setHolos();
-    const offered = setHolos ? offeredVariants(card, this.set(), setHolos) : cardVariants(card);
+    const offered = setHolos ? offeredVariants(card, this.set(), setHolos) : listedVariants(card);
     return variantRows(offered, (variant) => this.collection.quantity(this.target(variant)));
   });
   /** "2 in German · 1 in French": copies owned in the card's other languages. */

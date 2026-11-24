@@ -326,14 +326,12 @@ describe('CardDetailsComponent', () => {
       };
       setFlags = false;
       const fixture = create(typhlosion);
-      expect(rows(fixture).map((row) => row.variant)).toEqual(['variant-normal']);
+      // Named Holo as TCGplayer sells it, before the set is read too.
+      expect(rows(fixture).map((row) => row.variant)).toEqual(['variant-holo']);
 
       await settle(fixture);
 
-      expect(rows(fixture).map((row) => row.variant)).toEqual([
-        'variant-normal',
-        'variant-reverse',
-      ]);
+      expect(rows(fixture).map((row) => row.variant)).toEqual(['variant-holo', 'variant-reverse']);
     });
 
     it('offers only TCGdex’s variants where TCGdex keeps the set’s flags', async () => {

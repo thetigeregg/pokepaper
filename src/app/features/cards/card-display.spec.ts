@@ -5,6 +5,7 @@ import {
   cardText,
   cardTint,
   formatStage,
+  listedVariants,
   offeredVariants,
   priceRows,
   retreatCost,
@@ -183,7 +184,7 @@ describe('variants offered', () => {
       variants: variants({ normal: true }),
       tcgplayerFinishes: { normal: false, holo: true, reverse: true, firstEdition: false },
     });
-    expect(offeredVariants(typhlosion, breakthrough, FLAGLESS)).toEqual(['normal', 'reverse']);
+    expect(offeredVariants(typhlosion, breakthrough, FLAGLESS)).toEqual(['holo', 'reverse']);
     // A card listed in holo and 1st edition keeps their order around reverse holo.
     expect(
       offeredVariants(
@@ -219,6 +220,59 @@ describe('variants offered', () => {
         FLAGLESS
       )
     ).toEqual(['reverse']);
+  });
+
+  it('names Normal Holo when TCGplayer sells the card only as a holo', () => {
+    const finishes = (holo: boolean, normal: boolean) => ({
+      normal,
+      holo,
+      reverse: true,
+      firstEdition: false,
+    });
+    // BREAKthrough Typhlosion: TCGdex lists normal; TCGplayer sells holo and reverse holo.
+    expect(
+      listedVariants(
+        card({ variants: variants({ normal: true }), tcgplayerFinishes: finishes(true, false) })
+      )
+    ).toEqual(['holo']);
+    // No flags at all: just Normal, named Holo the same way.
+    expect(
+      listedVariants(card({ variants: variants({}), tcgplayerFinishes: finishes(true, false) }))
+    ).toEqual(['holo']);
+    // Reverse and 1st edition stay as listed.
+    expect(
+      listedVariants(
+        card({
+          variants: variants({ normal: true, reverse: true, firstEdition: true }),
+          tcgplayerFinishes: finishes(true, false),
+        })
+      )
+    ).toEqual(['holo', 'reverse', 'firstEdition']);
+  });
+
+  it('keeps Normal when TCGplayer also sells a non-holo, lists no holo, or nothing', () => {
+    const normalOnly = variants({ normal: true });
+    const listed = (tcgplayerFinishes?: CatalogCard['tcgplayerFinishes']) =>
+      listedVariants(
+        card({ variants: normalOnly, ...(tcgplayerFinishes && { tcgplayerFinishes }) })
+      );
+    // POP Series 3 Flareon: TCGplayer sells it as both.
+    expect(listed({ normal: true, holo: true, reverse: false, firstEdition: false })).toEqual([
+      'normal',
+    ]);
+    expect(listed({ normal: true, holo: false, reverse: true, firstEdition: false })).toEqual([
+      'normal',
+    ]);
+    expect(listed()).toEqual(['normal']);
+    // TCGdex already lists Holo beside Normal: left as it is.
+    expect(
+      listedVariants(
+        card({
+          variants: variants({ normal: true, holo: true }),
+          tcgplayerFinishes: { normal: false, holo: true, reverse: false, firstEdition: false },
+        })
+      )
+    ).toEqual(['normal', 'holo']);
   });
 
   it('lists the offered variants and any other owned, with their copies', () => {
