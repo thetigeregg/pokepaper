@@ -221,6 +221,9 @@
         >
           <ion-label class="ion-text-wrap">
             {{ row.label }}
+            @if (row.hint) {
+              <p class="hint" data-testid="price-hint">{{ row.hint }}</p>
+            }
             @if (row.avg7 !== null || row.avg30 !== null) {
               <p class="averages">
                 @if (row.avg7 !== null) {

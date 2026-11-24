@@ -117,15 +117,19 @@ export function variantRows(
 export interface PriceRow {
   finish: 'base' | 'reverseHolo';
   label: string;
+  /** What the row covers, under its label; null when it needs no saying. */
+  hint: string | null;
   price: number;
   avg7: number | null;
   avg30: number | null;
 }
 
 /**
- * Card detail's Price rows: the base finish (named Holo for cards printed
- * only as holo, which Cardmarket prices as the base product) and the
- * reverse holo, each when it has a headline price. Cardmarket reports
+ * Card detail's Price rows: the base finish and the reverse holo, each when
+ * it has a headline price. The base finish is named Standard, not after a
+ * printing: it's every copy not sold as reverse holo, whatever the card's
+ * finish, and TCGdex's flags name some cards' printings wrongly. With a
+ * reverse holo row beside it, a hint says what it covers. Cardmarket reports
  * reverse holo figures for many cards never printed as one (sales tagged
  * reverse holo by sellers), so the reverse holo is left out unless the
  * card can come in one (`reverseHoloPossible`). `setFlagsReverseHolos` is
@@ -140,24 +144,24 @@ export function priceRows(
   if (!prices) {
     return [];
   }
-  const variants = cardVariants(card);
-  const baseLabel =
-    !variants.includes('normal') && variants.includes('holo')
-      ? VARIANT_LABELS.holo
-      : VARIANT_LABELS.normal;
   const reverseHolo = reverseHoloPossible(card, set, setFlagsReverseHolos);
   const finishes = [
-    { finish: 'base', label: baseLabel, figures: prices.base },
+    { finish: 'base', label: 'Standard', figures: prices.base },
     {
       finish: 'reverseHolo',
       label: VARIANT_LABELS.reverse,
       figures: reverseHolo ? prices.reverseHolo : null,
     },
   ] as const;
-  return finishes.flatMap(({ finish, label, figures }) => {
+  const rows = finishes.flatMap(({ finish, label, figures }) => {
     const price = figures ? headlinePrice(figures) : null;
     return figures && price !== null
-      ? [{ finish, label, price, avg7: figures.avg7, avg30: figures.avg30 }]
+      ? [{ finish, label, hint: null, price, avg7: figures.avg7, avg30: figures.avg30 }]
       : [];
   });
+  return rows.length > 1
+    ? rows.map((row) =>
+        row.finish === 'base' ? { ...row, hint: 'Every copy not sold as reverse holo' } : row
+      )
+    : rows;
 }

@@ -87,20 +87,38 @@ describe('prices', () => {
         true
       )
     ).toEqual([
-      { finish: 'base', label: 'Normal', price: 0.14, avg7: 0.1, avg30: 0.08 },
-      { finish: 'reverseHolo', label: 'Reverse holo', price: 0.28, avg7: null, avg30: 0.3 },
+      {
+        finish: 'base',
+        label: 'Standard',
+        hint: 'Every copy not sold as reverse holo',
+        price: 0.14,
+        avg7: 0.1,
+        avg30: 0.08,
+      },
+      {
+        finish: 'reverseHolo',
+        label: 'Reverse holo',
+        hint: null,
+        price: 0.28,
+        avg7: null,
+        avg30: 0.3,
+      },
     ]);
   });
 
-  it('names the base finish Holo for cards printed only as holo', () => {
-    const rows = priceRows(
-      card({ variants: variants({ holo: true, reverse: true }) }),
-      modern,
-      prices(figures(313.78, null, null)),
-      true
-    );
+  it('names the base finish Standard whatever TCGdex flags, without a hint when alone', () => {
+    for (const flags of [{ holo: true }, { normal: true }, { reverse: true }, {}]) {
+      const rows = priceRows(
+        card({ variants: variants(flags) }),
+        { releaseDate: '1999-07-01' },
+        prices(figures(55.87, null, null), figures(12.61, null, null)),
+        false
+      );
 
-    expect(rows.map((row) => row.label)).toEqual(['Holo']);
+      expect(rows.map(({ label, hint }) => ({ label, hint }))).toEqual([
+        { label: 'Standard', hint: null },
+      ]);
+    }
   });
 
   it('leaves out reverse holo figures for cards that can’t come in one', () => {
@@ -132,7 +150,9 @@ describe('prices', () => {
   it('skips finishes without a headline price, and cards without prices', () => {
     expect(
       priceRows(card({}), modern, prices(figures(null, 2, null), figures(1, 1, 1)), true)
-    ).toEqual([{ finish: 'reverseHolo', label: 'Reverse holo', price: 1, avg7: 1, avg30: 1 }]);
+    ).toEqual([
+      { finish: 'reverseHolo', label: 'Reverse holo', hint: null, price: 1, avg7: 1, avg30: 1 },
+    ]);
     expect(priceRows(card({}), modern, undefined, true)).toEqual([]);
   });
 });
