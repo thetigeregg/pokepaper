@@ -251,6 +251,9 @@
               @if (convertedOn(); as day) {
                 · converted from euros at the ECB rate of {{ day | date: 'mediumDate' }}
               }
+              @if (matchedByHand()) {
+                · product matched by hand
+              }
             </p>
           </ion-label>
         </ion-item>
@@ -267,6 +270,33 @@
           <ion-label>View on Cardmarket</ion-label>
         </ion-item>
       }
+      @if (matchedByHand()) {
+        <ion-item
+          button="true"
+          [detail]="false"
+          (click)="findOnCardmarket()"
+          data-testid="price-change-match"
+        >
+          <ion-label color="primary">Change Cardmarket match</ion-label>
+        </ion-item>
+      }
+    } @else if (offerMatch()) {
+      <ion-list-header>
+        <ion-label data-testid="price-header">Price · Cardmarket</ion-label>
+      </ion-list-header>
+      <ion-item lines="inset">
+        <ion-label class="ion-text-wrap">
+          <p class="hint" data-testid="price-none">No Cardmarket price for this card.</p>
+        </ion-label>
+      </ion-item>
+      <ion-item
+        button="true"
+        [detail]="false"
+        (click)="findOnCardmarket()"
+        data-testid="price-find"
+      >
+        <ion-label color="primary">Find on Cardmarket</ion-label>
+      </ion-item>
     }
   </ion-list>
 </div>

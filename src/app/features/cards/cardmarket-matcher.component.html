@@ -1,0 +1,161 @@
+<ion-header>
+  <ion-toolbar>
+    <ion-buttons slot="start">
+      <ion-button (click)="close()" data-testid="matcher-cancel">Cancel</ion-button>
+    </ion-buttons>
+    <ion-title>Find on Cardmarket</ion-title>
+  </ion-toolbar>
+  <ion-toolbar>
+    <ion-searchbar
+      placeholder="Search Cardmarket"
+      [debounce]="300"
+      (ionInput)="search($event)"
+      data-testid="matcher-search"
+    ></ion-searchbar>
+  </ion-toolbar>
+</ion-header>
+<ion-content>
+  <ion-list>
+    <ion-item lines="inset" data-testid="matcher-card">
+      <ion-label>
+        <div class="media-row">
+          <div class="thumb">
+            <app-card-image [card]="cardProp" [language]="languageProp" [setLine]="line" />
+          </div>
+          <div class="media-row-text">
+            {{ name }}
+            <p class="hint">{{ line }}</p>
+          </div>
+        </div>
+      </ion-label>
+    </ion-item>
+
+    @if (current(); as current) {
+      <ion-list-header><ion-label>Current match</ion-label></ion-list-header>
+      <ion-item
+        lines="inset"
+        [href]="url(current.idProduct)"
+        target="_blank"
+        rel="noopener noreferrer"
+        [detail]="true"
+        detailIcon="open-outline"
+        data-testid="matcher-current"
+      >
+        <ion-label class="ion-text-wrap">
+          {{ current.name ?? 'Product ' + current.idProduct }}
+          <p class="hint">{{ current.matchedByHand ? 'Matched by hand' : 'From TCGdex' }}</p>
+        </ion-label>
+      </ion-item>
+      @if (current.matchedByHand) {
+        <ion-item
+          button="true"
+          [detail]="false"
+          [disabled]="busy()"
+          (click)="clear()"
+          data-testid="matcher-clear"
+        >
+          <ion-label color="danger">Remove match</ion-label>
+        </ion-item>
+      }
+    }
+
+    <ion-list-header>
+      <ion-label data-testid="matcher-results-header">
+        {{ query().trim() ? 'Results' : 'Suggestions' }}
+      </ion-label>
+    </ion-list-header>
+    @switch (state()) {
+      @case ('loading') {
+        <ion-item data-testid="matcher-loading">
+          <ion-label><p class="hint">Looking up Cardmarket’s products…</p></ion-label>
+          <ion-spinner slot="end" name="crescent"></ion-spinner>
+        </ion-item>
+      }
+      @case ('ready') {
+        @for (product of result()?.products ?? []; track product.idProduct) {
+          <ion-item lines="inset" [attr.data-testid]="'candidate-' + product.idProduct">
+            <ion-label class="ion-text-wrap">
+              {{ product.name }}
+              <p class="hint">
+                {{ product.inSet ? 'This set' : 'Another set' }}
+                @if (product.added; as added) {
+                  · added {{ added | date: 'mediumDate' }}
+                }
+              </p>
+            </ion-label>
+            @if (price(product); as price) {
+              <ion-note slot="end" class="amount" data-testid="candidate-price">
+                {{ price }}
+              </ion-note>
+            }
+            <ion-button
+              slot="end"
+              fill="clear"
+              [href]="url(product.idProduct)"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="View on Cardmarket"
+              data-testid="candidate-link"
+            >
+              <ion-icon slot="icon-only" name="open-outline"></ion-icon>
+            </ion-button>
+            @if (current()?.idProduct === product.idProduct && current()?.matchedByHand) {
+              <ion-icon
+                slot="end"
+                name="checkmark-outline"
+                color="primary"
+                aria-label="Matched"
+                data-testid="candidate-matched"
+              ></ion-icon>
+            } @else {
+              <ion-button
+                slot="end"
+                fill="clear"
+                [disabled]="busy()"
+                (click)="match(product)"
+                data-testid="candidate-match"
+              >
+                Match
+              </ion-button>
+            }
+          </ion-item>
+        } @empty {
+          <ion-item data-testid="matcher-empty">
+            <ion-label class="ion-text-wrap">
+              <p class="hint">No Cardmarket products found. Try another search.</p>
+            </ion-label>
+          </ion-item>
+        }
+        @if (result()?.truncated) {
+          <ion-item data-testid="matcher-truncated">
+            <ion-label class="ion-text-wrap">
+              <p class="hint">Showing the first 50. Search to narrow them down.</p>
+            </ion-label>
+          </ion-item>
+        }
+      }
+      @default {
+        <ion-item data-testid="matcher-error">
+          <ion-label class="ion-text-wrap">
+            <p class="hint">
+              @switch (state()) {
+                @case ('offline') {
+                  Matching needs a connection.
+                }
+                @case ('unavailable') {
+                  Cardmarket’s product list isn’t available right now.
+                }
+                @default {
+                  Couldn’t load Cardmarket’s products.
+                }
+              }
+            </p>
+          </ion-label>
+        </ion-item>
+        <ion-item button="true" [detail]="false" (click)="load()" data-testid="matcher-retry">
+          <ion-label color="primary">Try again</ion-label>
+        </ion-item>
+      }
+    }
+  </ion-list>
+</ion-content>

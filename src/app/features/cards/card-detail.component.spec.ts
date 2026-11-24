@@ -8,6 +8,7 @@ import { CatalogPriceService } from '../../core/services/catalog-price.service';
 import { CurrencyService } from '../../core/services/currency.service';
 import { CatalogLanguageService } from '../../core/services/catalog-language.service';
 import { CollectionService } from '../../core/services/collection.service';
+import { LayoutService } from '../../core/services/layout.service';
 import { ImageCacheService } from '../../core/services/image-cache.service';
 import { VisibilityService } from '../../core/services/visibility.service';
 import { CardDetailComponent, LOAD_MORE_WITHIN } from './card-detail.component';
@@ -90,6 +91,7 @@ describe('CardDetailComponent', () => {
       providers: [
         { provide: CollectionService, useValue: EMPTY_COLLECTION },
         { provide: ModalController, useValue: { dismiss } },
+        { provide: LayoutService, useValue: { wide: signal(false) } },
         {
           // A remembered language other than the default, to tell them apart.
           provide: CatalogLanguageService,

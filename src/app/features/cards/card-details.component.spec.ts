@@ -19,7 +19,10 @@ import { CurrencyService, formatMoney } from '../../core/services/currency.servi
 import { ImageCacheService } from '../../core/services/image-cache.service';
 import { SyncService } from '../../core/services/sync.service';
 import { VisibilityService } from '../../core/services/visibility.service';
+import { ModalController } from '@ionic/angular';
+import { LayoutService } from '../../core/services/layout.service';
 import { CardDetailsComponent } from './card-details.component';
+import { CardmarketMatcherComponent } from './cardmarket-matcher.component';
 
 describe('CardDetailsComponent', () => {
   const base = makeContractCard('intl', 'sv01', 'sv01-004', 3);
@@ -105,7 +108,13 @@ describe('CardDetailsComponent', () => {
     format: (euros: number) => formatMoney(euros * rate, currency()),
   };
 
+  const modal = { present: vi.fn(() => Promise.resolve()) };
+  const modals = { create: vi.fn(() => Promise.resolve(modal)) };
+  const wide = signal(false);
+
   beforeEach(() => {
+    modals.create.mockClear();
+    wide.set(false);
     currency.set('EUR');
     rate = 1;
     stored = new Map();
@@ -121,6 +130,8 @@ describe('CardDetailsComponent', () => {
         { provide: VisibilityService, useValue: { whenVisible: () => () => undefined } },
         { provide: CatalogPriceService, useValue: priceService },
         { provide: CurrencyService, useValue: currencyService },
+        { provide: ModalController, useValue: modals },
+        { provide: LayoutService, useValue: { wide } },
       ],
     });
   });
@@ -541,11 +552,76 @@ describe('CardDetailsComponent', () => {
       expect(priceRow(fixture, 'reverseHolo')).toBeNull();
     });
 
-    it('has no Price section for a card Cardmarket doesn’t price', async () => {
+    const testId = (fixture: ComponentFixture<CardDetailsComponent>, id: string) =>
+      element(fixture).querySelector<HTMLElement>(`[data-testid="${id}"]`);
+
+    it('offers to find a card Cardmarket doesn’t price, in a sheet on phones', async () => {
       const fixture = create(base);
       await settle(fixture);
 
+      expect(headers(fixture)).toContain('Price · Cardmarket');
+      expect(testId(fixture, 'price-none')?.textContent.trim()).toBe(
+        'No Cardmarket price for this card.'
+      );
+      testId(fixture, 'price-find')?.click();
+      await settle(fixture);
+
+      expect(modals.create).toHaveBeenCalledWith({
+        component: CardmarketMatcherComponent,
+        componentProps: { cardProp: base, setProp: set, languageProp: 'en' },
+        breakpoints: [0, 0.75, 1],
+        initialBreakpoint: 1,
+        handle: true,
+      });
+      expect(modal.present).toHaveBeenCalled();
+    });
+
+    it('opens the matcher as a dialog on desktop', async () => {
+      wide.set(true);
+      const fixture = create(base, 'fr');
+      await settle(fixture);
+
+      testId(fixture, 'price-find')?.click();
+      await settle(fixture);
+
+      expect(modals.create).toHaveBeenCalledWith({
+        component: CardmarketMatcherComponent,
+        componentProps: { cardProp: base, setProp: set, languageProp: 'fr' },
+      });
+    });
+
+    it('offers no match for TCG Pocket cards, which Cardmarket never sells', async () => {
+      const fixture = TestBed.createComponent(CardDetailsComponent);
+      fixture.componentRef.setInput('card', base);
+      fixture.componentRef.setInput('set', { ...set, serieId: 'tcgp' });
+      fixture.componentRef.setInput('language', 'en');
+      fixture.detectChanges();
+      await settle(fixture);
+
       expect(headers(fixture)).not.toContain('Price · Cardmarket');
+    });
+
+    it('notes a product matched by hand and offers to change it', async () => {
+      storedPrices.set(base.id, prices({ matchedByHand: true }));
+      const fixture = create(base);
+      await settle(fixture);
+
+      expect(testId(fixture, 'price-updated')?.textContent.replace(/\s+/g, ' ').trim()).toBe(
+        'Updated Nov 21, 2026 · product matched by hand'
+      );
+      expect(testId(fixture, 'price-find')).toBeNull();
+      testId(fixture, 'price-change-match')?.click();
+      await settle(fixture);
+      expect(modals.create).toHaveBeenCalled();
+    });
+
+    it('offers no match change for prices TCGdex matched', async () => {
+      storedPrices.set(base.id, prices());
+      const fixture = create(base);
+      await settle(fixture);
+
+      expect(testId(fixture, 'price-change-match')).toBeNull();
+      expect(testId(fixture, 'price-find')).toBeNull();
     });
 
     it('shows new prices when a sync stores them', async () => {
