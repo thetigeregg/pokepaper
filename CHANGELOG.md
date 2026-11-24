@@ -197,3 +197,7 @@
 ## v0.32.1 - 2026-11-22
 
 - cebc7fd fix(catalog): drop Taiwanese SV-P text filed on Japanese promos (#57)
+
+## v0.32.2 - 2026-11-24
+
+- 284ffc5 chore(deps): update dependencies, Node 24.22.3, rate-limit 11 (#63)
