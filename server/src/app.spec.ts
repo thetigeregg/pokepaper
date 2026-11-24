@@ -69,6 +69,29 @@ describe('buildApp rate limiting', () => {
     expect([first.statusCode, second.statusCode, otherClient.statusCode]).toEqual([200, 429, 200]);
   });
 
+  it('keys IPv6 clients per /64 prefix, whatever the textual form', async () => {
+    const app = buildApp({
+      db: memoryDb(),
+      auth: testAuthConfig(),
+      logLevel: false,
+      clientIpHeader: 'cf-connecting-ip',
+      rateLimitPerMinute: 1,
+    });
+
+    await app.inject(viaProxy({ 'cf-connecting-ip': '2001:db8:1:2::1' }));
+    const rotatedInPrefix = await app.inject(
+      viaProxy({ 'cf-connecting-ip': '2001:db8:1:2:ffff:ffff:ffff:ffff' })
+    );
+    const expandedForm = await app.inject(
+      viaProxy({ 'cf-connecting-ip': '2001:0DB8:0001:0002:0000:0000:0000:0001' })
+    );
+    const otherPrefix = await app.inject(viaProxy({ 'cf-connecting-ip': '2001:db8:1:3::1' }));
+
+    expect([rotatedInPrefix.statusCode, expandedForm.statusCode, otherPrefix.statusCode]).toEqual([
+      429, 429, 200,
+    ]);
+  });
+
   it('ignores X-Forwarded-For entirely with zero trusted hops', async () => {
     const app = buildApp({
       db: memoryDb(),

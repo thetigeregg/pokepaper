@@ -32,6 +32,20 @@ updates:
     commit-message:
       prefix: "chore(ci)"
 
+  # fastlane for the iOS TestFlight workflow.
+  - package-ecosystem: "bundler"
+    directory: "/ios"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Zurich"
+    labels:
+      - "dependencies"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(deps)"
+
   # Both Dockerfiles pin the same Node base image as .nvmrc;
   # scripts/node-version.test.mjs fails CI until all three agree.
   - package-ecosystem: "docker"

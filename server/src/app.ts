@@ -1,5 +1,5 @@
 import cookie from '@fastify/cookie';
-import rateLimit from '@fastify/rate-limit';
+import rateLimit, { normalizeIP } from '@fastify/rate-limit';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { registerAuth } from './auth/plugin.js';
 import { AuthStore } from './auth/store.js';
@@ -54,11 +54,14 @@ export function buildApp({
   // limited per client IP. The limit is generous: a single user syncing every
   // 30s, plus the compose healthcheck, stays far below it. The unauthenticated
   // auth routes add a stricter per-route limit (auth/plugin.ts).
+  // normalizeIP canonicalizes IPv6 and keys it per /64, so a client can't
+  // dodge the limit by rotating addresses within its prefix or rewriting one
+  // address in another textual form (GHSA-grpc-p53c-r64v).
   void app.register(rateLimit, {
     global: true,
     max: rateLimitPerMinute,
     timeWindow: '1 minute',
-    keyGenerator: (request) => clientIp(request, clientIpHeader),
+    keyGenerator: (request) => normalizeIP(clientIp(request, clientIpHeader)),
   });
 
   void app.register(cookie);

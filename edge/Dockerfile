@@ -7,7 +7,7 @@ ARG OTA_PREVIOUS_IMAGE=caddy:2.11-alpine
 FROM ${OTA_PREVIOUS_IMAGE} AS ota-previous
 
 # --- Stage 1: build the web app ---
-FROM node:24.22.2-slim AS builder
+FROM node:24.22.3-slim AS builder
 WORKDIR /app
 ENV HUSKY=0
 # For the OTA stage's bundle zip. Installed before anything that changes per

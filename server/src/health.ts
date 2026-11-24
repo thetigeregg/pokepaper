@@ -6,8 +6,9 @@ import type { Db } from './db.js';
  * `GET /api/health`: 200 when the database answers, 503 otherwise. Used by
  * the compose healthcheck.
  *
- * Also reports `clientIp`, the address this request is rate-limited as. It
- * only ever echoes the caller's own address. Fetched through the public URL,
+ * Also reports `clientIp`, the address this request is rate-limited as
+ * (before IPv6 addresses are grouped by /64). It only ever echoes the
+ * caller's own address. Fetched through the public URL,
  * it should be the visitor's real public IP; a proxy or gateway address means
  * the proxy chain isn't trusted correctly (docs/nas-deployment.md, section 4).
  */

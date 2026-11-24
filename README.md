@@ -25,7 +25,7 @@ It runs as a web app and as a native iOS app (Capacitor). It works offline: data
 
 ## Prerequisites
 
-- Node.js `24.22.2` (see `.nvmrc`)
+- Node.js `24.22.3` (see `.nvmrc`)
 - npm
 
 ## Local Development
