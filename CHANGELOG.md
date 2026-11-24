@@ -225,3 +225,7 @@
 ## v0.35.0 - 2026-11-24
 
 - b55a396 feat(cards): decide reverse holos by TCGplayer's finishes (#69)
+
+## v0.35.1 - 2026-11-24
+
+- 10d477a fix(cards): name holo rares TCGdex lists as normal Holo (#70)
