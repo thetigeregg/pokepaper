@@ -4,27 +4,37 @@ import { join } from 'node:path';
 import {
   catalogCardImageUrl,
   catalogSetImageUrl,
+  type CardmarketCandidates,
   type CatalogManifest,
   type CatalogPricePack,
   type CatalogSetPack,
 } from '@pokepaper/shared';
-import { testApp } from '../test-helpers.js';
+import { memoryDb, testApp } from '../test-helpers.js';
+import { CardmarketMatcher } from './cardmarket-matcher.js';
 import { CatalogImageCache } from './image-cache.js';
 import { runCatalogIngest } from './ingest.js';
+import { CardmarketMatchStore } from './matches-store.js';
 import { runPriceRefresh } from './prices.js';
-import { CATALOG_RATE_LIMIT } from './routes.js';
+import { CATALOG_RATE_LIMIT, type CatalogRoutesOptions } from './routes.js';
+import type { CatalogStore } from './store.js';
 import {
   Bytes,
   fakeCardmarket,
   fakeClient,
   fakeTcgdex,
+  fixtureGuide,
+  fixtureProductList,
+  guideFigures,
   memoryCatalogStore,
   silentLogger,
   Status,
+  UNMAPPED_PRODUCTS,
   webp,
 } from './test-helpers.js';
 
-async function catalogApp() {
+async function catalogApp(
+  extra: (store: CatalogStore) => Partial<CatalogRoutesOptions> = () => ({})
+) {
   const store = memoryCatalogStore();
   const fake = fakeTcgdex();
   await runCatalogIngest({
@@ -40,7 +50,7 @@ async function catalogApp() {
     fetch: fake.fetch,
   });
   const { app, headers } = testApp(undefined, {
-    catalog: { store, images, languages: ['en', 'fr', 'ja', 'zh-tw'] },
+    catalog: { store, images, languages: ['en', 'fr', 'ja', 'zh-tw'], ...extra(store) },
   });
   return { app, headers, store, fake };
 }
@@ -368,5 +378,153 @@ describe('catalog routes', () => {
     const response = await app.inject({ method: 'GET', url, headers });
 
     expect(response.headers['x-ratelimit-limit']).toBe(String(CATALOG_RATE_LIMIT));
+  });
+});
+
+async function matcherApp(productList: unknown = fixtureProductList()) {
+  const { app, headers, store } = await catalogApp((store) => ({
+    createMatcher: (log) =>
+      new CardmarketMatcher({
+        store,
+        matches: new CardmarketMatchStore(memoryDb()),
+        log,
+        fetch: fakeCardmarket(productList).fetch,
+      }),
+  }));
+  const guide = fixtureGuide();
+  guide.priceGuides.push({
+    idProduct: UNMAPPED_PRODUCTS.energySearch,
+    idCategory: 51,
+    ...guideFigures(0.5),
+  });
+  await runPriceRefresh({ store, log: silentLogger(), fetch: fakeCardmarket(guide).fetch });
+  return { app, headers, store };
+}
+
+describe('Cardmarket matcher routes', () => {
+  const candidates = '/api/catalog/cardmarket/intl/sv01-172/candidates';
+  const match = '/api/catalog/cardmarket/intl/sv01-172/match';
+
+  it('require a session', async () => {
+    const { app } = await matcherApp();
+
+    for (const method of ['GET', 'PUT', 'DELETE'] as const) {
+      const url = method === 'GET' ? candidates : match;
+      expect((await app.inject({ method, url })).statusCode).toBe(401);
+    }
+  });
+
+  it('list candidates, searched with q', async () => {
+    const { app, headers } = await matcherApp();
+
+    const suggested = await app.inject({ method: 'GET', url: candidates, headers });
+    const searched = await app.inject({
+      method: 'GET',
+      url: `${candidates}?q=${encodeURIComponent('M Mewtwo')}`,
+      headers,
+    });
+
+    expect(suggested.statusCode).toBe(200);
+    expect(suggested.json<CardmarketCandidates>().products.map((p) => p.idProduct)).toEqual([
+      UNMAPPED_PRODUCTS.energySearch,
+      UNMAPPED_PRODUCTS.energySearchFullArt,
+    ]);
+    expect(searched.json<CardmarketCandidates>().products.map((p) => p.idProduct)).toEqual([
+      UNMAPPED_PRODUCTS.megaMewtwo,
+    ]);
+  });
+
+  it('match a card, pricing it in the next pack, and clear the match', async () => {
+    const { app, headers } = await matcherApp();
+
+    const saved = await app.inject({
+      method: 'PUT',
+      url: match,
+      headers,
+      payload: { idProduct: UNMAPPED_PRODUCTS.energySearch },
+    });
+    expect(saved.statusCode).toBe(204);
+    const pack = await app.inject({ method: 'GET', url: '/api/catalog/prices/intl', headers });
+    expect(pack.json<CatalogPricePack>().prices['sv01-172']).toMatchObject({
+      idProduct: UNMAPPED_PRODUCTS.energySearch,
+      matchedByHand: true,
+    });
+
+    const cleared = await app.inject({ method: 'DELETE', url: match, headers });
+    expect(cleared.statusCode).toBe(204);
+    const after = await app.inject({ method: 'GET', url: '/api/catalog/prices/intl', headers });
+    expect(after.json<CatalogPricePack>().prices['sv01-172']).toBeUndefined();
+  });
+
+  it.each([
+    [{ idProduct: 'x' }, 400, 'invalid_product'],
+    [{ idProduct: 0 }, 400, 'invalid_product'],
+    [{}, 400, 'invalid_product'],
+    [{ idProduct: 123 }, 422, 'unknown_product'],
+  ])('refuse the match %j with %i', async (payload, status, error) => {
+    const { app, headers } = await matcherApp();
+
+    const response = await app.inject({ method: 'PUT', url: match, headers, payload });
+
+    expect(response.statusCode).toBe(status);
+    expect(response.json()).toEqual({ error });
+  });
+
+  it('refuse an overlong search', async () => {
+    const { app, headers } = await matcherApp();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `${candidates}?q=${'x'.repeat(101)}`,
+      headers,
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it.each([
+    ['GET', '/api/catalog/cardmarket/intl/nope-1/candidates'],
+    ['GET', '/api/catalog/cardmarket/mars/sv01-172/candidates'],
+    ['PUT', '/api/catalog/cardmarket/intl/nope-1/match'],
+    ['PUT', '/api/catalog/cardmarket/mars/sv01-172/match'],
+    ['DELETE', '/api/catalog/cardmarket/intl/nope-1/match'],
+    ['DELETE', `/api/catalog/cardmarket/intl/${'x'.repeat(81)}/match`],
+  ] as const)('answer 404 for %s %s', async (method, url) => {
+    const { app, headers } = await matcherApp();
+
+    const response = await app.inject({
+      method,
+      url,
+      headers,
+      ...(method === 'PUT' && { payload: { idProduct: UNMAPPED_PRODUCTS.energySearch } }),
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('answer 502 while Cardmarket’s product list can’t be had', async () => {
+    const { app, headers } = await matcherApp(new Status(503));
+
+    const listed = await app.inject({ method: 'GET', url: candidates, headers });
+    const saved = await app.inject({
+      method: 'PUT',
+      url: match,
+      headers,
+      payload: { idProduct: UNMAPPED_PRODUCTS.energySearch },
+    });
+
+    for (const response of [listed, saved]) {
+      expect(response.statusCode).toBe(502);
+      expect(response.json()).toEqual({ error: 'cardmarket_unavailable' });
+    }
+  });
+
+  it('don’t exist without a matcher', async () => {
+    const { app, headers } = await catalogApp();
+
+    const response = await app.inject({ method: 'GET', url: candidates, headers });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).not.toEqual({ error: 'not_found' });
   });
 });

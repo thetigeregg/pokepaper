@@ -2,7 +2,9 @@ import { join } from 'node:path';
 import { buildApp } from './app.js';
 import { startBackupSchedule } from './backup.js';
 import { CATALOG_DB_FILENAME, openCatalogDatabase } from './catalog/db.js';
+import { CardmarketMatcher } from './catalog/cardmarket-matcher.js';
 import { CatalogImageCache } from './catalog/image-cache.js';
+import { CardmarketMatchStore } from './catalog/matches-store.js';
 import { startCatalogSchedule, type CatalogSchedule } from './catalog/schedule.js';
 import { CatalogStore } from './catalog/store.js';
 import { loadConfig } from './config.js';
@@ -12,6 +14,7 @@ const config = loadConfig();
 const db = openDatabase(join(config.dataDir, DB_FILENAME));
 const catalogDb = openCatalogDatabase(join(config.dataDir, CATALOG_DB_FILENAME));
 const catalogStore = new CatalogStore(catalogDb);
+const cardmarketMatches = new CardmarketMatchStore(db);
 const app = buildApp({
   db,
   auth: config.auth,
@@ -23,6 +26,8 @@ const app = buildApp({
     store: catalogStore,
     images: new CatalogImageCache({ dir: join(config.dataDir, 'images', 'catalog') }),
     languages: config.catalog.languages,
+    createMatcher: (log) =>
+      new CardmarketMatcher({ store: catalogStore, matches: cardmarketMatches, log }),
   },
 });
 
@@ -42,6 +47,7 @@ const catalogSchedule: CatalogSchedule | null = config.catalog.syncEnabled
       refreshHours: config.catalog.refreshHours,
       fullRefreshDays: config.catalog.fullRefreshDays,
       pricesRefreshHours: config.catalog.pricesRefreshHours,
+      matches: cardmarketMatches,
       log: app.log,
     })
   : null;

@@ -22,6 +22,73 @@ export interface PriceGuideState {
   createdAt: string;
   /** The products version it was applied with: products changed since, it's applied anew. */
   productsVersion: number;
+  /** Likewise, the version of the matches made by hand (`CardmarketMatchStore.version`). */
+  matchesVersion: number;
+}
+
+/** A single card in Cardmarket's product list (`products_singles_6.json`). */
+export interface CardmarketProduct {
+  idProduct: number;
+  /** With the attacks that tell printings apart in brackets: `MMewtwo EX [Vanishing Strike]`. */
+  name: string;
+  idExpansion: number;
+  /** When Cardmarket added it (`YYYY-MM-DD`); null when unknown (it reports `0000-00-00`). */
+  dateAdded: string | null;
+}
+
+/** The Cardmarket product list download stored last. */
+export interface CardmarketProductsState {
+  /** Its HTTP ETag, sent back so an unchanged list costs an empty 304. */
+  etag: string | null;
+  /** When Cardmarket generated it (ISO timestamp). */
+  createdAt: string;
+  /** When it was last downloaded or found unchanged (ISO timestamp). */
+  checkedAt: string;
+}
+
+/** `CatalogStore.findCardmarketProducts` filters; each one given must hold. */
+export interface CardmarketProductFilter {
+  /** `cardmarketMatchName` of the name is one of these. */
+  matchNames?: readonly string[];
+  /** `cardmarketSearchText` of the name contains this. */
+  contains?: string;
+  /** In one of these expansions. */
+  expansions?: readonly number[];
+  /** Not a filter: products in these expansions come first, flagged `inSet`. */
+  prefer?: readonly number[];
+}
+
+interface CardmarketProductRow {
+  id_product: number;
+  name: string;
+  id_expansion: number;
+  date_added: string | null;
+}
+
+function toCardmarketProduct(row: CardmarketProductRow): CardmarketProduct {
+  return {
+    idProduct: row.id_product,
+    name: row.name,
+    idExpansion: row.id_expansion,
+    dateAdded: row.date_added,
+  };
+}
+
+/**
+ * A name as the matcher compares it: lowercased, accents dropped, only
+ * letters and digits kept, so Cardmarket's "MMewtwo EX" and TCGdex's
+ * "M Mewtwo EX" (or "Mewtwo-EX") are equal.
+ */
+export function cardmarketSearchText(name: string): string {
+  return name
+    .normalize('NFKD')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+/** `cardmarketSearchText` of a product name without its bracketed attacks. */
+export function cardmarketMatchName(name: string): string {
+  return cardmarketSearchText(name.replace(/\[[^\]]*\]/g, ''));
 }
 
 export type CatalogRunKind = 'light' | 'full';
@@ -443,12 +510,14 @@ export class CatalogStore {
   /**
    * Records the Cardmarket product of cards (from TCGdex's card details), in
    * one transaction. `null` forgets a card's product, and its prices with
-   * it: the price pass leaves cards without a product alone. Bumps the
-   * products version when anything changed; returns how many cards did.
+   * it (the price pass leaves cards without a product alone), except for
+   * cards in `matchedByHand`, priced by their own match. Bumps the products
+   * version when anything changed; returns how many cards did.
    */
   saveCardmarketProducts(
     region: CatalogRegion,
-    products: ReadonlyMap<string, number | null>
+    products: ReadonlyMap<string, number | null>,
+    matchedByHand: ReadonlySet<string> = new Set()
   ): number {
     return this.db.transaction(() => {
       const upsert = this.db.prepare(
@@ -467,7 +536,9 @@ export class CatalogStore {
       for (const [cardId, idProduct] of products) {
         if (idProduct === null) {
           changed += remove.run(region, cardId).changes;
-          pricesRemoved += removePrices.run(region, cardId).changes;
+          if (!matchedByHand.has(cardId)) {
+            pricesRemoved += removePrices.run(region, cardId).changes;
+          }
         } else {
           changed += upsert.run(region, cardId, idProduct).changes;
         }
@@ -537,6 +608,150 @@ export class CatalogStore {
          )`
       )
       .run(region).changes;
+  }
+
+  /** The Cardmarket product TCGdex reports for a card, if any. */
+  getCardmarketProductOf(region: CatalogRegion, cardId: string): number | undefined {
+    const row = this.db
+      .prepare(
+        'SELECT id_product FROM catalog_cardmarket_products WHERE region = ? AND card_id = ?'
+      )
+      .get(region, cardId) as { id_product: number } | undefined;
+    return row?.id_product;
+  }
+
+  /**
+   * Replaces the stored copy of Cardmarket's product list (single cards) in
+   * one transaction, with the download it came from.
+   */
+  replaceCardmarketProducts(
+    products: readonly CardmarketProduct[],
+    state: CardmarketProductsState
+  ): void {
+    this.db.transaction(() => {
+      this.db.prepare('DELETE FROM cardmarket_products').run();
+      const insert = this.db.prepare(
+        `INSERT OR REPLACE INTO cardmarket_products
+           (id_product, name, id_expansion, date_added, match_name, search_text)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      );
+      for (const product of products) {
+        insert.run(
+          product.idProduct,
+          product.name,
+          product.idExpansion,
+          product.dateAdded,
+          cardmarketMatchName(product.name),
+          cardmarketSearchText(product.name)
+        );
+      }
+      this.saveCardmarketProductsState(state);
+    })();
+  }
+
+  /** The product list download stored last (`catalog_meta` key `cardmarket_products`), if any. */
+  getCardmarketProductsState(): CardmarketProductsState | undefined {
+    const row = this.db
+      .prepare("SELECT value FROM catalog_meta WHERE key = 'cardmarket_products'")
+      .get() as { value: string } | undefined;
+    return row ? (JSON.parse(row.value) as CardmarketProductsState) : undefined;
+  }
+
+  saveCardmarketProductsState(state: CardmarketProductsState): void {
+    this.db
+      .prepare(
+        `INSERT INTO catalog_meta (key, value) VALUES ('cardmarket_products', ?)
+         ON CONFLICT (key) DO UPDATE SET value = excluded.value`
+      )
+      .run(stableStringify(state));
+  }
+
+  getCardmarketProduct(idProduct: number): CardmarketProduct | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT id_product, name, id_expansion, date_added FROM cardmarket_products
+         WHERE id_product = ?`
+      )
+      .get(idProduct) as CardmarketProductRow | undefined;
+    return row ? toCardmarketProduct(row) : undefined;
+  }
+
+  /**
+   * The Cardmarket expansions the products of a set's cards (as TCGdex
+   * reports them) belong to, the most used first.
+   */
+  listSetExpansions(region: CatalogRegion, setId: string): number[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT p.id_expansion FROM catalog_cards c
+           JOIN catalog_cardmarket_products m ON m.region = c.region AND m.card_id = c.id
+           JOIN cardmarket_products p ON p.id_product = m.id_product
+           WHERE c.region = ? AND c.set_id = ?
+           GROUP BY p.id_expansion ORDER BY COUNT(*) DESC, p.id_expansion`
+        )
+        .all(region, setId) as { id_expansion: number }[]
+    ).map((row) => row.id_expansion);
+  }
+
+  /**
+   * Stored Cardmarket products matching every filter given, those in
+   * `prefer`'s expansions first (`inSet`), then by product ID (Cardmarket
+   * adds a set's cards roughly in collector number order).
+   */
+  findCardmarketProducts(
+    filter: CardmarketProductFilter,
+    limit: number
+  ): (CardmarketProduct & { inSet: boolean })[] {
+    const where: string[] = [];
+    const params: (string | number)[] = [JSON.stringify(filter.prefer ?? [])];
+    if (filter.matchNames) {
+      where.push('match_name IN (SELECT value FROM json_each(?))');
+      params.push(JSON.stringify(filter.matchNames));
+    }
+    if (filter.contains !== undefined) {
+      where.push('instr(search_text, ?) > 0');
+      params.push(filter.contains);
+    }
+    if (filter.expansions) {
+      where.push('id_expansion IN (SELECT value FROM json_each(?))');
+      params.push(JSON.stringify(filter.expansions));
+    }
+    params.push(limit);
+    const rows = this.db
+      .prepare(
+        `SELECT id_product, name, id_expansion, date_added,
+           id_expansion IN (SELECT value FROM json_each(?)) AS in_set
+         FROM cardmarket_products
+         ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}
+         ORDER BY in_set DESC, id_product LIMIT ?`
+      )
+      .all(...params) as (CardmarketProductRow & { in_set: number })[];
+    return rows.map((row) => ({ ...toCardmarketProduct(row), inSet: row.in_set === 1 }));
+  }
+
+  /** Replaces the stored price guide entries (by product ID) in one transaction. */
+  replacePriceGuideEntries(entries: ReadonlyMap<number, object>): void {
+    this.db.transaction(() => {
+      this.db.prepare('DELETE FROM cardmarket_price_guide').run();
+      const insert = this.db.prepare(
+        'INSERT INTO cardmarket_price_guide (id_product, entry) VALUES (?, ?)'
+      );
+      for (const [idProduct, entry] of entries) {
+        insert.run(idProduct, JSON.stringify(entry));
+      }
+    })();
+  }
+
+  /** Stored price guide entries of these products, by product ID (those it has). */
+  getPriceGuideEntries(idProducts: readonly number[]): Map<number, unknown> {
+    const rows = this.db
+      .prepare(
+        `SELECT id_product, entry FROM cardmarket_price_guide
+         WHERE id_product IN (SELECT value FROM json_each(?))`
+      )
+      .all(JSON.stringify(idProducts)) as { id_product: number; entry: string }[];
+    return new Map(rows.map((row) => [row.id_product, JSON.parse(row.entry) as unknown]));
   }
 
   /** The Cardmarket price guide last applied (`catalog_meta` key `price_guide`), if any. */

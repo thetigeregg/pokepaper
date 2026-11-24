@@ -16,6 +16,7 @@ import {
   IonList,
   IonListHeader,
   IonNote,
+  ModalController,
 } from '@ionic/angular';
 import {
   cardmarketProductUrl,
@@ -34,7 +35,9 @@ import { LANGUAGE_LABELS } from '../../core/services/catalog-language.service';
 import { CatalogPriceService } from '../../core/services/catalog-price.service';
 import { CurrencyService } from '../../core/services/currency.service';
 import { CollectionService } from '../../core/services/collection.service';
+import { LayoutService } from '../../core/services/layout.service';
 import { displayImage } from '../../core/utils/catalog-image.util';
+import { POCKET_SERIES } from '../decks/deck-rules';
 import {
   cardSubtitle,
   cardText,
@@ -48,6 +51,7 @@ import {
 } from './card-display';
 import { CardImageComponent } from './card-image.component';
 import { CardTextComponent } from './card-text.component';
+import { CardmarketMatcherComponent } from './cardmarket-matcher.component';
 import { EnergyIconComponent } from './energy-icon.component';
 import { RarityIconComponent } from './rarity-icon.component';
 
@@ -55,7 +59,9 @@ import { RarityIconComponent } from './rarity-icon.component';
  * One card's scan and full text in `language` (docs/ui.md → Card detail):
  * an IonList with sections for abilities, attacks, weakness · resistance ·
  * retreat, the copies owned in `language` per variant (a stepper each),
- * details, and the Cardmarket price per finish. Image above the text on phones, beside it on desktop.
+ * details, and the Cardmarket price per finish (or, without one, a way to
+ * match the card to a Cardmarket product by hand). Image above the text on
+ * phones, beside it on desktop.
  */
 @Component({
   selector: 'app-card-details',
@@ -81,6 +87,8 @@ export class CardDetailsComponent {
   private readonly collection = inject(CollectionService);
   private readonly priceService = inject(CatalogPriceService);
   private readonly currencyService = inject(CurrencyService);
+  private readonly modals = inject(ModalController);
+  private readonly layout = inject(LayoutService);
 
   readonly card = input.required<CatalogCard>();
   readonly set = input.required<CatalogSet>();
@@ -138,6 +146,16 @@ export class CardDetailsComponent {
     return loaded?.key === catalogKey(card.region, card.id) ? loaded : null;
   });
   private readonly prices = computed(() => this.cardPrices()?.prices);
+  /** The price comes from a Cardmarket product matched by hand (docs/catalog.md). */
+  readonly matchedByHand = computed(() => this.prices()?.matchedByHand === true);
+  /**
+   * Offer to match the card to a Cardmarket product by hand: its prices have
+   * been read and it has none, and it isn't a TCG Pocket card (digital only,
+   * never on Cardmarket).
+   */
+  readonly offerMatch = computed(
+    () => this.cardPrices() !== null && !this.prices() && this.set().serieId !== POCKET_SERIES
+  );
   /** The Price section's rows, one per priced finish (`priceRows`). */
   readonly priceRows = computed(() => {
     const loaded = this.cardPrices();
@@ -199,6 +217,24 @@ export class CardDetailsComponent {
           console.error('catalog.card_prices_failed', error);
         });
     });
+  }
+
+  /**
+   * Opens the Cardmarket matcher (a sheet on phones, a dialog on desktop).
+   * A change it saves syncs the card's new prices, which then show here.
+   */
+  async findOnCardmarket(): Promise<void> {
+    const sheet = !this.layout.wide();
+    const modal = await this.modals.create({
+      component: CardmarketMatcherComponent,
+      componentProps: {
+        cardProp: this.card(),
+        setProp: this.set(),
+        languageProp: this.language(),
+      },
+      ...(sheet ? { breakpoints: [0, 0.75, 1], initialBreakpoint: 1, handle: true } : {}),
+    });
+    await modal.present();
   }
 
   /** A price in euros, in the currency picked in Settings ("CHF 0.13"). */

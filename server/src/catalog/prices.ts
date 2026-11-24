@@ -33,8 +33,18 @@ const MIN_PRODUCTS_FOR_SHARE = 100;
 export const PRODUCT_LOOKUP_DAYS = 60;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** Cardmarket products matched to cards by hand (`CardmarketMatchStore`). */
+export interface CardmarketMatchSource {
+  get(region: CatalogRegion, cardId: string): number | undefined;
+  list(region: CatalogRegion): Map<string, number>;
+  /** Bumped whenever a match changes. */
+  version(): number;
+}
+
 export interface PriceRefreshOptions {
   store: CatalogStore;
+  /** Matches made by hand, which win over TCGdex's products; none without it. */
+  matches?: CardmarketMatchSource;
   /** Looks up products of recent cards without one (`PRODUCT_LOOKUP_DAYS`); none without it. */
   client?: TcgdexClient;
   /** Languages the catalog imports: a card is looked up in the first one it has. */
@@ -117,8 +127,12 @@ export async function runPriceRefresh(options: PriceRefreshOptions): Promise<Pri
     await lookUpRecentProducts(options, stats, now());
     const previous = store.getPriceGuideState();
     const productsVersion = store.productsVersion();
-    // Products changed since the guide was applied: apply it anew (no 304).
-    const etag = previous?.productsVersion === productsVersion ? previous.etag : null;
+    const matchesVersion = options.matches?.version() ?? 0;
+    // Products or matches changed since the guide was applied: apply it anew (no 304).
+    const etag =
+      previous?.productsVersion === productsVersion && previous.matchesVersion === matchesVersion
+        ? previous.etag
+        : null;
     let download: GuideDownload | 'unchanged';
     try {
       download = await downloadGuide(options, etag);
@@ -136,10 +150,14 @@ export async function runPriceRefresh(options: PriceRefreshOptions): Promise<Pri
     stats.guideCreatedAt = download.createdAt;
     stats.products = download.entries.size;
 
-    const regions = CATALOG_REGIONS.map((region) => ({
-      region,
-      products: store.listCardmarketProducts(region),
-    }));
+    const regions = CATALOG_REGIONS.map((region) => {
+      const products = store.listCardmarketProducts(region);
+      const byHand = options.matches?.list(region) ?? new Map<string, number>();
+      for (const [cardId, idProduct] of byHand) {
+        products.set(cardId, idProduct);
+      }
+      return { region, products, byHand };
+    });
     const mapped = new Set(regions.flatMap(({ products }) => [...products.values()]));
     const found = [...mapped].filter((idProduct) => download.entries.has(idProduct)).length;
     if (mapped.size >= MIN_PRODUCTS_FOR_SHARE && found < mapped.size * MIN_FOUND_SHARE) {
@@ -150,7 +168,7 @@ export async function runPriceRefresh(options: PriceRefreshOptions): Promise<Pri
       return finish('failed');
     }
 
-    for (const { region, products } of regions) {
+    for (const { region, products, byHand } of regions) {
       signal?.throwIfAborted();
       const entries = store.listCardIds(region).map((cardId) => {
         const idProduct = products.get(cardId);
@@ -159,9 +177,7 @@ export async function runPriceRefresh(options: PriceRefreshOptions): Promise<Pri
           return null; // Left as it was: forgetting a product removes its prices.
         }
         const entry = download.entries.get(idProduct);
-        const prices: StoredCardPrices | null = entry
-          ? parseGuideEntry(entry, download.createdAt)
-          : null;
+        const prices = guidePrices(entry, download.createdAt, byHand.has(cardId));
         stats.cards[prices ? 'priced' : 'unpriced'] += 1;
         return { cardId, prices };
       });
@@ -173,10 +189,17 @@ export async function runPriceRefresh(options: PriceRefreshOptions): Promise<Pri
       store.pruneOrphanProducts(region);
       stats.versions[region] = store.pricesVersion(region);
     }
-    store.savePriceGuideState({
-      etag: download.etag,
-      createdAt: download.createdAt,
-      productsVersion,
+    // The entries are kept for the matcher, which shows any product's prices
+    // and prices a card as soon as it's matched; saved with the guide's
+    // state, so they always carry its date.
+    store.transaction(() => {
+      store.replacePriceGuideEntries(download.entries);
+      store.savePriceGuideState({
+        etag: download.etag,
+        createdAt: download.createdAt,
+        productsVersion,
+        matchesVersion,
+      });
     });
     return finish('ok');
   } catch (error: unknown) {
@@ -193,6 +216,42 @@ export async function runPriceRefresh(options: PriceRefreshOptions): Promise<Pri
     }
     throw error;
   }
+}
+
+/** A card's prices from its product's guide entry, flagged when matched by hand. */
+function guidePrices(
+  entry: unknown,
+  updated: string,
+  matchedByHand: boolean
+): StoredCardPrices | null {
+  const prices = entry === undefined ? null : parseGuideEntry(entry, updated);
+  return prices && matchedByHand ? { ...prices, matchedByHand: true } : prices;
+}
+
+/**
+ * Prices one card from the stored price guide, right after its match by
+ * hand changed: by its match, else TCGdex's product; a card with neither
+ * loses its prices. Returns false, changing nothing, when no guide is stored
+ * yet: the next price pass prices it (the matches version changed).
+ */
+export function repriceCard(
+  store: CatalogStore,
+  matches: CardmarketMatchSource,
+  region: CatalogRegion,
+  cardId: string
+): boolean {
+  const guide = store.getPriceGuideState();
+  if (!guide) {
+    return false;
+  }
+  const byHand = matches.get(region, cardId);
+  const idProduct = byHand ?? store.getCardmarketProductOf(region, cardId);
+  const entry =
+    idProduct === undefined ? undefined : store.getPriceGuideEntries([idProduct]).get(idProduct);
+  store.writeCardPrices(region, [
+    { cardId, prices: guidePrices(entry, guide.createdAt, byHand !== undefined) },
+  ]);
+  return true;
 }
 
 interface GuideDownload {
@@ -219,17 +278,26 @@ async function downloadGuide(
   if (!response.ok) {
     throw new Error(`Cardmarket price guide: HTTP ${String(response.status)}`);
   }
-  const guide = parseGuide(JSON.parse(await readCapped(response, MAX_GUIDE_BYTES)));
+  const guide = parseGuide(
+    JSON.parse(await readCapped(response, MAX_GUIDE_BYTES, 'Cardmarket price guide'))
+  );
   if (!guide) {
     throw new Error('Cardmarket price guide: unexpected content');
   }
   return { etag: response.headers.get('etag'), ...guide };
 }
 
-/** The body as text, failing once it passes `maxBytes` (whatever the headers say). */
-export async function readCapped(response: Response, maxBytes: number): Promise<string> {
+/**
+ * The body as text, failing once it passes `maxBytes` (whatever the headers
+ * say). `label` names the download in the error.
+ */
+export async function readCapped(
+  response: Response,
+  maxBytes: number,
+  label: string
+): Promise<string> {
   if (Number(response.headers.get('content-length') ?? 0) > maxBytes) {
-    throw new Error('Cardmarket price guide: too large');
+    throw new Error(`${label}: too large`);
   }
   const reader = response.body?.getReader();
   if (!reader) {
@@ -246,7 +314,7 @@ export async function readCapped(response: Response, maxBytes: number): Promise<
     bytes += value.byteLength;
     if (bytes > maxBytes) {
       await reader.cancel();
-      throw new Error('Cardmarket price guide: too large');
+      throw new Error(`${label}: too large`);
     }
     text += decoder.decode(value, { stream: true });
   }

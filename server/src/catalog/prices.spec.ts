@@ -111,6 +111,18 @@ describe('runPriceRefresh', () => {
     expect(store.getCardPrices('intl', 'sv01-172')).toBeUndefined();
   });
 
+  it('keeps the guide’s entries for the matcher', async () => {
+    const { store, refresh } = await setup();
+
+    await refresh();
+
+    expect(store.getPriceGuideEntries([PRODUCTS.promo, 999]).get(PRODUCTS.promo)).toMatchObject({
+      idProduct: PRODUCTS.promo,
+      trend: 1.5,
+    });
+    expect(store.getPriceGuideEntries([999]).size).toBe(0);
+  });
+
   it('serves a region’s prices as one pack', async () => {
     const { store, refresh } = await setup();
     await refresh();
@@ -400,6 +412,27 @@ describe('runPriceRefresh', () => {
     expect(store.lastCompletedPriceRun()).toBeNull();
   });
 
+  it('keeps the guide’s entries only with its state, never one without the other', async () => {
+    const { store, refresh } = await setup();
+    await refresh();
+    const state = store.getPriceGuideState();
+    const cardmarket = fakeCardmarket(
+      cardmarketGuide({ [PRODUCTS.promo]: guideFigures(9) }, '2026-11-21T02:43:56+0100')
+    );
+    // Fails after the per-region writes began, before the guide was kept.
+    const writeCardPrices = vi.spyOn(store, 'writeCardPrices').mockImplementationOnce(() => {
+      throw new Error('disk full');
+    });
+
+    await expect(refresh({ fetch: cardmarket.fetch })).rejects.toThrow('disk full');
+
+    expect(store.getPriceGuideState()).toEqual(state);
+    expect(store.getPriceGuideEntries([PRODUCTS.promo]).get(PRODUCTS.promo)).toMatchObject({
+      trend: 1.5,
+    });
+    writeCardPrices.mockRestore();
+  });
+
   it('records a failed pass and rethrows database errors, even if recording fails too', async () => {
     const { store, refresh } = await setup();
     const log = silentLogger();
@@ -444,8 +477,10 @@ describe('readCapped', () => {
         })
       );
 
-    expect(await readCapped(chunked('{"ok":true}'), 64)).toBe('{"ok":true}');
-    await expect(readCapped(chunked('x'.repeat(65)), 64)).rejects.toThrow('too large');
+    expect(await readCapped(chunked('{"ok":true}'), 64, 'Test')).toBe('{"ok":true}');
+    await expect(readCapped(chunked('x'.repeat(65)), 64, 'Test')).rejects.toThrow(
+      'Test: too large'
+    );
   });
 });
 

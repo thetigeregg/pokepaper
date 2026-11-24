@@ -28,12 +28,14 @@ export interface StoredCardPrices {
   base: StoredFigures | null;
   /** The `-holo` figures: the reverse holo. */
   reverseHolo: StoredFigures | null;
+  /** `idProduct` was matched by hand (`cardmarket_matches`), not reported by TCGdex. */
+  matchedByHand?: true;
 }
 
 const FIGURES = ['avg', 'low', 'trend', 'avg1', 'avg7', 'avg30'] as const;
 
 /** A Cardmarket product ID: a positive integer. */
-function isProductId(value: unknown): value is number {
+export function isProductId(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 }
 /** Anything above this is a data error, not a price. */
@@ -103,6 +105,7 @@ export function toWirePrices(stored: StoredCardPrices): CatalogCardPrices {
   return {
     updated: stored.updated,
     ...(isProductId(stored.idProduct) && { idProduct: stored.idProduct }),
+    ...(stored.matchedByHand && { matchedByHand: true as const }),
     base: wireFigures(stored.base),
     reverseHolo: wireFigures(stored.reverseHolo),
   };

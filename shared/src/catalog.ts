@@ -247,10 +247,60 @@ export interface CatalogCardPrices {
    * was sent.
    */
   idProduct?: number;
+  /**
+   * Set when `idProduct` was matched to the card by hand, in the app's
+   * matcher, rather than reported by TCGdex (docs/catalog.md → Matching by hand).
+   */
+  matchedByHand?: true;
   /** The normal print; for cards printed only as holo, the holo. */
   base: CardmarketFigures | null;
   /** The reverse holo (Cardmarket's "holo" figures). */
   reverseHolo: CardmarketFigures | null;
+}
+
+/** A Cardmarket product the matcher offers for a card. */
+export interface CardmarketCandidate {
+  idProduct: number;
+  /**
+   * Cardmarket's name for it, with the attacks that tell printings apart in
+   * brackets: `MMewtwo EX [Vanishing Strike]`.
+   */
+  name: string;
+  /** When Cardmarket added it (`YYYY-MM-DD`), when known. */
+  added: string | null;
+  /** In a Cardmarket expansion that other cards of the card's set map to. */
+  inSet: boolean;
+  /** Its figures in the last price guide; null when it has none. */
+  prices: CatalogCardPrices | null;
+}
+
+/**
+ * `GET /api/catalog/cardmarket/:region/:cardId/candidates[?q=]`: products a
+ * card could be matched to. Without `q`, those named like the card in its
+ * set's Cardmarket expansions (falling back to the same name anywhere, then
+ * to the whole expansion); with `q`, products whose name contains it, its
+ * set's expansions first.
+ */
+export interface CardmarketCandidates {
+  /** The card's product now, if any: TCGdex's, or one matched by hand. */
+  current: { idProduct: number; matchedByHand: boolean; name: string | null } | null;
+  products: CardmarketCandidate[];
+  /** More products matched than `products` holds: narrow the search. */
+  truncated: boolean;
+  /**
+   * Whether `products` are search results. False when they're the
+   * suggestions: without `q`, or with one too short to search (fewer than
+   * two letters or digits once spaces and punctuation are dropped).
+   */
+  searched: boolean;
+}
+
+/** The longest `q` the candidates route takes (characters). */
+export const MAX_CARDMARKET_QUERY_LENGTH = 100;
+
+/** `PUT /api/catalog/cardmarket/:region/:cardId/match` body. */
+export interface CardmarketMatchRequest {
+  idProduct: number;
 }
 
 /**
