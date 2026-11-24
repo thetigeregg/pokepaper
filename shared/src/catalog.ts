@@ -75,6 +75,19 @@ export interface CatalogVariants {
   wPromo: boolean;
 }
 
+/**
+ * The finishes TCGplayer sells a card in, from TCGdex's
+ * `pricing.tcgplayer` (docs/catalog.md → Reverse holo figures): a second
+ * opinion on TCGdex's own `variants` flags, which lack reverse holos for
+ * whole sets.
+ */
+export interface CatalogFinishes {
+  normal: boolean;
+  holo: boolean;
+  reverse: boolean;
+  firstEdition: boolean;
+}
+
 export interface CatalogTypeModifier {
   /** Canonical (English) energy type, e.g. `Fire`. */
   type: string;
@@ -180,6 +193,8 @@ export interface CatalogCard {
   regulationMark: string | null;
   illustrator: string | null;
   variants: CatalogVariants;
+  /** Absent when TCGplayer lists no finish for the card (`CatalogFinishes`). */
+  tcgplayerFinishes?: CatalogFinishes;
   legal: CatalogLegality;
   weaknesses: CatalogTypeModifier[];
   resistances: CatalogTypeModifier[];

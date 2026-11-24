@@ -95,11 +95,12 @@ describe('CardDetailsComponent', () => {
   /** Stored prices by card ID; bump `version` to signal a sync stored new ones. */
   let storedPrices: Map<string, CatalogCardPrices>;
   /** Whether TCGdex keeps every set's reverse holo flags. */
+  /** Whether TCGdex keeps the set's reverse holo flags (`SetReverseHolos.tcgdexFlags`). */
   let setFlags: boolean;
   const priceService = {
     version: signal(0),
     prices: vi.fn((_region: string, cardId: string) => Promise.resolve(storedPrices.get(cardId))),
-    setFlagsReverseHolos: vi.fn(() => Promise.resolve(setFlags)),
+    setReverseHolos: vi.fn(() => Promise.resolve({ tcgdexFlags: setFlags, tcgplayerSells: true })),
   };
 
   /** Prices show in `currency`, at `rate` per euro, with ECB rates of `ratesDate`. */
@@ -311,6 +312,38 @@ describe('CardDetailsComponent', () => {
           wPromo: false,
         },
       });
+
+      expect(rows(fixture).map((row) => row.variant)).toEqual(['variant-normal']);
+    });
+
+    it('offers reverse holo for a card that can come in one, once its set’s flags are read', async () => {
+      // BREAKthrough Typhlosion: TCGdex lists normal only; TCGplayer sells a reverse holo.
+      const typhlosion: CatalogCard = {
+        ...base,
+        rarity: 'Rare',
+        variants: { ...base.variants, normal: true, reverse: false },
+        tcgplayerFinishes: { normal: false, holo: true, reverse: true, firstEdition: false },
+      };
+      setFlags = false;
+      const fixture = create(typhlosion);
+      expect(rows(fixture).map((row) => row.variant)).toEqual(['variant-normal']);
+
+      await settle(fixture);
+
+      expect(rows(fixture).map((row) => row.variant)).toEqual([
+        'variant-normal',
+        'variant-reverse',
+      ]);
+    });
+
+    it('offers only TCGdex’s variants where TCGdex keeps the set’s flags', async () => {
+      setFlags = true;
+      const fixture = create({
+        ...base,
+        rarity: 'Rare',
+        variants: { ...base.variants, normal: true, reverse: false },
+      });
+      await settle(fixture);
 
       expect(rows(fixture).map((row) => row.variant)).toEqual(['variant-normal']);
     });
@@ -566,7 +599,7 @@ describe('CardDetailsComponent', () => {
       const fixture = create({ ...base, variants: { ...base.variants, reverse: false } });
       await settle(fixture);
 
-      expect(priceService.setFlagsReverseHolos).toHaveBeenCalledWith('intl', 'sv01');
+      expect(priceService.setReverseHolos).toHaveBeenCalledWith('intl', 'sv01');
       expect(priceRow(fixture, 'base')?.price).toBe('€0.14');
       expect(priceRow(fixture, 'reverseHolo')).toBeNull();
     });
@@ -678,17 +711,32 @@ describe('CardDetailsComponent', () => {
       error.mockRestore();
     });
 
-    it('still shows prices when the set’s reverse holo flags can’t be read', async () => {
+    it('still offers a reverse holo stepper when the prices can’t be read', async () => {
       const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-      priceService.setFlagsReverseHolos.mockRejectedValueOnce(new Error('disk'));
+      priceService.prices.mockRejectedValueOnce(new Error('disk'));
+      setFlags = false;
+      const fixture = create({
+        ...base,
+        rarity: 'Rare',
+        variants: { ...base.variants, normal: true, reverse: false },
+      });
+      await settle(fixture);
+
+      expect(rows(fixture).map((row) => row.variant)).toEqual([
+        'variant-normal',
+        'variant-reverse',
+      ]);
+      error.mockRestore();
+    });
+
+    it('still shows prices when the set’s cards can’t be read', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      priceService.setReverseHolos.mockRejectedValueOnce(new Error('disk'));
       storedPrices.set(base.id, prices());
       const fixture = create(base);
       await settle(fixture);
 
-      expect(error).toHaveBeenCalledWith(
-        'catalog.set_reverse_holo_flags_failed',
-        expect.any(Error)
-      );
+      expect(error).toHaveBeenCalledWith('catalog.set_reverse_holos_failed', expect.any(Error));
       expect(priceRow(fixture, 'base')?.price).toBe('€0.14');
       expect(priceRow(fixture, 'reverseHolo')?.price).toBe('€1.50');
       error.mockRestore();

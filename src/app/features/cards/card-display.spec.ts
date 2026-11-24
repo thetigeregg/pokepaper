@@ -5,13 +5,21 @@ import {
   cardText,
   cardTint,
   formatStage,
+  offeredVariants,
   priceRows,
   retreatCost,
   retreatLabel,
   setLine,
   setLogoUrl,
+  variantRows,
 } from './card-display';
 import { energyIconUrl } from './energy-icon.component';
+import type { SetReverseHolos } from '../../core/utils/catalog-price.util';
+
+/** A set whose reverse holo flags TCGdex keeps. */
+const KEEPS: SetReverseHolos = { tcgdexFlags: true, tcgplayerSells: false };
+/** A set without flags where TCGplayer sells reverse holos. */
+const FLAGLESS: SetReverseHolos = { tcgdexFlags: false, tcgplayerSells: true };
 
 const card = (overrides: Partial<CatalogCard>): CatalogCard => ({
   ...makeContractCard('intl', 'sv01', 'sv01-001', 0),
@@ -76,7 +84,7 @@ describe('prices', () => {
     ...overrides,
   });
 
-  const modern = { releaseDate: '2023-03-31' };
+  const modern = { releaseDate: '2023-03-31', names: { en: 'Set' } };
 
   it('lists the base finish and the reverse holo', () => {
     expect(
@@ -84,7 +92,7 @@ describe('prices', () => {
         card({ variants: variants({ normal: true, reverse: true }) }),
         modern,
         prices(figures(0.14, 0.1, 0.08), figures(0.28, null, 0.3)),
-        true
+        KEEPS
       )
     ).toEqual([
       {
@@ -110,9 +118,9 @@ describe('prices', () => {
     for (const flags of [{ holo: true }, { normal: true }, { reverse: true }, {}]) {
       const rows = priceRows(
         card({ variants: variants(flags) }),
-        { releaseDate: '1999-07-01' },
+        { releaseDate: '1999-07-01', names: { en: 'Set' } },
         prices(figures(55.87, null, null), figures(12.61, null, null)),
-        false
+        FLAGLESS
       );
 
       expect(rows.map(({ label, hint }) => ({ label, hint }))).toEqual([
@@ -123,37 +131,103 @@ describe('prices', () => {
 
   it('leaves out reverse holo figures for cards that can’t come in one', () => {
     const both = prices(figures(21.11, null, null), figures(6.84, null, null));
-    const fatesCollide = { releaseDate: '2016-05-02' };
+    const fatesCollide = { releaseDate: '2016-05-02', names: { en: 'Set' } };
     const normalOnly = { variants: variants({ normal: true }) };
     const finishes = (
       overrides: Partial<CatalogCard>,
-      set: { releaseDate: string | null },
-      setFlagsReverseHolos: boolean
-    ) => priceRows(card(overrides), set, both, setFlagsReverseHolos).map((row) => row.finish);
+      set: { releaseDate: string | null; names: { en: string } },
+      setHolos: SetReverseHolos
+    ) => priceRows(card(overrides), set, both, setHolos).map((row) => row.finish);
 
     // Fates Collide's full art Kingdra-EX: its set has no reverse holo flags…
     expect(
-      finishes({ ...normalOnly, rarity: 'Ultra Rare', suffix: 'EX' }, fatesCollide, false)
+      finishes({ ...normalOnly, rarity: 'Ultra Rare', suffix: 'EX' }, fatesCollide, FLAGLESS)
     ).toEqual(['base']);
     // …but its commons do come in reverse holo.
-    expect(finishes(normalOnly, fatesCollide, false)).toEqual(['base', 'reverseHolo']);
+    expect(finishes(normalOnly, fatesCollide, FLAGLESS)).toEqual(['base', 'reverseHolo']);
     // An unflagged card in a set whose flags TCGdex keeps.
-    expect(finishes(normalOnly, modern, true)).toEqual(['base']);
+    expect(finishes(normalOnly, modern, KEEPS)).toEqual(['base']);
     // Base Set: before reverse holos, even when TCGdex flags one.
-    const baseSet = { releaseDate: '1999-01-09' };
-    expect(finishes(normalOnly, baseSet, false)).toEqual(['base']);
-    expect(finishes({ variants: variants({ holo: true, reverse: true }) }, baseSet, false)).toEqual(
-      ['base']
-    );
+    const baseSet = { releaseDate: '1999-01-09', names: { en: 'Set' } };
+    expect(finishes(normalOnly, baseSet, FLAGLESS)).toEqual(['base']);
+    expect(
+      finishes({ variants: variants({ holo: true, reverse: true }) }, baseSet, FLAGLESS)
+    ).toEqual(['base']);
   });
 
   it('skips finishes without a headline price, and cards without prices', () => {
     expect(
-      priceRows(card({}), modern, prices(figures(null, 2, null), figures(1, 1, 1)), true)
+      priceRows(card({}), modern, prices(figures(null, 2, null), figures(1, 1, 1)), KEEPS)
     ).toEqual([
       { finish: 'reverseHolo', label: 'Reverse holo', hint: null, price: 1, avg7: 1, avg30: 1 },
     ]);
-    expect(priceRows(card({}), modern, undefined, true)).toEqual([]);
+    expect(priceRows(card({}), modern, undefined, KEEPS)).toEqual([]);
+  });
+});
+
+describe('variants offered', () => {
+  const variants = (overrides: Partial<CatalogCard['variants']>): CatalogCard['variants'] => ({
+    normal: false,
+    reverse: false,
+    holo: false,
+    firstEdition: false,
+    wPromo: false,
+    ...overrides,
+  });
+  const breakthrough = { releaseDate: '2015-11-04', names: { en: 'BREAKthrough' } };
+
+  it('adds reverse holo when the card can come in one, though TCGdex doesn’t flag it', () => {
+    // BREAKthrough Typhlosion: TCGplayer sells it in holo and reverse holo.
+    const typhlosion = card({
+      rarity: 'Rare',
+      variants: variants({ normal: true }),
+      tcgplayerFinishes: { normal: false, holo: true, reverse: true, firstEdition: false },
+    });
+    expect(offeredVariants(typhlosion, breakthrough, FLAGLESS)).toEqual(['normal', 'reverse']);
+    // A card listed in holo and 1st edition keeps their order around reverse holo.
+    expect(
+      offeredVariants(
+        card({ rarity: 'Rare', variants: variants({ holo: true, firstEdition: true }) }),
+        { releaseDate: '2003-06-18', names: { en: 'Sandstorm' } },
+        FLAGLESS
+      )
+    ).toEqual(['holo', 'reverse', 'firstEdition']);
+  });
+
+  it('offers only TCGdex’s variants when the card can’t come in reverse holo', () => {
+    const flareon = card({
+      rarity: 'Rare',
+      variants: variants({ normal: true, holo: true }),
+      tcgplayerFinishes: { normal: true, holo: true, reverse: false, firstEdition: false },
+    });
+    expect(
+      offeredVariants(
+        flareon,
+        { releaseDate: '2006-04-01', names: { en: 'POP Series 3' } },
+        { tcgdexFlags: false, tcgplayerSells: false }
+      )
+    ).toEqual(['normal', 'holo']);
+    // Unflagged in a set whose flags TCGdex keeps.
+    expect(
+      offeredVariants(card({ variants: variants({ normal: true }) }), breakthrough, KEEPS)
+    ).toEqual(['normal']);
+    // Wizards promo 34 Entei keeps the reverse holo TCGdex lists.
+    expect(
+      offeredVariants(
+        card({ variants: variants({ reverse: true }) }),
+        { releaseDate: '1999-07-01', names: { en: 'Wizards Black Star Promos' } },
+        FLAGLESS
+      )
+    ).toEqual(['reverse']);
+  });
+
+  it('lists the offered variants and any other owned, with their copies', () => {
+    const owned: Partial<Record<string, number>> = { holo: 2 };
+    expect(variantRows(['normal', 'reverse'], (variant) => owned[variant] ?? 0)).toEqual([
+      { variant: 'normal', label: 'Normal', quantity: 0 },
+      { variant: 'holo', label: 'Holo', quantity: 2 },
+      { variant: 'reverse', label: 'Reverse holo', quantity: 0 },
+    ]);
   });
 });
 

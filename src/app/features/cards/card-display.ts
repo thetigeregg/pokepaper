@@ -1,4 +1,9 @@
-import { headlinePrice, reverseHoloPossible } from '../../core/utils/catalog-price.util';
+import {
+  headlinePrice,
+  reverseHoloPossible,
+  type ReverseHoloSet,
+  type SetReverseHolos,
+} from '../../core/utils/catalog-price.util';
 import {
   catalogSetImageUrl,
   COLLECTION_VARIANTS,
@@ -80,6 +85,24 @@ export function cardVariants(card: CatalogCard): [CollectionVariant, ...Collecti
   return listed.length > 0 ? [first, ...rest] : ['normal'];
 }
 
+/**
+ * The variants card detail and the set checklist offer: TCGdex's
+ * (`cardVariants`), plus reverse holo whenever the card can come in one
+ * (`reverseHoloPossible`), as card detail shows its reverse holo price for:
+ * TCGdex lacks reverse holo flags for whole sets. `setHolos` is
+ * `setReverseHolos` of the card's set.
+ */
+export function offeredVariants(
+  card: CatalogCard,
+  set: ReverseHoloSet,
+  setHolos: SetReverseHolos
+): CollectionVariant[] {
+  const listed = cardVariants(card);
+  return listed.includes('reverse') || !reverseHoloPossible(card, set, setHolos)
+    ? listed
+    : COLLECTION_VARIANTS.filter((variant) => variant === 'reverse' || listed.includes(variant));
+}
+
 /** What a copy of `card` in `variant` and `language` is counted under. */
 export function collectionTarget(
   card: CatalogCard,
@@ -97,20 +120,19 @@ export interface VariantRow {
 }
 
 /**
- * The variants to offer for a card with the copies owned of each: those it
- * comes in (`cardVariants`), plus any other variant owned (TCGdex's flags
- * have gaps), so every counted copy can be seen and changed.
+ * The variants to offer for a card with the copies owned of each: those
+ * `offered` (`offeredVariants`), plus any other variant owned, so every
+ * counted copy can be seen and changed.
  */
 export function variantRows(
-  card: CatalogCard,
+  offered: readonly CollectionVariant[],
   quantity: (variant: CollectionVariant) => number
 ): VariantRow[] {
-  const listed = cardVariants(card);
   return COLLECTION_VARIANTS.map((variant) => ({
     variant,
     label: VARIANT_LABELS[variant],
     quantity: quantity(variant),
-  })).filter((row) => listed.includes(row.variant) || row.quantity > 0);
+  })).filter((row) => offered.includes(row.variant) || row.quantity > 0);
 }
 
 /** One finish's prices in card detail's Price section. */
@@ -132,19 +154,19 @@ export interface PriceRow {
  * reverse holo row beside it, a hint says what it covers. Cardmarket reports
  * reverse holo figures for many cards never printed as one (sales tagged
  * reverse holo by sellers), so the reverse holo is left out unless the
- * card can come in one (`reverseHoloPossible`). `setFlagsReverseHolos` is
- * `flagsReverseHolos` of the card's set.
+ * card can come in one (`reverseHoloPossible`). `setHolos` is
+ * `setReverseHolos` of the card's set.
  */
 export function priceRows(
   card: CatalogCard,
-  set: Pick<CatalogSet, 'releaseDate'>,
+  set: ReverseHoloSet,
   prices: CatalogCardPrices | undefined,
-  setFlagsReverseHolos: boolean
+  setHolos: SetReverseHolos
 ): PriceRow[] {
   if (!prices) {
     return [];
   }
-  const reverseHolo = reverseHoloPossible(card, set, setFlagsReverseHolos);
+  const reverseHolo = reverseHoloPossible(card, set, setHolos);
   const finishes = [
     { finish: 'base', label: 'Standard', figures: prices.base },
     {

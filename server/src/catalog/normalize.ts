@@ -4,6 +4,7 @@ import {
   type CatalogAttack,
   type CatalogCard,
   type CatalogCardText,
+  type CatalogFinishes,
   type CatalogLanguage,
   type CatalogLegality,
   type CatalogRegion,
@@ -126,6 +127,8 @@ export interface RawCard {
   regulationMark: string | null;
   illustrator: string | null;
   variants: CatalogVariants;
+  /** TCGplayer's finishes (`pricing.tcgplayer`), when it lists any. */
+  tcgplayerFinishes: CatalogFinishes | null;
   legal: CatalogLegality;
   weaknesses: CatalogTypeModifier[];
   resistances: CatalogTypeModifier[];
@@ -235,6 +238,59 @@ function damage(value: unknown): string | null {
     : text(value, MAX_SHORT);
 }
 
+/**
+ * TCGplayer's price entries by finish (TCGdex's `pricing.tcgplayer`), and
+ * the finish each one is. `unlimited` and `1st-edition` are WotC-era names.
+ */
+const TCGPLAYER_FINISHES: Readonly<Record<string, readonly (keyof CatalogFinishes)[]>> = {
+  normal: ['normal'],
+  unlimited: ['normal'],
+  holofoil: ['holo'],
+  'unlimited-holofoil': ['holo'],
+  'reverse-holofoil': ['reverse'],
+  '1st-edition': ['firstEdition', 'normal'],
+  '1st-edition-holofoil': ['firstEdition', 'holo'],
+};
+
+/** The prices in a TCGplayer entry; one of them makes the entry count. */
+const TCGPLAYER_PRICES = ['lowPrice', 'midPrice', 'highPrice', 'marketPrice', 'directLowPrice'];
+
+/**
+ * The finishes TCGplayer prices a card in, from the price entries in
+ * TCGdex's `pricing.tcgplayer` with at least one price (an empty entry is
+ * no evidence); null when it has none it knows.
+ */
+export function parseTcgplayerFinishes(card: Json): CatalogFinishes | null {
+  const pricing = card['pricing'];
+  const tcgplayer = isObject(pricing) ? pricing['tcgplayer'] : undefined;
+  if (!isObject(tcgplayer)) {
+    return null;
+  }
+  const finishes: CatalogFinishes = {
+    normal: false,
+    holo: false,
+    reverse: false,
+    firstEdition: false,
+  };
+  let known = false;
+  for (const [key, entry] of Object.entries(tcgplayer)) {
+    const kinds = Object.hasOwn(TCGPLAYER_FINISHES, key) ? TCGPLAYER_FINISHES[key] : undefined;
+    const priced =
+      isObject(entry) &&
+      TCGPLAYER_PRICES.some((field) => {
+        const price = entry[field];
+        return typeof price === 'number' && Number.isFinite(price) && price > 0;
+      });
+    if (kinds && priced) {
+      known = true;
+      for (const kind of kinds) {
+        finishes[kind] = true;
+      }
+    }
+  }
+  return known ? finishes : null;
+}
+
 /** `GET /{lang}/cards/{id}`; null when it isn't a usable card. */
 export function parseCard(value: unknown): RawCard | null {
   if (!isObject(value)) {
@@ -274,6 +330,7 @@ export function parseCard(value: unknown): RawCard | null {
       firstEdition: variants['firstEdition'] === true,
       wPromo: variants['wPromo'] === true,
     },
+    tcgplayerFinishes: parseTcgplayerFinishes(value),
     legal: legality(value['legal']),
     weaknesses: modifiers(value['weaknesses']),
     resistances: modifiers(value['resistances']),
@@ -445,6 +502,7 @@ function neutralFields(raw: RawCard, vocabulary: Vocabulary | undefined): Neutra
     regulationMark: raw.regulationMark,
     illustrator: raw.illustrator,
     variants: raw.variants,
+    ...(raw.tcgplayerFinishes && { tcgplayerFinishes: raw.tcgplayerFinishes }),
     legal: raw.legal,
     weaknesses: raw.weaknesses.map(modifier),
     resistances: raw.resistances.map(modifier),
@@ -533,6 +591,8 @@ export function mergeCard(input: MergeCardInput): CatalogCard | null {
   if (!neutral) {
     return null;
   }
+  const { tcgplayerFinishes: fresh, ...rest } = neutral;
+  const tcgplayerFinishes = keptFinishes(fresh, existing?.tcgplayerFinishes);
 
   return {
     region,
@@ -540,8 +600,30 @@ export function mergeCard(input: MergeCardInput): CatalogCard | null {
     setId: input.setId,
     localId: input.localId,
     sortIndex: input.sortIndex,
-    ...neutral,
+    ...rest,
+    ...(tcgplayerFinishes && { tcgplayerFinishes }),
     text: texts,
+  };
+}
+
+/**
+ * The finishes TCGplayer has listed for a card, fresh or stored: a finish
+ * stays once seen. TCGplayer's entries follow its sales, so one can drop
+ * out for a while; the printing doesn't, and the card (with its set's
+ * hash, which every device downloads by) shouldn't change with it.
+ */
+function keptFinishes(
+  fresh: CatalogFinishes | undefined,
+  stored: CatalogFinishes | undefined
+): CatalogFinishes | undefined {
+  if (!fresh || !stored) {
+    return fresh ?? stored;
+  }
+  return {
+    normal: fresh.normal || stored.normal,
+    holo: fresh.holo || stored.holo,
+    reverse: fresh.reverse || stored.reverse,
+    firstEdition: fresh.firstEdition || stored.firstEdition,
   };
 }
 

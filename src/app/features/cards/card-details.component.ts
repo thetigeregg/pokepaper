@@ -37,11 +37,17 @@ import { CurrencyService } from '../../core/services/currency.service';
 import { CollectionService } from '../../core/services/collection.service';
 import { LayoutService } from '../../core/services/layout.service';
 import { displayImage } from '../../core/utils/catalog-image.util';
+import {
+  UNKNOWN_SET_REVERSE_HOLOS,
+  type SetReverseHolos,
+} from '../../core/utils/catalog-price.util';
 import { POCKET_SERIES } from '../decks/deck-rules';
 import {
   cardSubtitle,
   cardText,
+  cardVariants,
   collectionTarget,
+  offeredVariants,
   priceRows,
   type PriceRow,
   retreatCost,
@@ -98,10 +104,17 @@ export class CardDetailsComponent {
   /** Steppers stay disabled until the collection has loaded (they'd count from 0). */
   readonly ready = this.collection.loaded;
   readonly languageName = computed(() => LANGUAGE_LABELS[this.language()].name);
-  /** Copies owned in the current language per variant (`variantRows`). */
-  readonly variants = computed(() =>
-    variantRows(this.card(), (variant) => this.collection.quantity(this.target(variant)))
-  );
+  /**
+   * Copies owned in the current language per variant (`variantRows`). A
+   * reverse holo TCGdex doesn't flag is offered once the set's cards have
+   * been read (`offeredVariants`).
+   */
+  readonly variants = computed(() => {
+    const card = this.card();
+    const setHolos = this.setHolos();
+    const offered = setHolos ? offeredVariants(card, this.set(), setHolos) : cardVariants(card);
+    return variantRows(offered, (variant) => this.collection.quantity(this.target(variant)));
+  });
   /** "2 in German · 1 in French": copies owned in the card's other languages. */
   readonly otherLanguages = computed(() => {
     const card = this.card();
@@ -131,15 +144,19 @@ export class CardDetailsComponent {
   );
   readonly retreatCost = computed(() => retreatCost(this.card()));
   readonly retreatLabel = computed(() => retreatLabel(this.card()));
-  /**
-   * The stored prices of the card they were read for (a slide's card can
-   * change), and whether TCGdex keeps its set's reverse holo flags.
-   */
+  /** The stored prices of the card they were read for (a slide's card can change). */
   private readonly loadedPrices = signal<{
     key: string;
     prices: CatalogCardPrices | undefined;
-    setFlagsReverseHolos: boolean;
   } | null>(null);
+  /** `setReverseHolos` of the set it was read for. */
+  private readonly loadedSetHolos = signal<{ key: string; holos: SetReverseHolos } | null>(null);
+  /** What the card's set tells about reverse holos, once read. */
+  private readonly setHolos = computed(() => {
+    const loaded = this.loadedSetHolos();
+    const { region, setId } = this.card();
+    return loaded?.key === catalogKey(region, setId) ? loaded.holos : null;
+  });
   private readonly cardPrices = computed(() => {
     const loaded = this.loadedPrices();
     const card = this.card();
@@ -159,9 +176,8 @@ export class CardDetailsComponent {
   /** The Price section's rows, one per priced finish (`priceRows`). */
   readonly priceRows = computed(() => {
     const loaded = this.cardPrices();
-    return loaded
-      ? priceRows(this.card(), this.set(), loaded.prices, loaded.setFlagsReverseHolos)
-      : [];
+    const setHolos = this.setHolos();
+    return loaded && setHolos ? priceRows(this.card(), this.set(), loaded.prices, setHolos) : [];
   });
   readonly pricesUpdated = computed(() => this.prices()?.updated ?? null);
   /** The ECB rates' day when prices are converted from euros, else null. */
@@ -193,28 +209,46 @@ export class CardDetailsComponent {
     addIcons({ addCircleOutline, openOutline, removeCircleOutline });
     // Reads the card's prices, and again whenever a sync stores new ones.
     effect((onCleanup) => {
-      const { region, id, setId } = this.card();
+      const { region, id } = this.card();
       this.priceService.version();
       let stale = false;
       onCleanup(() => {
         stale = true;
       });
-      Promise.all([
-        this.priceService.prices(region, id),
-        // Without the set's flags, the base finish still shows; the reverse
-        // holo goes by rarity alone (`reverseHoloPossible`).
-        this.priceService.setFlagsReverseHolos(region, setId).catch((error: unknown) => {
-          console.error('catalog.set_reverse_holo_flags_failed', error);
-          return false;
-        }),
-      ])
-        .then(([prices, setFlagsReverseHolos]) => {
+      this.priceService
+        .prices(region, id)
+        .then((prices) => {
           if (!stale) {
-            this.loadedPrices.set({ key: catalogKey(region, id), prices, setFlagsReverseHolos });
+            this.loadedPrices.set({ key: catalogKey(region, id), prices });
           }
         })
         .catch((error: unknown) => {
           console.error('catalog.card_prices_failed', error);
+        });
+    });
+    // Reads what the card's set tells about reverse holos, for the steppers
+    // and the reverse holo price, apart from the prices so a failed price
+    // read doesn't hide a stepper. Read again when a sync stores new prices,
+    // as a sync that changes the set does too.
+    effect((onCleanup) => {
+      const { region, setId } = this.card();
+      this.priceService.version();
+      let stale = false;
+      onCleanup(() => {
+        stale = true;
+      });
+      // Can't reject: a failed read is caught first.
+      void this.priceService
+        .setReverseHolos(region, setId)
+        .catch((error: unknown): SetReverseHolos => {
+          // The base finish still shows; the reverse holo goes by the card alone.
+          console.error('catalog.set_reverse_holos_failed', error);
+          return UNKNOWN_SET_REVERSE_HOLOS;
+        })
+        .then((holos) => {
+          if (!stale) {
+            this.loadedSetHolos.set({ key: catalogKey(region, setId), holos });
+          }
         });
     });
   }
