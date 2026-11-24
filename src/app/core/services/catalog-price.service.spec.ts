@@ -157,6 +157,25 @@ describe('CatalogPriceService', () => {
       expect(await service.setsBeforeReverseHolos()).toEqual(new Set(['intl:basep', 'asia:PMCG1']));
       expect(listCatalogSets).toHaveBeenCalledTimes(2);
     });
+
+    it('keeps a newer read when an older one fails', async () => {
+      let fail: (error: Error) => void = () => undefined;
+      listCatalogSets.mockReturnValueOnce(
+        new Promise((_, reject) => {
+          fail = reject;
+        })
+      );
+      const service = TestBed.inject(CatalogPriceService);
+      const older = service.setsBeforeReverseHolos();
+      setsChanged.next();
+      const newer = service.setsBeforeReverseHolos();
+
+      fail(new Error('disk'));
+      await expect(older).rejects.toThrow('disk');
+
+      expect(service.setsBeforeReverseHolos()).toBe(newer);
+      expect(listCatalogSets).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('bumps its version whenever a sync stores new prices', () => {
