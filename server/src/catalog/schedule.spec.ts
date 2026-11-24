@@ -1,6 +1,7 @@
+import { openCatalogDatabase } from './db.js';
 import { runCatalogIngest } from './ingest.js';
 import { nextRunKind, pricesDue, startCatalogSchedule } from './schedule.js';
-import type { CatalogStore } from './store.js';
+import { CatalogStore } from './store.js';
 import {
   ecbXml,
   fakeCardmarket,
@@ -32,9 +33,13 @@ describe('pricesDue', () => {
   const now = new Date('2026-01-10T00:00:00Z');
 
   it('is due when no pass completed or the last one started long enough ago', () => {
-    expect(pricesDue(null, now, 24)).toBe(true);
-    expect(pricesDue(new Date('2026-01-09T00:00:00Z'), now, 24)).toBe(true);
-    expect(pricesDue(new Date('2026-01-09T00:00:01Z'), now, 24)).toBe(false);
+    expect(pricesDue(null, true, now, 24)).toBe(true);
+    expect(pricesDue(new Date('2026-01-09T00:00:00Z'), true, now, 24)).toBe(true);
+    expect(pricesDue(new Date('2026-01-09T00:00:01Z'), true, now, 24)).toBe(false);
+  });
+
+  it('is due whenever no price guide is stored', () => {
+    expect(pricesDue(new Date('2026-01-09T23:00:00Z'), false, now, 24)).toBe(true);
   });
 });
 
@@ -219,6 +224,38 @@ describe('startCatalogSchedule', () => {
     clock += 12 * HOUR;
     await vi.advanceTimersByTimeAsync(12 * HOUR);
     expect(priceRuns()).toBe(2);
+
+    await schedule.stop();
+  });
+
+  it('refreshes prices at the next run when no price guide is stored, however recent the last pass', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const db = openCatalogDatabase(':memory:');
+    const store = new CatalogStore(db);
+    const fake = fakeTcgdex();
+    let clock = new Date('2026-01-10T00:00:00Z').getTime();
+    const schedule = startCatalogSchedule({
+      store,
+      fetch: outside.fetch,
+      languages: ['en', 'fr'],
+      refreshHours: 12,
+      fullRefreshDays: 7,
+      pricesRefreshHours: 24,
+      log: silentLogger(),
+      initialDelayMs: 0,
+      createClient: (signal) => fakeClient(fake, signal),
+      now: () => new Date(clock),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.listPriceRuns()).toHaveLength(1);
+    // As catalog migration 0006 does, so the next pass downloads the guide whole.
+    db.prepare("DELETE FROM catalog_meta WHERE key = 'price_guide'").run();
+
+    clock += 12 * HOUR;
+    await vi.advanceTimersByTimeAsync(12 * HOUR);
+    expect(store.listPriceRuns()).toHaveLength(2);
+    expect(store.getPriceGuideState()).toBeDefined();
 
     await schedule.stop();
   });
