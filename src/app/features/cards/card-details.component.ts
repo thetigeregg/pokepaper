@@ -131,30 +131,38 @@ export class CardDetailsComponent {
   );
   readonly retreatCost = computed(() => retreatCost(this.card()));
   readonly retreatLabel = computed(() => retreatLabel(this.card()));
-  /** The stored prices of the card they were read for (a slide's card can change). */
+  /**
+   * The stored prices of the card they were read for (a slide's card can
+   * change), and whether TCGdex keeps its set's reverse holo flags.
+   */
   private readonly loadedPrices = signal<{
     key: string;
     prices: CatalogCardPrices | undefined;
+    setFlagsReverseHolos: boolean;
   } | null>(null);
-  /** Whether the card's stored prices (or their absence) have been read. */
-  private readonly pricesRead = computed(() => {
+  private readonly cardPrices = computed(() => {
+    const loaded = this.loadedPrices();
     const card = this.card();
-    return this.loadedPrices()?.key === catalogKey(card.region, card.id);
+    return loaded?.key === catalogKey(card.region, card.id) ? loaded : null;
   });
-  private readonly prices = computed(() =>
-    this.pricesRead() ? this.loadedPrices()?.prices : undefined
-  );
+  private readonly prices = computed(() => this.cardPrices()?.prices);
   /** The price comes from a Cardmarket product matched by hand (docs/catalog.md). */
   readonly matchedByHand = computed(() => this.prices()?.matchedByHand === true);
   /**
-   * Offer to match the card to a Cardmarket product by hand: it has no
-   * price, and isn't a TCG Pocket card (digital only, never on Cardmarket).
+   * Offer to match the card to a Cardmarket product by hand: its prices have
+   * been read and it has none, and it isn't a TCG Pocket card (digital only,
+   * never on Cardmarket).
    */
   readonly offerMatch = computed(
-    () => this.pricesRead() && this.priceRows().length === 0 && this.set().serieId !== POCKET_SERIES
+    () => this.cardPrices() !== null && !this.prices() && this.set().serieId !== POCKET_SERIES
   );
   /** The Price section's rows, one per priced finish (`priceRows`). */
-  readonly priceRows = computed(() => priceRows(this.card(), this.set(), this.prices()));
+  readonly priceRows = computed(() => {
+    const loaded = this.cardPrices();
+    return loaded
+      ? priceRows(this.card(), this.set(), loaded.prices, loaded.setFlagsReverseHolos)
+      : [];
+  });
   readonly pricesUpdated = computed(() => this.prices()?.updated ?? null);
   /** The ECB rates' day when prices are converted from euros, else null. */
   readonly convertedOn = computed(() =>
@@ -185,17 +193,24 @@ export class CardDetailsComponent {
     addIcons({ addCircleOutline, openOutline, removeCircleOutline });
     // Reads the card's prices, and again whenever a sync stores new ones.
     effect((onCleanup) => {
-      const { region, id } = this.card();
+      const { region, id, setId } = this.card();
       this.priceService.version();
       let stale = false;
       onCleanup(() => {
         stale = true;
       });
-      this.priceService
-        .prices(region, id)
-        .then((prices) => {
+      Promise.all([
+        this.priceService.prices(region, id),
+        // Without the set's flags, the base finish still shows; the reverse
+        // holo goes by rarity alone (`reverseHoloPossible`).
+        this.priceService.setFlagsReverseHolos(region, setId).catch((error: unknown) => {
+          console.error('catalog.set_reverse_holo_flags_failed', error);
+          return false;
+        }),
+      ])
+        .then(([prices, setFlagsReverseHolos]) => {
           if (!stale) {
-            this.loadedPrices.set({ key: catalogKey(region, id), prices });
+            this.loadedPrices.set({ key: catalogKey(region, id), prices, setFlagsReverseHolos });
           }
         })
         .catch((error: unknown) => {

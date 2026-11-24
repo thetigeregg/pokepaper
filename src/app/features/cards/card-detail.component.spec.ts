@@ -104,7 +104,11 @@ describe('CardDetailComponent', () => {
         { provide: VisibilityService, useValue: { whenVisible: () => () => undefined } },
         {
           provide: CatalogPriceService,
-          useValue: { version: signal(0), prices: () => Promise.resolve(undefined) },
+          useValue: {
+            version: signal(0),
+            prices: () => Promise.resolve(undefined),
+            setFlagsReverseHolos: () => Promise.resolve(false),
+          },
         },
         {
           provide: CurrencyService,
