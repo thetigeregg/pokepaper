@@ -221,3 +221,7 @@
 ## v0.34.2 - 2026-11-24
 
 - 18b63ed fix(cards): clearer variant and price labels on card detail (#68)
+
+## v0.35.0 - 2026-11-24
+
+- b55a396 feat(cards): decide reverse holos by TCGplayer's finishes (#69)
