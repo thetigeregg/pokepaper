@@ -180,6 +180,17 @@ describe('CatalogSearchService', () => {
     expect(keys(service)).toEqual(['intl:sv01-3']);
   });
 
+  it('finds cards by number, alone or with a name', async () => {
+    const service = await create();
+
+    service.setQuery('pika 1');
+    expect(keys(service)).toEqual(['intl:sv02-1', 'intl:swsh1-1']);
+    service.setQuery('002');
+    expect(keys(service)).toEqual(['intl:sv01-2']);
+    service.setQuery('1');
+    expect(keys(service)).toEqual(['intl:sv02-1', 'intl:sv01-1', 'intl:swsh1-1']);
+  });
+
   it('gives another screen its own query and filters over one shared index', async () => {
     const listRows = vi.spyOn(engine, 'listCatalogSearchRows');
     const cards = await create();
@@ -455,6 +466,27 @@ describe('CatalogSearchService', () => {
     expect((await engine.getSyncMeta(SEARCH_ROW_VERSION_KEY))?.value).toBe(
       String(CATALOG_SEARCH_ROW_VERSION)
     );
+  });
+
+  it('loads rows an older version wrote without a number, matching them by name only', async () => {
+    await engine.putSyncMeta({
+      key: SEARCH_ROW_VERSION_KEY,
+      value: String(CATALOG_SEARCH_ROW_VERSION),
+    });
+    const row = await db.catalogCardSearch.get('intl:swsh1-1');
+    if (!row) {
+      throw new Error('The set has a search row');
+    }
+    delete row.number; // As another tab on the previous version writes it.
+    await db.catalogCardSearch.put(row);
+
+    const service = await create();
+
+    expect(service.failed()).toBe(false);
+    service.setQuery('pika 1');
+    expect(keys(service)).toEqual(['intl:sv02-1']);
+    service.setQuery('pikachu v');
+    expect(keys(service)).toEqual(['intl:swsh1-1']);
   });
 
   it('tries the rebuild again on the next load after it fails', async () => {

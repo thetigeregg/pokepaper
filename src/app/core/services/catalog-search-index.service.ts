@@ -5,17 +5,23 @@ import { debounceTime } from 'rxjs';
 import { CATALOG_SEARCH_ROW_VERSION } from '../data/catalog-search-row';
 import type { CatalogSearchRow, StorageEngine } from '../data/storage-engine';
 import { StorageEngineFactory } from '../data/storage-engine.factory';
-import { prepareName, type PreparedName } from '../utils/search-text.util';
+import {
+  parseCardNumber,
+  prepareName,
+  type CardNumber,
+  type PreparedName,
+} from '../utils/search-text.util';
 import { CatalogBrowseService } from './catalog-browse.service';
 import { CatalogSyncService } from './catalog-sync.service';
 
 /** Sync metadata: the `CATALOG_SEARCH_ROW_VERSION` the stored search rows were built with. */
 export const SEARCH_ROW_VERSION_KEY = 'catalogSearchRowVersion';
 
-/** A card's search row with its names prepared for matching. */
+/** A card's search row with its names and number prepared for matching. */
 export interface IndexedCard {
   row: CatalogSearchRow;
   names: PreparedName[];
+  number: CardNumber | null;
 }
 
 /**
@@ -76,7 +82,12 @@ export class CatalogSearchIndexService {
       }
       this.index.set({
         region,
-        cards: rows.map((row) => ({ row, names: row.names.map(prepareName) })),
+        cards: rows.map((row) => ({
+          row,
+          names: row.names.map(prepareName),
+          // A row an older version wrote (another tab) just isn't searchable by number.
+          number: parseCardNumber(row.number ?? ''),
+        })),
       });
     } catch (error: unknown) {
       console.error('catalog.search_load_failed', error);

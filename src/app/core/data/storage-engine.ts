@@ -65,6 +65,11 @@ export interface CatalogSearchRow {
   sortIndex: number;
   /** The card's names in every language, normalized (`normalizeSearchText`), without repeats. */
   names: string[];
+  /**
+   * The card's number as printed (`localId`), for searching by number.
+   * Missing from rows built before `CATALOG_SEARCH_ROW_VERSION` 2.
+   */
+  number?: string;
   category: string;
   /** Trainer or Energy subtype (`Supporter`, `Special`, …). */
   subtype: string | null;

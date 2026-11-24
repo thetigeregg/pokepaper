@@ -4,9 +4,9 @@ import { catalogKey, type CatalogSearchRow } from './storage-engine';
 
 /**
  * Bumped whenever `catalogSearchRow()` changes what it stores, so stored rows
- * are rebuilt (`CatalogSearchService`).
+ * are rebuilt (`CatalogSearchIndexService`).
  */
-export const CATALOG_SEARCH_ROW_VERSION = 1;
+export const CATALOG_SEARCH_ROW_VERSION = 2;
 
 /** A card's search row (see `CatalogSearchRow`), for the set it's stored under. */
 export function catalogSearchRow(card: CatalogCard, setKey: string): CatalogSearchRow {
@@ -23,6 +23,7 @@ export function catalogSearchRow(card: CatalogCard, setKey: string): CatalogSear
     setKey,
     sortIndex: card.sortIndex,
     names: [...names],
+    number: card.localId,
     category: card.category,
     subtype: card.trainerType ?? card.energyType,
     rarity: card.rarity,
