@@ -379,8 +379,8 @@ describe('CardDetailsComponent', () => {
 
       expect(rows(fixture)).toEqual([
         { variant: 'variant-normal', quantity: '0' },
-        { variant: 'variant-reverse', quantity: '0' },
         { variant: 'variant-holo', quantity: '1' },
+        { variant: 'variant-reverse', quantity: '0' },
       ]);
     });
 

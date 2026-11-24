@@ -11,6 +11,7 @@ describe('CollectionValueSectionComponent', () => {
   const loaded = signal(false);
   const ownedEntries = signal<ShownEntry[]>([]);
   let stored: Map<string, CatalogCardPrices>;
+  let earlySets: Set<string>;
   const priceService = {
     version: signal(0),
     pricesByKey: vi.fn((keys: readonly string[]) =>
@@ -18,6 +19,7 @@ describe('CollectionValueSectionComponent', () => {
         new Map(keys.flatMap((key) => (stored.has(key) ? [[key, stored.get(key)]] : [])))
       )
     ),
+    setsBeforeReverseHolos: vi.fn(() => Promise.resolve(earlySets)),
   };
 
   const preferred = signal('EUR');
@@ -78,6 +80,7 @@ describe('CollectionValueSectionComponent', () => {
     currencyService.pick.mockClear();
     ownedEntries.set([]);
     stored = new Map();
+    earlySets = new Set();
     priceService.version.set(0);
     priceService.pricesByKey.mockClear();
     TestBed.configureTestingModule({
@@ -188,6 +191,20 @@ describe('CollectionValueSectionComponent', () => {
     expect(text(fixture, 'value-intl')).toBeUndefined();
     expect(text(fixture, 'value-failed')).toBe('Couldn’t read the prices on this device');
     error.mockRestore();
+  });
+
+  it('values reverse holo copies in sets from before reverse holos by the base finish', async () => {
+    earlySets = new Set(['intl:basep']);
+    ownedEntries.set([entry({ cardId: 'basep-34', setId: 'basep', variant: 'reverse' })]);
+    stored.set('intl:basep-34', {
+      updated: '2026-11-21T05:47:42.306Z',
+      base: { trend: 55.87, avg7: null, avg30: null },
+      reverseHolo: { trend: 12.61, avg7: null, avg30: null },
+    });
+    const fixture = create();
+    await settle(fixture);
+
+    expect(text(fixture, 'value-intl')).toBe('International 1 card €55.87');
   });
 
   it('has no total with one catalog', async () => {

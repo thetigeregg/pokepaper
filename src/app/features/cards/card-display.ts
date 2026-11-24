@@ -67,8 +67,8 @@ export function setLogoUrl(set: CatalogSet, language: CatalogLanguage): string |
 /** Collection stepper labels for each variant (docs/collection.md). */
 export const VARIANT_LABELS: Readonly<Record<CollectionVariant, string>> = {
   normal: 'Normal',
-  reverse: 'Reverse holo',
   holo: 'Holo',
+  reverse: 'Reverse holo',
   firstEdition: '1st edition',
   wPromo: 'W promo',
 };

@@ -121,11 +121,11 @@ describe('prices', () => {
     expect(finishes(normalOnly, fatesCollide, false)).toEqual(['base', 'reverseHolo']);
     // An unflagged card in a set whose flags TCGdex keeps.
     expect(finishes(normalOnly, modern, true)).toEqual(['base']);
-    // Base Set: before reverse holos, unless TCGdex flags one.
+    // Base Set: before reverse holos, even when TCGdex flags one.
     const baseSet = { releaseDate: '1999-01-09' };
     expect(finishes(normalOnly, baseSet, false)).toEqual(['base']);
     expect(finishes({ variants: variants({ holo: true, reverse: true }) }, baseSet, false)).toEqual(
-      ['base', 'reverseHolo']
+      ['base']
     );
   });
 
