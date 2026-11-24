@@ -117,7 +117,7 @@ describe('SetChecklistComponent', () => {
 
     expect(checklist.rows().map((row) => row.variants.map((v) => v.variant))).toEqual([
       ['normal', 'reverse'], // A plain common.
-      ['normal'], // TCGplayer sells no reverse holo of it.
+      ['holo'], // TCGplayer sells it as a holo only, and no card of the set in reverse holo.
     ]);
   });
 

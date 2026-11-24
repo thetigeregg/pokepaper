@@ -86,8 +86,25 @@ export function cardVariants(card: CatalogCard): [CollectionVariant, ...Collecti
 }
 
 /**
- * The variants card detail and the set checklist offer: TCGdex's
- * (`cardVariants`), plus reverse holo whenever the card can come in one
+ * TCGdex's variants (`cardVariants`), with Normal named Holo when TCGplayer
+ * sells the card as a holo and not as a non-holo (`tcgplayerFinishes`):
+ * TCGdex lists many holo rares as normal (BREAKthrough Typhlosion). Both are
+ * valued at the Standard price, so only the name changes.
+ */
+export function listedVariants(card: CatalogCard): CollectionVariant[] {
+  const listed = cardVariants(card);
+  const finishes = card.tcgplayerFinishes;
+  const holoOnly = finishes?.holo === true && !finishes.normal;
+  return holoOnly && listed.includes('normal') && !listed.includes('holo')
+    ? COLLECTION_VARIANTS.filter(
+        (variant) => variant === 'holo' || (variant !== 'normal' && listed.includes(variant))
+      )
+    : listed;
+}
+
+/**
+ * The variants card detail and the set checklist offer: TCGdex's, named as
+ * TCGplayer sells them (`listedVariants`), plus reverse holo whenever the card can come in one
  * (`reverseHoloPossible`), as card detail shows its reverse holo price for:
  * TCGdex lacks reverse holo flags for whole sets. `setHolos` is
  * `setReverseHolos` of the card's set.
@@ -97,7 +114,7 @@ export function offeredVariants(
   set: ReverseHoloSet,
   setHolos: SetReverseHolos
 ): CollectionVariant[] {
-  const listed = cardVariants(card);
+  const listed = listedVariants(card);
   return listed.includes('reverse') || !reverseHoloPossible(card, set, setHolos)
     ? listed
     : COLLECTION_VARIANTS.filter((variant) => variant === 'reverse' || listed.includes(variant));
