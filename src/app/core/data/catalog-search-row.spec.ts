@@ -14,7 +14,12 @@ describe('catalogSearchRow', () => {
     card.text = { en: { ...english, name: 'Fire Energy' }, fr: { ...english, name: '★' } };
 
     expect(catalogSearchRow(card, 'intl:sve')).toEqual(
-      expect.objectContaining({ names: ['fire energy'], subtype: 'Normal', setKey: 'intl:sve' })
+      expect.objectContaining({
+        names: ['fire energy'],
+        number: '1',
+        subtype: 'Normal',
+        setKey: 'intl:sve',
+      })
     );
   });
 });

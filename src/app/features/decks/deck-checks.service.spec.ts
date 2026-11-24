@@ -94,6 +94,7 @@ describe('DeckChecksService', () => {
             setKey: `${entry.region}:${entry.setId}`,
             sortIndex: 0,
             names: [englishText(entry).name.toLowerCase()],
+            number: entry.localId,
             category: entry.category,
             subtype: entry.trainerType,
             rarity: entry.rarity,

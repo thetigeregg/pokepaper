@@ -180,6 +180,17 @@ describe('CatalogSearchService', () => {
     expect(keys(service)).toEqual(['intl:sv01-3']);
   });
 
+  it('finds cards by number, alone or with a name', async () => {
+    const service = await create();
+
+    service.setQuery('pika 1');
+    expect(keys(service)).toEqual(['intl:sv02-1', 'intl:swsh1-1']);
+    service.setQuery('002');
+    expect(keys(service)).toEqual(['intl:sv01-2']);
+    service.setQuery('1');
+    expect(keys(service)).toEqual(['intl:sv02-1', 'intl:sv01-1', 'intl:swsh1-1']);
+  });
+
   it('gives another screen its own query and filters over one shared index', async () => {
     const listRows = vi.spyOn(engine, 'listCatalogSearchRows');
     const cards = await create();

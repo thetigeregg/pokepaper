@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { nameMatches, normalizeSearchText, prepareName, prepareQuery } from './search-text.util';
+import {
+  cardMatches,
+  nameMatches,
+  normalizeSearchText,
+  parseCardNumber,
+  prepareName,
+  prepareQuery,
+} from './search-text.util';
 
 function matches(name: string, query: string): boolean {
   const prepared = prepareQuery(query);
@@ -68,5 +75,76 @@ describe('nameMatches', () => {
   it('has nothing to search for in a blank query', () => {
     expect(prepareQuery('  ')).toBeNull();
     expect(prepareQuery('!?')).toBeNull();
+  });
+});
+
+describe('parseCardNumber', () => {
+  it('splits a number into prefix, value and suffix', () => {
+    expect(parseCardNumber('067')).toEqual({ prefix: '', value: 67, suffix: '' });
+    expect(parseCardNumber('TG05')).toEqual({ prefix: 'tg', value: 5, suffix: '' });
+    expect(parseCardNumber('XY67a')).toEqual({ prefix: 'xy', value: 67, suffix: 'a' });
+    expect(parseCardNumber('６７')).toEqual({ prefix: '', value: 67, suffix: '' }); // Full-width.
+  });
+
+  it("is null for what isn't a number", () => {
+    expect(parseCardNumber('LIG')).toBeNull();
+    expect(parseCardNumber('Museum')).toBeNull();
+    expect(parseCardNumber('SV-P 098')).toBeNull();
+    expect(parseCardNumber('')).toBeNull();
+  });
+});
+
+describe('cardMatches', () => {
+  function card(names: string[], number: string) {
+    return {
+      names: names.map((name) => prepareName(normalizeSearchText(name))),
+      number: parseCardNumber(number),
+    };
+  }
+
+  function matchesCard(names: string[], number: string, query: string): boolean {
+    const prepared = prepareQuery(query);
+    if (!prepared) {
+      throw new Error('empty query');
+    }
+    return cardMatches(card(names, number), prepared);
+  }
+
+  it('matches a name and a number together, or a number alone', () => {
+    expect(matchesCard(['Meowth'], '67', 'meowth 67')).toBe(true);
+    expect(matchesCard(['Meowth'], '67', '67 meow')).toBe(true);
+    expect(matchesCard(['Meowth'], '68', 'meowth 67')).toBe(false);
+    expect(matchesCard(['Pikachu'], '67', 'meowth 67')).toBe(false);
+    expect(matchesCard(['Meowth'], '67', '67')).toBe(true);
+  });
+
+  it('matches the whole number, whatever its padding', () => {
+    expect(matchesCard(['Meowth'], '067', '67')).toBe(true);
+    expect(matchesCard(['Meowth'], '67', '0067')).toBe(true);
+    expect(matchesCard(['Meowth'], '167', '67')).toBe(false);
+    expect(matchesCard(['Meowth'], '67', '6')).toBe(false);
+  });
+
+  it('needs the same prefix, and the suffix when the query has one', () => {
+    expect(matchesCard(['Pikachu'], 'TG05', 'tg5')).toBe(true);
+    expect(matchesCard(['Pikachu'], 'TG05', '5')).toBe(false);
+    expect(matchesCard(['Pikachu'], '5', 'tg5')).toBe(false);
+    expect(matchesCard(['Pikachu'], 'SWSH067', 'pika swsh067')).toBe(true);
+    expect(matchesCard(['Unown'], '50b', '50')).toBe(true);
+    expect(matchesCard(['Unown'], '50b', '50b')).toBe(true);
+    expect(matchesCard(['Unown'], '50b', '50a')).toBe(false);
+  });
+
+  it('still matches numbers in names', () => {
+    expect(matchesCard(['Energy Removal 2'], '81', 'energy removal 2')).toBe(true);
+    expect(matchesCard(['Fire Cube 01'], '128', 'cube 01')).toBe(true);
+    expect(matchesCard(['Energy Removal 2'], '81', 'energy removal 3')).toBe(false);
+  });
+
+  it('matches a number in any language of the card, or one without a name', () => {
+    expect(matchesCard(['Pineco', 'Pomdépik'], '1', 'pomdepik 1')).toBe(true);
+    expect(matchesCard(['ニャース'], '067', 'にゃーす 67')).toBe(true);
+    expect(matchesCard([], '67', '67')).toBe(true);
+    expect(matchesCard([], 'LIG', '67')).toBe(false);
   });
 });
