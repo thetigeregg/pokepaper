@@ -315,6 +315,38 @@ describe('CardDetailsComponent', () => {
       expect(rows(fixture).map((row) => row.variant)).toEqual(['variant-normal']);
     });
 
+    it('offers reverse holo for a card that can come in one, once its set’s flags are read', async () => {
+      // BREAKthrough Typhlosion: TCGdex lists normal only; TCGplayer sells a reverse holo.
+      const typhlosion: CatalogCard = {
+        ...base,
+        rarity: 'Rare',
+        variants: { ...base.variants, normal: true, reverse: false },
+        tcgplayerFinishes: { normal: false, holo: true, reverse: true, firstEdition: false },
+      };
+      setFlags = false;
+      const fixture = create(typhlosion);
+      expect(rows(fixture).map((row) => row.variant)).toEqual(['variant-normal']);
+
+      await settle(fixture);
+
+      expect(rows(fixture).map((row) => row.variant)).toEqual([
+        'variant-normal',
+        'variant-reverse',
+      ]);
+    });
+
+    it('offers only TCGdex’s variants where TCGdex keeps the set’s flags', async () => {
+      setFlags = true;
+      const fixture = create({
+        ...base,
+        rarity: 'Rare',
+        variants: { ...base.variants, normal: true, reverse: false },
+      });
+      await settle(fixture);
+
+      expect(rows(fixture).map((row) => row.variant)).toEqual(['variant-normal']);
+    });
+
     it('adds and removes copies in the current language', async () => {
       const fixture = create(base, 'de');
       await settle(fixture);

@@ -7,6 +7,7 @@ import {
   parseSeriesList,
   parseSetDetail,
   parseSetList,
+  parseTcgplayerFinishes,
   trustedLanguages,
   type RawCard,
 } from './normalize.js';
@@ -111,6 +112,57 @@ describe('parsers', () => {
   });
 });
 
+describe('parseTcgplayerFinishes', () => {
+  const finishes = (tcgplayer: unknown) => parseTcgplayerFinishes({ pricing: { tcgplayer } });
+
+  it('reads the finishes TCGplayer prices the card in', () => {
+    // BREAKthrough Typhlosion: a holo rare TCGdex lists as normal only.
+    expect(
+      finishes({ unit: 'USD', holofoil: { marketPrice: 6.49 }, 'reverse-holofoil': {} })
+    ).toEqual({ normal: false, holo: true, reverse: true, firstEdition: false });
+    expect(finishes({ normal: {}, 'reverse-holofoil': {} })).toMatchObject({
+      normal: true,
+      holo: false,
+      reverse: true,
+    });
+  });
+
+  it('reads WotC-era editions as their finishes', () => {
+    expect(finishes({ '1st-edition': {}, unlimited: {} })).toEqual({
+      normal: true,
+      holo: false,
+      reverse: false,
+      firstEdition: true,
+    });
+    expect(finishes({ '1st-edition-holofoil': {}, 'unlimited-holofoil': {} })).toEqual({
+      normal: false,
+      holo: true,
+      reverse: false,
+      firstEdition: true,
+    });
+  });
+
+  it('is null without any finish it knows', () => {
+    expect(finishes({ unit: 'USD', updated: '2026-11-23', 'staff-foil': {} })).toBeNull();
+    expect(finishes({ holofoil: null })).toBeNull();
+    expect(finishes(null)).toBeNull();
+    expect(parseTcgplayerFinishes({ pricing: null })).toBeNull();
+    expect(parseTcgplayerFinishes({})).toBeNull();
+  });
+
+  it('is part of a parsed card', () => {
+    const card = parseCard({
+      id: 'xy8-20',
+      localId: '20',
+      name: 'Typhlosion',
+      category: 'Pokemon',
+      pricing: { tcgplayer: { holofoil: {} } },
+    });
+    expect(card?.tcgplayerFinishes).toMatchObject({ holo: true, reverse: false });
+    expect(raw().tcgplayerFinishes).toBeNull();
+  });
+});
+
 describe('trustedLanguages', () => {
   it('leaves out a set’s misattributed languages', () => {
     expect(trustedLanguages('asia', 'SV-P', ['ja', 'zh-tw'])).toEqual(['ja']);
@@ -175,6 +227,33 @@ describe('mergeCard', () => {
     const merged = mergeCard({ ...base, languages: ['en'], fetched: new Map(), existing });
 
     expect(Object.keys(merged?.text ?? {})).toEqual(['en']);
+  });
+
+  it('carries TCGplayer’s finishes when it lists any, and keeps stored ones', () => {
+    const finishes = { normal: false, holo: true, reverse: true, firstEdition: false };
+    const fresh = mergeCard({
+      ...base,
+      languages: ['en', 'fr'],
+      fetched: new Map([['en', raw({ tcgplayerFinishes: finishes })]]),
+      existing: undefined,
+    }) as CatalogCard;
+    expect(fresh.tcgplayerFinishes).toEqual(finishes);
+
+    const kept = mergeCard({
+      ...base,
+      languages: ['en', 'fr'],
+      fetched: new Map([['fr', raw({ name: 'Pomdepik' })]]),
+      existing: fresh,
+    });
+    expect(kept?.tcgplayerFinishes).toEqual(finishes);
+
+    const without = mergeCard({
+      ...base,
+      languages: ['en'],
+      fetched: new Map([['en', raw()]]),
+      existing: undefined,
+    });
+    expect(without).not.toHaveProperty('tcgplayerFinishes');
   });
 
   it('returns null when no language has data', () => {

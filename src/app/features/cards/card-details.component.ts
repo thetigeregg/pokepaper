@@ -42,6 +42,7 @@ import {
   cardSubtitle,
   cardText,
   collectionTarget,
+  offeredVariants,
   priceRows,
   type PriceRow,
   retreatCost,
@@ -98,10 +99,17 @@ export class CardDetailsComponent {
   /** Steppers stay disabled until the collection has loaded (they'd count from 0). */
   readonly ready = this.collection.loaded;
   readonly languageName = computed(() => LANGUAGE_LABELS[this.language()].name);
-  /** Copies owned in the current language per variant (`variantRows`). */
-  readonly variants = computed(() =>
-    variantRows(this.card(), (variant) => this.collection.quantity(this.target(variant)))
-  );
+  /**
+   * Copies owned in the current language per variant (`variantRows`). A
+   * reverse holo TCGdex doesn't flag is offered once the set's flags have
+   * been read with the prices (`offeredVariants`).
+   */
+  readonly variants = computed(() => {
+    const flags = this.cardPrices()?.setFlagsReverseHolos ?? true;
+    return variantRows(offeredVariants(this.card(), this.set(), flags), (variant) =>
+      this.collection.quantity(this.target(variant))
+    );
+  });
   /** "2 in German · 1 in French": copies owned in the card's other languages. */
   readonly otherLanguages = computed(() => {
     const card = this.card();

@@ -1,6 +1,6 @@
 import type {
-  CatalogCard,
   CatalogCardPrices,
+  CatalogFinishes,
   CatalogRegion,
   CollectionEntry,
 } from '@pokepaper/shared';
@@ -11,6 +11,8 @@ import {
   headlinePrice,
   reverseHoloPossible,
   variantFigures,
+  type ReverseHoloCard,
+  type ReverseHoloSet,
 } from './catalog-price.util';
 
 const prices = (
@@ -50,9 +52,13 @@ const printing = (
     rarity?: string | null;
     suffix?: string | null;
     reverse?: boolean;
+    localId?: string;
+    name?: string;
+    tcgplayerFinishes?: CatalogFinishes;
   } = {}
-): Pick<CatalogCard, 'region' | 'rarity' | 'suffix' | 'variants'> => ({
+): ReverseHoloCard => ({
   region: overrides.region ?? 'intl',
+  localId: overrides.localId ?? '001',
   rarity: overrides.rarity === undefined ? 'Common' : overrides.rarity,
   suffix: overrides.suffix ?? null,
   variants: {
@@ -62,6 +68,30 @@ const printing = (
     firstEdition: false,
     wPromo: false,
   },
+  ...(overrides.tcgplayerFinishes && { tcgplayerFinishes: overrides.tcgplayerFinishes }),
+  text: {
+    en: {
+      name: overrides.name ?? 'Pineco',
+      description: null,
+      effect: null,
+      evolveFrom: null,
+      attacks: [],
+      abilities: [],
+      image: null,
+    },
+  },
+});
+/** A set released on `releaseDate`, named `name`. */
+const released = (releaseDate: string | null, name = 'Fates Collide'): ReverseHoloSet => ({
+  releaseDate,
+  names: { en: name },
+});
+const finishes = (overrides: Partial<CatalogFinishes>): CatalogFinishes => ({
+  normal: false,
+  holo: false,
+  reverse: false,
+  firstEdition: false,
+  ...overrides,
 });
 
 describe('flagsReverseHolos', () => {
@@ -95,23 +125,23 @@ describe('flagsReverseHolos', () => {
 });
 
 describe('reverseHoloPossible', () => {
-  const modern = { releaseDate: '2016-05-02' };
+  const modern = released('2016-05-02');
 
   it('holds whenever TCGdex flags the card, from reverse holos on', () => {
     expect(reverseHoloPossible(printing({ reverse: true }), modern, true)).toBe(true);
-    expect(
-      reverseHoloPossible(printing({ reverse: true }), { releaseDate: '2002-05-24' }, true)
-    ).toBe(true);
+    expect(reverseHoloPossible(printing({ reverse: true }), released('2002-05-24'), true)).toBe(
+      true
+    );
   });
 
   it('fails for cards from before reverse holos, even flagged ones', () => {
     // Wizards promo 34 Entei: TCGdex flags it reverse holo only.
-    expect(
-      reverseHoloPossible(printing({ reverse: true }), { releaseDate: '1999-07-01' }, false)
-    ).toBe(false);
-    expect(reverseHoloPossible(printing(), { releaseDate: '1999-01-09' }, false)).toBe(false);
-    expect(reverseHoloPossible(printing(), { releaseDate: '2002-05-24' }, false)).toBe(true);
-    expect(reverseHoloPossible(printing(), { releaseDate: null }, false)).toBe(true);
+    expect(reverseHoloPossible(printing({ reverse: true }), released('1999-07-01'), false)).toBe(
+      false
+    );
+    expect(reverseHoloPossible(printing(), released('1999-01-09'), false)).toBe(false);
+    expect(reverseHoloPossible(printing(), released('2002-05-24'), false)).toBe(true);
+    expect(reverseHoloPossible(printing(), released(null), false)).toBe(true);
   });
 
   it('fails for unflagged cards in a set whose flags TCGdex keeps', () => {
@@ -122,7 +152,7 @@ describe('reverseHoloPossible', () => {
           ...printing({ rarity: 'Rare', suffix: 'ex' }),
           variants: { ...printing().variants, normal: false, holo: true },
         },
-        { releaseDate: '2003-11-24' },
+        released('2003-11-24'),
         true
       )
     ).toBe(false);
@@ -145,7 +175,81 @@ describe('reverseHoloPossible', () => {
     }
   });
 
+  it('goes by TCGplayer’s finishes in a set without flags, when it lists any', () => {
+    // BREAKthrough Typhlosion: TCGdex lists it as normal only.
+    expect(
+      reverseHoloPossible(
+        printing({ rarity: 'Rare', tcgplayerFinishes: finishes({ holo: true, reverse: true }) }),
+        modern,
+        false
+      )
+    ).toBe(true);
+    // POP Series 3 Flareon: a plain Rare, but TCGplayer sells it in no reverse holo.
+    expect(
+      reverseHoloPossible(
+        printing({ rarity: 'Rare', tcgplayerFinishes: finishes({ normal: true, holo: true }) }),
+        released('2006-04-01', 'POP Series 3'),
+        false
+      )
+    ).toBe(false);
+    // An ex card TCGplayer sells in reverse holo, against the suffix rule.
+    expect(
+      reverseHoloPossible(
+        printing({ suffix: 'ex', tcgplayerFinishes: finishes({ reverse: true }) }),
+        modern,
+        false
+      )
+    ).toBe(true);
+  });
+
+  it('keeps TCGdex’s word over TCGplayer’s where TCGdex keeps the flags', () => {
+    expect(
+      reverseHoloPossible(
+        printing({ tcgplayerFinishes: finishes({ reverse: true }) }),
+        modern,
+        true
+      )
+    ).toBe(false);
+    expect(
+      reverseHoloPossible(
+        printing({ reverse: true, tcgplayerFinishes: finishes({ normal: true }) }),
+        modern,
+        false
+      )
+    ).toBe(true);
+  });
+
+  it('leaves out Prism Stars, subsets without reverse holos and promo sets without TCGplayer’s word', () => {
+    // Forbidden Light's Arceus ◇: TCGdex gives Prism Stars no suffix.
+    expect(reverseHoloPossible(printing({ rarity: 'Rare', name: 'Arceus ◇' }), modern, false)).toBe(
+      false
+    );
+    // Generations' Radiant Collection, the Trainer and Galarian Galleries.
+    for (const localId of ['RC10', 'TG01', 'GG24']) {
+      expect(reverseHoloPossible(printing({ localId }), modern, false)).toBe(false);
+    }
+    // DP Black Star Promos' Garchomp C LV.X: a Common to TCGdex.
+    expect(
+      reverseHoloPossible(printing(), released('2007-05-01', 'DP Black Star Promos'), false)
+    ).toBe(false);
+    // TCGplayer's word still counts there.
+    expect(
+      reverseHoloPossible(
+        printing({ tcgplayerFinishes: finishes({ reverse: true }) }),
+        released('2003-10-01', 'Nintendo Black Star Promos'),
+        false
+      )
+    ).toBe(true);
+  });
+
   it('goes only by the flags in the Japan & Asia catalog', () => {
+    expect(
+      reverseHoloPossible(
+        printing({ region: 'asia', tcgplayerFinishes: finishes({ reverse: true }) }),
+        modern,
+        false
+      )
+    ).toBe(false);
     expect(reverseHoloPossible(printing({ region: 'asia' }), modern, false)).toBe(false);
     expect(
       reverseHoloPossible(printing({ region: 'asia', rarity: 'Holo Rare' }), modern, false)

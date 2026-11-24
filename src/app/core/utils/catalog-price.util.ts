@@ -52,17 +52,37 @@ export function flagsReverseHolos(cards: readonly ReverseHoloFields[]): boolean 
 }
 
 /**
- * Whether `card` can come in reverse holo, as far as the catalog tells:
- * never in a set from before reverse holos (whatever TCGdex flags), always
- * when TCGdex flags it, never in a set whose flags TCGdex keeps (`setFlagsReverseHolos`, from
- * `flagsReverseHolos`), and otherwise, in the international catalog, when
- * it's plain (no suffix) and of a rarity printed in reverse holo. In the
- * Japan & Asia catalog only flagged cards do: TCGdex flags the few sets
- * with mirror holos, and the rarities don't mean the same there.
+ * Numbers of special subsets printed without reverse holos: Radiant
+ * Collection (RC), Trainer Gallery (TG), Galarian Gallery (GG).
+ */
+const SUBSET_WITHOUT_REVERSE_HOLOS = /^(RC|TG|GG)\d/;
+/** Black Star Promos and other promo sets: their cards come one way each. */
+const PROMO_SET_NAME = /\bPromos\b/;
+
+/** What `reverseHoloPossible` reads of a card. */
+export type ReverseHoloCard = ReverseHoloFields &
+  Pick<CatalogCard, 'region' | 'localId' | 'text' | 'tcgplayerFinishes'>;
+/** What `reverseHoloPossible` reads of a set. */
+export type ReverseHoloSet = Pick<CatalogSet, 'releaseDate' | 'names'>;
+
+/**
+ * Whether `card` can come in reverse holo, as far as the catalog tells
+ * (docs/catalog.md → Reverse holo figures), in this order:
+ *
+ * - Never in a set from before reverse holos, whatever TCGdex flags.
+ * - Always when TCGdex flags it.
+ * - Never in a set whose flags TCGdex keeps (`setFlagsReverseHolos`, from
+ *   `flagsReverseHolos`), nor in the Japan & Asia catalog: TCGdex flags the
+ *   few sets with mirror holos, and the rarities don't mean the same there.
+ * - As TCGplayer says, when it lists the card's finishes
+ *   (`tcgplayerFinishes`).
+ * - Otherwise when it's plain (no suffix) and of a rarity printed in
+ *   reverse holo, unless it's a Prism Star (◇), in a subset printed without
+ *   them (`SUBSET_WITHOUT_REVERSE_HOLOS`) or in a promo set.
  */
 export function reverseHoloPossible(
-  card: ReverseHoloFields & Pick<CatalogCard, 'region'>,
-  set: Pick<CatalogSet, 'releaseDate'>,
+  card: ReverseHoloCard,
+  set: ReverseHoloSet,
   setFlagsReverseHolos: boolean
 ): boolean {
   if (beforeReverseHolos(set)) {
@@ -71,12 +91,19 @@ export function reverseHoloPossible(
   if (card.variants.reverse) {
     return true;
   }
+  if (setFlagsReverseHolos || card.region !== 'intl') {
+    return false;
+  }
+  if (card.tcgplayerFinishes) {
+    return card.tcgplayerFinishes.reverse;
+  }
   return (
-    card.region === 'intl' &&
-    !setFlagsReverseHolos &&
     card.suffix === null &&
     card.rarity !== null &&
-    REVERSE_HOLO_RARITIES.has(card.rarity)
+    REVERSE_HOLO_RARITIES.has(card.rarity) &&
+    !Object.values(card.text).some((text) => text.name.includes('◇')) &&
+    !SUBSET_WITHOUT_REVERSE_HOLOS.test(card.localId) &&
+    !Object.values(set.names).some((name) => PROMO_SET_NAME.test(name))
   );
 }
 

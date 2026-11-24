@@ -95,6 +95,32 @@ describe('SetChecklistComponent', () => {
     });
   });
 
+  it('adds reverse holo toggles for cards that can come in one in a set without flags', () => {
+    // As in BREAKthrough: no card flagged reverse holo.
+    const unflagged = {
+      normal: true,
+      reverse: false,
+      holo: false,
+      firstEdition: false,
+      wPromo: false,
+    };
+    const checklist = create();
+    fixture.componentRef.setInput('cards', [
+      card('sv01-001', 0, { variants: unflagged }),
+      card('sv01-002', 1, {
+        rarity: 'Rare',
+        variants: unflagged,
+        tcgplayerFinishes: { normal: false, holo: true, reverse: false, firstEdition: false },
+      }),
+    ]);
+    fixture.detectChanges();
+
+    expect(checklist.rows().map((row) => row.variants.map((v) => v.variant))).toEqual([
+      ['normal', 'reverse'], // A plain common.
+      ['normal'], // TCGplayer sells no reverse holo of it.
+    ]);
+  });
+
   it('lists each card with its scan, number and name, rarity, then a toggle per variant', () => {
     owned.set({ 'intl:sv01-001:reverse:en': 2 });
     const checklist = create();

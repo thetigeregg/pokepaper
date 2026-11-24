@@ -5,10 +5,12 @@ import { addIcons } from 'ionicons';
 import { informationCircleOutline } from 'ionicons/icons';
 import { LANGUAGE_LABELS } from '../../core/services/catalog-language.service';
 import { CollectionService } from '../../core/services/collection.service';
+import { flagsReverseHolos } from '../../core/utils/catalog-price.util';
 import {
   cardText,
   cardVariants,
   collectionTarget,
+  offeredVariants,
   setLine,
   variantRows,
   type VariantRow,
@@ -171,14 +173,18 @@ export class SetChecklistComponent {
   readonly ready = this.collection.loaded;
   readonly languageName = computed(() => LANGUAGE_LABELS[this.language()].name);
 
+  /** Whether TCGdex keeps the set's reverse holo flags, for the variants offered. */
+  private readonly setFlagsReverseHolos = computed(() => flagsReverseHolos(this.cards()));
+
   readonly rows = computed<ChecklistRow[]>(() => {
     const language = this.language();
     const set = this.set();
+    const flags = this.setFlagsReverseHolos();
     return this.cards().map((card) => ({
       card,
       name: cardText(card, language)?.name ?? card.id,
       setLine: setLine(set, card),
-      variants: variantRows(card, (variant) =>
+      variants: variantRows(offeredVariants(card, set, flags), (variant) =>
         this.collection.quantity(collectionTarget(card, variant, language))
       ),
     }));
