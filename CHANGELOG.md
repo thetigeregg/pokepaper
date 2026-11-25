@@ -257,3 +257,7 @@
 ## v0.39.0 - 2026-11-25
 
 - 7f5dbc3 feat(cards): filter by illustrator, search from card details (#77)
+
+## v0.40.0 - 2026-11-25
+
+- 23b655d feat(cards): change and restore Cardmarket matches TCGdex made (#78)
