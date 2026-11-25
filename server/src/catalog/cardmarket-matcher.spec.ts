@@ -1,14 +1,16 @@
 import type { CatalogLanguage } from '@pokepaper/shared';
 import { memoryDb } from '../test-helpers.js';
 import {
-  CARDMARKET_PRODUCTS_URL,
   CardmarketMatcher,
   CardmarketProductsUnavailableError,
   MAX_CANDIDATES,
-  parseProductList,
-  PRODUCTS_MAX_AGE_MS,
   PRODUCTS_RETRY_MS,
 } from './cardmarket-matcher.js';
+import {
+  CARDMARKET_PRODUCTS_URL,
+  parseProductList,
+  PRODUCTS_MAX_AGE_MS,
+} from './cardmarket-products.js';
 import { runCatalogIngest } from './ingest.js';
 import { CardmarketMatchStore } from './matches-store.js';
 import { runPriceRefresh } from './prices.js';
@@ -225,6 +227,20 @@ describe('CardmarketMatcher.candidates', () => {
       matchedByHand: true,
       name: 'Energy Search',
     });
+  });
+
+  it('reports no current product when TCGdex’s is another card’s, offering it unpriced', async () => {
+    const { matcher } = await setup({
+      productList: cardmarketProductList([
+        {
+          idProduct: PRODUCTS.pineco,
+          name: 'Psyduck [Confusion Wave]',
+          idExpansion: EXPANSIONS.sv01,
+        },
+      ]),
+    });
+
+    expect((await matcher.candidates('intl', 'sv01-001'))?.current).toBeNull();
   });
 
   it('offers products without prices before any price guide is stored', async () => {

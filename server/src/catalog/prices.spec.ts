@@ -2,10 +2,19 @@ import type { CatalogLanguage } from '@pokepaper/shared';
 import { vi } from 'vitest';
 import { runCatalogIngest } from './ingest.js';
 import { parseGuideEntry } from './price-data.js';
-import { CARDMARKET_PRICE_GUIDE_URL, parseGuide, readCapped, runPriceRefresh } from './prices.js';
+import { readCapped } from './download.js';
+import { parseProductList } from './cardmarket-products.js';
+import {
+  CARDMARKET_PRICE_GUIDE_URL,
+  parseGuide,
+  repriceCard,
+  runPriceRefresh,
+  type CardmarketMatchSource,
+} from './prices.js';
 import type { CatalogStore } from './store.js';
 import {
   cardmarketGuide,
+  cardmarketProductList,
   fakeCardmarket,
   fakeClient,
   fakeTcgdex,
@@ -36,6 +45,42 @@ function withoutPricing(fake: FakeTcgdex, ...paths: string[]): void {
     const card = fake.routes.get(path) as Record<string, unknown>;
     fake.routes.set(path, { ...card, pricing: { cardmarket: null } });
   }
+}
+
+/** Stores Cardmarket's product list, naming each product as given. */
+function storeProductList(
+  store: CatalogStore,
+  names: Record<number, string>,
+  createdAt = '2026-11-24T13:07:30+0100'
+): void {
+  const list = parseProductList(
+    cardmarketProductList(
+      Object.entries(names).map(([idProduct, name]) => ({
+        idProduct: Number(idProduct),
+        name,
+        idExpansion: 5001,
+      })),
+      createdAt
+    )
+  );
+  if (!list) {
+    throw new Error('no product list');
+  }
+  store.replaceCardmarketProducts(list.products, {
+    etag: null,
+    createdAt: list.createdAt,
+    checkedAt: list.createdAt,
+  });
+}
+
+/** Matches made by hand, as `CardmarketMatchStore` serves them. */
+function handMatches(region: 'intl', entries: Record<string, number>): CardmarketMatchSource {
+  const map = new Map(Object.entries(entries));
+  return {
+    get: (other, cardId) => (other === region ? map.get(cardId) : undefined),
+    list: (other) => (other === region ? new Map(map) : new Map()),
+    version: () => 1,
+  };
 }
 
 async function setup() {
@@ -311,6 +356,152 @@ describe('runPriceRefresh', () => {
     expect(cardmarket.requests).toBe(2);
     expect(stats.status).toBe('ok');
     expect(store.getCardPrices('intl', 'sv01-172')?.base?.trend).toBe(0.14);
+  });
+
+  describe('TCGdex’s products', () => {
+    it('price a card when Cardmarket’s product list names them for it', async () => {
+      const { store, refresh } = await setup();
+      storeProductList(store, { [PRODUCTS.pineco]: 'Pineco [Guard Press]' });
+
+      const stats = await refresh();
+
+      expect(stats.cards.rejected).toBe(0);
+      expect(store.getCardPrices('intl', 'sv01-001')?.base?.trend).toBe(0.14);
+    });
+
+    it('leave a card unpriced when the list names them for another card or printing', async () => {
+      const { store, refresh } = await setup();
+      await refresh();
+      storeProductList(store, { [PRODUCTS.pineco]: 'Psyduck [Confusion Wave]' });
+      const log = silentLogger();
+      const info = vi.spyOn(log, 'info');
+
+      const stats = await refresh({ log });
+
+      expect(stats.cards.rejected).toBe(1);
+      expect(store.getCardPrices('intl', 'sv01-001')).toBeUndefined();
+      expect(info).toHaveBeenCalledWith(
+        { count: 1, cards: ['intl:sv01-001'] },
+        'catalog.cardmarket_products_rejected'
+      );
+
+      // Another printing's name: still rejected, so nothing to apply anew.
+      storeProductList(store, { [PRODUCTS.pineco]: 'Pineco [Ram | Tackle]' }, '2026-11-25');
+      expect((await refresh()).status).toBe('unchanged');
+      expect(store.getCardPrices('intl', 'sv01-001')).toBeUndefined();
+      // Rejected under another guide too.
+      const next = await refresh({
+        fetch: fakeCardmarket(fixtureGuide('2026-11-21T02:43:56+0100')).fetch,
+      });
+      expect(next.cards.rejected).toBe(1);
+    });
+
+    it('aren’t checked in a set released in the last 60 days, whose names can still change', async () => {
+      const { store, refresh } = await setup();
+      storeProductList(store, { [PRODUCTS.pineco]: 'Psyduck [Confusion Wave]' });
+      const soonAfterRelease = new Date('2023-05-29T00:00:00.000Z'); // Fixture sets: 2023-03-31.
+
+      const stats = await refresh({ now: () => soonAfterRelease });
+
+      expect(stats.cards.rejected).toBe(0);
+      expect(store.getCardPrices('intl', 'sv01-001')?.base?.trend).toBe(0.14);
+      // Checked once 60 days old, the same guide applied anew as the rejections changed.
+      const later = await refresh({ now: () => new Date('2023-05-31T00:00:00.000Z') });
+      expect(later.status).toBe('ok');
+      expect(later.cards.rejected).toBe(1);
+    });
+
+    it('aren’t checked for a product Cardmarket added in the last 60 days', async () => {
+      const { store, refresh } = await setup();
+      const list = parseProductList(
+        cardmarketProductList([
+          {
+            idProduct: PRODUCTS.pineco,
+            name: 'Psyduck [Confusion Wave]',
+            idExpansion: 5001,
+            dateAdded: '2026-11-01 10:00:00',
+          },
+        ])
+      );
+      store.replaceCardmarketProducts(list?.products ?? [], {
+        etag: null,
+        createdAt: '2026-11-24T12:00:00.000Z',
+        checkedAt: '2026-11-24T12:00:00.000Z',
+      });
+
+      // A new promo in an old set: its product is three weeks old.
+      expect((await refresh({ now: () => new Date('2026-11-24T12:00:00Z') })).cards.rejected).toBe(
+        0
+      );
+      expect((await refresh({ now: () => new Date('2027-01-02T12:00:00Z') })).cards.rejected).toBe(
+        1
+      );
+    });
+
+    it('are checked a few hundred at a time, letting the server answer meanwhile', async () => {
+      const { store, refresh } = await setup();
+      // 1,200 more cards, copies of Pineco with its product.
+      const stored = store.getSet('intl', 'sv01');
+      const pineco = store.getCard('intl', 'sv01-001');
+      if (!stored || !pineco) {
+        throw new Error('fixture missing');
+      }
+      const copies = Array.from({ length: 1200 }, (_, index) => ({
+        ...pineco,
+        id: `sv01-copy${String(index)}`,
+        sortIndex: 1000 + index,
+      }));
+      store.writeSet(stored.set, [...store.listSetCards('intl', 'sv01'), ...copies]);
+      store.saveCardmarketProducts(
+        'intl',
+        new Map(copies.map((card) => [card.id, PRODUCTS.pineco]))
+      );
+      const yields = vi.spyOn(globalThis, 'setImmediate');
+
+      const stats = await refresh();
+
+      expect(stats.status).toBe('ok');
+      expect(yields.mock.calls.length).toBeGreaterThanOrEqual(2); // 1,200 products, 500 a time.
+      yields.mockRestore();
+    });
+
+    it('give way to a match made by hand, which is never checked', async () => {
+      const { store, refresh } = await setup();
+      storeProductList(store, { [PRODUCTS.pineco]: 'Psyduck [Confusion Wave]' });
+
+      const stats = await refresh({
+        matches: handMatches('intl', { 'sv01-001': PRODUCTS.pineco }),
+      });
+
+      expect(stats.cards.rejected).toBe(0);
+      expect(store.getCardPrices('intl', 'sv01-001')).toMatchObject({ matchedByHand: true });
+    });
+
+    it('are applied anew, not skipped as unchanged, once the product list changes', async () => {
+      const { store, cardmarket, refresh } = await setup();
+      await refresh();
+      storeProductList(store, { [PRODUCTS.pineco]: 'Psyduck [Confusion Wave]' });
+
+      const stats = await refresh();
+
+      expect(cardmarket.requests).toBe(2);
+      expect(stats.status).toBe('ok');
+      expect(stats.cards.rejected).toBe(1);
+    });
+
+    it('are checked when a card is priced again after its match by hand is cleared', async () => {
+      const { store, refresh } = await setup();
+      await refresh();
+      const none = handMatches('intl', {});
+      storeProductList(store, { [PRODUCTS.pineco]: 'Pineco [Guard Press]' });
+
+      expect(repriceCard(store, none, 'intl', 'sv01-001')).toBe(true);
+      expect(store.getCardPrices('intl', 'sv01-001')?.base?.trend).toBe(0.14);
+
+      storeProductList(store, { [PRODUCTS.pineco]: 'Psyduck [Confusion Wave]' });
+      repriceCard(store, none, 'intl', 'sv01-001');
+      expect(store.getCardPrices('intl', 'sv01-001')).toBeUndefined();
+    });
   });
 
   describe('recent cards without a product', () => {
