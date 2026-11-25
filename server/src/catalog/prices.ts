@@ -75,7 +75,7 @@ export interface PriceRefreshStats {
    * `priced`: has prices. `unpriced`: its product has no figures, or isn't in
    * the guide. `unmapped`: no known Cardmarket product; left as it was.
    * `rejected`: TCGdex's product is another card's or printing's
-   * (`tcgdexProductRejected`); unpriced. `changed`: stored prices that changed.
+   * (`productLinkChecker`); unpriced. `changed`: stored prices that changed.
    */
   cards: { priced: number; unpriced: number; unmapped: number; rejected: number; changed: number };
   /**
@@ -159,14 +159,14 @@ export async function runPriceRefresh(options: PriceRefreshOptions): Promise<Pri
     stats.guideCreatedAt = download.createdAt;
     stats.products = download.entries.size;
 
+    const rejects = productLinkChecker(store, now());
     const regions = CATALOG_REGIONS.map((region) => {
       const products = store.listCardmarketProducts(region);
       const byHand = options.matches?.list(region) ?? new Map<string, number>();
       const rejected = new Set(
         [...products]
           .filter(
-            ([cardId, idProduct]) =>
-              !byHand.has(cardId) && tcgdexProductRejected(store, region, cardId, idProduct)
+            ([cardId, idProduct]) => !byHand.has(cardId) && rejects(region, cardId, idProduct)
           )
           .map(([cardId]) => cardId)
       );
@@ -250,25 +250,50 @@ export async function runPriceRefresh(options: PriceRefreshOptions): Promise<Pri
 }
 
 /**
- * Whether TCGdex's product for a card is, by the stored Cardmarket product
- * list, another card or another printing of it (`checkProductLink`;
- * docs/catalog.md → Checking TCGdex's products). Such a card is left
- * unpriced, to be matched by hand. A card or product the stores lack isn't
- * rejected: there's nothing to check it against.
+ * TCGdex's products are checked only for sets released at least this long
+ * ago: a new set's English names on TCGdex can still differ from
+ * Cardmarket's (Delta Reign's Azurill, three weeks out, has "Bouncy-Bounce
+ * Charge" where Cardmarket has "Hopping Charge"), which would reject its
+ * right products. The window matches `PRODUCT_LOOKUP_DAYS`.
  */
-export function tcgdexProductRejected(
+export const PRODUCT_CHECK_AFTER_DAYS = PRODUCT_LOOKUP_DAYS;
+
+/**
+ * Tells whether TCGdex's product for a card is, by the stored Cardmarket
+ * product list, another card or another printing of it (`checkProductLink`;
+ * docs/catalog.md → Checking TCGdex's products). Such a card is left
+ * unpriced, to be matched by hand. A card or product the stores lack, or a
+ * card of a set released in the last `PRODUCT_CHECK_AFTER_DAYS`, isn't
+ * rejected. Set release dates are read once per set.
+ */
+export function productLinkChecker(
   store: CatalogStore,
-  region: CatalogRegion,
-  cardId: string,
-  idProduct: number
-): boolean {
-  const card = store.getCard(region, cardId);
-  const product = store.getCardmarketProduct(idProduct);
-  if (!card || !product) {
-    return false;
-  }
-  const check = checkProductLink(card, product);
-  return check === 'other_card' || check === 'other_printing';
+  now: Date
+): (region: CatalogRegion, cardId: string, idProduct: number) => boolean {
+  const since = new Date(now.getTime() - PRODUCT_CHECK_AFTER_DAYS * DAY_MS)
+    .toISOString()
+    .slice(0, 10);
+  const releases = new Map<string, string | null>();
+  const released = (region: CatalogRegion, setId: string): string | null => {
+    const key = `${region}:${setId}`;
+    if (!releases.has(key)) {
+      releases.set(key, store.getSet(region, setId)?.set.releaseDate ?? null);
+    }
+    return releases.get(key) ?? null;
+  };
+  return (region, cardId, idProduct) => {
+    const card = store.getCard(region, cardId);
+    const product = store.getCardmarketProduct(idProduct);
+    if (!card || !product) {
+      return false;
+    }
+    const releaseDate = released(region, card.setId);
+    if (releaseDate === null || releaseDate >= since) {
+      return false;
+    }
+    const check = checkProductLink(card, product);
+    return check === 'other_card' || check === 'other_printing';
+  };
 }
 
 /** A card's prices from its product's guide entry, flagged when matched by hand. */
@@ -284,7 +309,7 @@ function guidePrices(
 /**
  * Prices one card from the stored price guide, right after its match by
  * hand changed: by its match, else TCGdex's product unless it's another
- * card's or printing's (`tcgdexProductRejected`); a card with neither loses
+ * card's or printing's (`productLinkChecker`); a card with neither loses
  * its prices. Returns false, changing nothing, when no guide is stored
  * yet: the next price pass prices it (the matches version changed).
  */
@@ -292,7 +317,8 @@ export function repriceCard(
   store: CatalogStore,
   matches: CardmarketMatchSource,
   region: CatalogRegion,
-  cardId: string
+  cardId: string,
+  now: Date = new Date()
 ): boolean {
   const guide = store.getPriceGuideState();
   if (!guide) {
@@ -302,7 +328,7 @@ export function repriceCard(
   const tcgdex = store.getCardmarketProductOf(region, cardId);
   const idProduct =
     byHand ??
-    (tcgdex !== undefined && !tcgdexProductRejected(store, region, cardId, tcgdex)
+    (tcgdex !== undefined && !productLinkChecker(store, now)(region, cardId, tcgdex)
       ? tcgdex
       : undefined);
   const entry =

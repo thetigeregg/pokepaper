@@ -389,6 +389,23 @@ describe('runPriceRefresh', () => {
       expect((await refresh()).cards.rejected).toBe(1);
     });
 
+    it('aren’t checked in a set released in the last 60 days, whose names can still change', async () => {
+      const { store, refresh } = await setup();
+      storeProductList(store, { [PRODUCTS.pineco]: 'Psyduck [Confusion Wave]' });
+      const soonAfterRelease = new Date('2023-05-29T00:00:00.000Z'); // Fixture sets: 2023-03-31.
+
+      const stats = await refresh({ now: () => soonAfterRelease });
+
+      expect(stats.cards.rejected).toBe(0);
+      expect(store.getCardPrices('intl', 'sv01-001')?.base?.trend).toBe(0.14);
+      // Checked once 60 days old, with the next guide (Cardmarket's is new each night).
+      const later = await refresh({
+        now: () => new Date('2023-05-31T00:00:00.000Z'),
+        fetch: fakeCardmarket(fixtureGuide('2026-11-21T02:43:56+0100')).fetch,
+      });
+      expect(later.cards.rejected).toBe(1);
+    });
+
     it('give way to a match made by hand, which is never checked', async () => {
       const { store, refresh } = await setup();
       storeProductList(store, { [PRODUCTS.pineco]: 'Psyduck [Confusion Wave]' });

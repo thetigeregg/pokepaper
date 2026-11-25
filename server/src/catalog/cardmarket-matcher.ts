@@ -8,7 +8,7 @@ import {
 import { cardmarketProductsDue, downloadCardmarketProducts } from './cardmarket-products.js';
 import type { CatalogLogger } from './ingest.js';
 import { parseGuideEntry, toWirePrices } from './price-data.js';
-import { repriceCard, tcgdexProductRejected, type CardmarketMatchSource } from './prices.js';
+import { productLinkChecker, repriceCard, type CardmarketMatchSource } from './prices.js';
 import {
   cardmarketSearchText,
   type CardmarketProduct,
@@ -87,7 +87,7 @@ export class CardmarketMatcher {
     // TCGdex's product isn't offered as the card's when it's another card's.
     const current =
       byHand ??
-      (tcgdex !== undefined && !tcgdexProductRejected(store, region, cardId, tcgdex)
+      (tcgdex !== undefined && !productLinkChecker(store, this.now())(region, cardId, tcgdex)
         ? tcgdex
         : undefined);
     const guide = store.getPriceGuideState();
@@ -133,7 +133,7 @@ export class CardmarketMatcher {
       return 'unknown_product';
     }
     matches.save(region, cardId, idProduct);
-    repriceCard(store, matches, region, cardId);
+    repriceCard(store, matches, region, cardId, this.now());
     this.options.log.info({ region, cardId, idProduct }, 'catalog.cardmarket_matched');
     return 'ok';
   }
@@ -148,7 +148,7 @@ export class CardmarketMatcher {
       return false;
     }
     if (matches.remove(region, cardId)) {
-      repriceCard(store, matches, region, cardId);
+      repriceCard(store, matches, region, cardId, this.now());
       this.options.log.info({ region, cardId }, 'catalog.cardmarket_match_cleared');
     }
     return true;
