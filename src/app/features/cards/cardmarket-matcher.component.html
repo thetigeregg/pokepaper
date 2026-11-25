@@ -98,6 +98,9 @@
                 @if (product.added; as added) {
                   · added {{ added | date: 'mediumDate' }}
                 }
+                @if (result()?.tcgdex?.idProduct === product.idProduct) {
+                  · TCGdex’s match
+                }
               </p>
             </ion-label>
             @if (price(product); as price) {

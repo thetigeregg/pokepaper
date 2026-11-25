@@ -218,6 +218,8 @@ describe('CardmarketMatcherComponent', () => {
     );
 
     expect(query('matcher-clear')).toBeNull();
+    expect(text('candidate-363682')).toContain('Another set · TCGdex’s match');
+    expect(text('candidate-286309')).not.toContain('TCGdex’s match');
     expect(text('matcher-restore')).toContain('Restore TCGdex’s match');
     expect(text('matcher-restore')).toContain('MMewtwo EX [Psychic Infinity]');
     query('matcher-restore')?.click();
