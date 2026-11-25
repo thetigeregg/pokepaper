@@ -1,4 +1,4 @@
-import { catalogSetImageUrl, type CatalogCard } from '@pokepaper/shared';
+import { catalogSetImageUrl, stampedVariant, type CatalogCard } from '@pokepaper/shared';
 import { makeContractCard, makeContractPack } from '../../core/data/storage-engine.contract';
 import {
   cardSubtitle,
@@ -12,6 +12,10 @@ import {
   retreatLabel,
   setLine,
   setLogoUrl,
+  stampedLabel,
+  stampedRows,
+  stampLabel,
+  UNLISTED_STAMPED_LABEL,
   variantRows,
 } from './card-display';
 import { energyIconUrl } from './energy-icon.component';
@@ -282,6 +286,78 @@ describe('variants offered', () => {
       { variant: 'holo', label: 'Holo', quantity: 2 },
       { variant: 'reverse', label: 'Reverse holo', quantity: 0 },
     ]);
+  });
+});
+
+describe('stamped versions', () => {
+  const prerelease = {
+    key: stampedVariant('3a83wf50typ2p5qsrlm6y3f8o'),
+    type: 'holo' as const,
+    stamps: ['pre-release'],
+  };
+  const staff = { key: 'va1', type: 'normal' as const, stamps: ['staff', 'worlds-2010'] };
+  const stamped = card({ stamped: [prerelease, staff] });
+
+  it('names stamps as they read, else word by word', () => {
+    expect(stampLabel('pre-release')).toBe('Prerelease');
+    expect(stampLabel('pokemon-center')).toBe('Pokémon Center');
+    expect(stampLabel('set-logo')).toBe('Set Logo');
+    expect(stampLabel('jason-klaczynski')).toBe('Jason Klaczynski');
+    expect(stampLabel('worlds--2010')).toBe('Worlds 2010');
+    // Not an own property: named word by word.
+    expect(stampLabel('constructor')).toBe('Constructor');
+  });
+
+  it('labels a version by its finish, stamps, subtype and foil', () => {
+    expect(stampedLabel(stamped, prerelease)).toBe('Holo · Prerelease');
+    expect(stampedLabel(stamped, staff)).toBe('Normal · Staff · Worlds 2010');
+    expect(
+      stampedLabel(stamped, {
+        key: 'vb2',
+        type: 'reverse',
+        stamps: ['1st-edition', 'staff'],
+        subtype: 'shadowless',
+        foil: 'pokeball',
+      })
+    ).toBe('Reverse holo · 1st Edition · Staff · Shadowless · Poké Ball');
+  });
+
+  it('names Normal Holo for a card TCGplayer sells only as a holo', () => {
+    const holoRare = card({
+      stamped: [staff],
+      tcgplayerFinishes: { normal: false, holo: true, reverse: false, firstEdition: false },
+    });
+    expect(stampedLabel(holoRare, staff)).toBe('Holo · Staff · Worlds 2010');
+    // TCGdex lists Holo beside Normal: Normal stays Normal, as its plain row does.
+    const both = card({
+      ...holoRare,
+      variants: { normal: true, reverse: false, holo: true, firstEdition: false, wPromo: false },
+    });
+    expect(listedVariants(both)).toEqual(['normal', 'holo']);
+    expect(stampedLabel(both, staff)).toBe('Normal · Staff · Worlds 2010');
+  });
+
+  it('offers every listed version, or only those owned, and copies under unlisted ones', () => {
+    const owned: Partial<Record<string, number>> = { va1: 3, vgone: 1, vearlier: 2 };
+    const quantity = (variant: string) => owned[variant] ?? 0;
+    const ownedVariants = ['holo', 'va1', 'vgone', 'vearlier', 'not-stamped'];
+    expect(stampedRows(stamped, ownedVariants, quantity, true)).toEqual([
+      { variant: prerelease.key, label: 'Holo · Prerelease', quantity: 0 },
+      { variant: 'va1', label: 'Normal · Staff · Worlds 2010', quantity: 3 },
+      // Unlisted ones by key, whatever order they're owned in.
+      { variant: 'vearlier', label: UNLISTED_STAMPED_LABEL, quantity: 2 },
+      { variant: 'vgone', label: UNLISTED_STAMPED_LABEL, quantity: 1 },
+    ]);
+    // A key the catalog lists in another shape isn't offered.
+    expect(
+      stampedRows(card({ stamped: [{ ...staff, key: 'BAD:KEY' }] }), [], quantity, true)
+    ).toEqual([]);
+    expect(stampedRows(stamped, ownedVariants, quantity, false)).toEqual([
+      { variant: 'va1', label: 'Normal · Staff · Worlds 2010', quantity: 3 },
+      { variant: 'vearlier', label: UNLISTED_STAMPED_LABEL, quantity: 2 },
+      { variant: 'vgone', label: UNLISTED_STAMPED_LABEL, quantity: 1 },
+    ]);
+    expect(stampedRows(card({}), [], quantity, true)).toEqual([]);
   });
 });
 

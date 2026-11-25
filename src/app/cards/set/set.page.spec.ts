@@ -27,6 +27,7 @@ const EMPTY_COLLECTION: Partial<CollectionService> = {
   quantity: () => 0,
   cardTotal: () => 0,
   otherLanguages: () => [],
+  variantsOwned: () => [],
   ownedInSet: () => 0,
 };
 

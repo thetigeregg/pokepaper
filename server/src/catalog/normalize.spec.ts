@@ -1,4 +1,4 @@
-import type { CatalogCard } from '@pokepaper/shared';
+import { stampedVariant, type CatalogCard } from '@pokepaper/shared';
 import {
   assetPath,
   mergeCard,
@@ -7,6 +7,7 @@ import {
   parseSeriesList,
   parseSetDetail,
   parseSetList,
+  parseStamped,
   parseTcgplayerFinishes,
   trustedLanguages,
   type RawCard,
@@ -175,6 +176,185 @@ describe('parseTcgplayerFinishes', () => {
   });
 });
 
+describe('parseStamped', () => {
+  const stamped = (variants_detailed: unknown) => parseStamped({ variants_detailed });
+  /** A card's unstamped holo and reverse holo entries. */
+  const plain = [
+    { type: 'holo', size: 'standard', variantId: 'jr7oetx1mqug9' },
+    { type: 'reverse', variantId: 'cm4kqul3x1bwlz1f' },
+  ];
+
+  it('reads the stamped versions, keyed by variantId', () => {
+    // Team Rocket Dark Gyarados: the plain holo and 1st edition are plain variants.
+    expect(
+      stamped([
+        { type: 'holo', size: 'standard', variantId: 'jr7oetx1mqug9' },
+        {
+          type: 'holo',
+          size: 'standard',
+          stamp: ['1st-edition'],
+          thirdParty: { cardmarket: 274061 },
+          variantId: '3a83wf50ts0izj268xwv3crwi',
+        },
+        {
+          type: 'holo',
+          size: 'standard',
+          stamp: ['pre-release'],
+          thirdParty: { cardmarket: 275574 },
+          variantId: '3a83wf50typ2p5qsrlm6y3f8o',
+        },
+      ])
+    ).toEqual([
+      {
+        key: stampedVariant('3a83wf50typ2p5qsrlm6y3f8o'),
+        type: 'holo',
+        stamps: ['pre-release'],
+        idProduct: 275574,
+      },
+    ]);
+  });
+
+  it('keeps every stamp, with the subtype and foil, and no product when TCGdex has none', () => {
+    expect(
+      stamped([
+        ...plain,
+        {
+          type: 'reverse',
+          subtype: 'unlimited',
+          foil: 'pokeball',
+          stamp: ['1st-edition', 'staff'],
+          variantId: 'abc123',
+        },
+      ])
+    ).toEqual([
+      {
+        key: 'vabc123',
+        type: 'reverse',
+        stamps: ['1st-edition', 'staff'],
+        subtype: 'unlimited',
+        foil: 'pokeball',
+      },
+    ]);
+  });
+
+  it('skips a stamped entry that is the card’s only one of its finish', () => {
+    // Team Rocket Returns Uncommon: every reverse holo has the set logo.
+    expect(
+      stamped([
+        { type: 'normal', variantId: 'endfynwn4n10gzq' },
+        { type: 'reverse', stamp: ['set-logo'], variantId: '3a83wf50tyyzu7r7ryiw8tit7' },
+      ])
+    ).toEqual([]);
+    // Only a jumbo or 1st edition W promo without a stamp: still a plain holo.
+    expect(
+      stamped([
+        { type: 'holo', size: 'jumbo', variantId: 'j1' },
+        { type: 'holo', stamp: ['staff'], variantId: 'a1' },
+      ])
+    ).toEqual([]);
+    expect(
+      stamped([
+        { type: 'holo', stamp: ['1st-edition', 'w-Promo'], variantId: 'w1' },
+        { type: 'holo', stamp: ['staff'], variantId: 'a1' },
+      ])
+    ).toEqual([{ key: 'va1', type: 'holo', stamps: ['staff'] }]);
+  });
+
+  it('skips a set logo stamp without its own product on a card listing no reverse holo', () => {
+    // Holon Phantoms Raichu δ: TCGdex's "holo with the set logo" is its reverse holo.
+    const raichu = [
+      { type: 'holo', thirdParty: { cardmarket: 276985 }, variantId: 'jr7oetx1mqug9' },
+      { type: 'holo', stamp: ['set-logo'], variantId: '555jb0efopmyclvkikic41' },
+    ];
+    expect(stamped(raichu)).toEqual([]);
+    expect(stamped([raichu[0], { ...raichu[1], thirdParty: { cardmarket: 276985 } }])).toEqual([]);
+    // With its own product (Prismatic Evolutions' stamped promos), or beside a
+    // reverse holo, or with another stamp, it's a version of its own.
+    const own = { ...raichu[1], thirdParty: { cardmarket: 812345 } };
+    expect(stamped([raichu[0], own])).toEqual([
+      {
+        key: stampedVariant('555jb0efopmyclvkikic41'),
+        type: 'holo',
+        stamps: ['set-logo'],
+        idProduct: 812345,
+      },
+    ]);
+    expect(stamped([...raichu, { type: 'reverse', variantId: 'r1' }])).toHaveLength(1);
+    expect(stamped([raichu[0], { ...raichu[1], stamp: ['set-logo', 'staff'] }])).toHaveLength(1);
+  });
+
+  it.each([
+    [
+      'with only plain stamps',
+      { type: 'holo', stamp: ['1st-edition', 'w-promo'], variantId: 'a1' },
+    ],
+    ['in jumbo size', { type: 'holo', size: 'jumbo', stamp: ['staff'], variantId: 'a1' }],
+    ['of another finish', { type: 'metal', stamp: ['staff'], variantId: 'a1' }],
+    ['in another language', { type: 'Holo', stamp: ['Vorveröffentlichung'], variantId: 'a1' }],
+    [
+      'with a stamp name that is not a slug',
+      { type: 'holo', stamp: ['Pré-release'], variantId: 'a1' },
+    ],
+    ['generated from the flags', { type: 'holo', stamp: ['staff'], variantId: 'generated' }],
+    ['without a variantId', { type: 'holo', stamp: ['staff'] }],
+    ['that is not an object', 'staff'],
+  ])('skips an entry %s', (_label, entry) => {
+    expect(stamped([...plain, entry])).toEqual([]);
+  });
+
+  it('skips a second entry with the same key, and an invalid product', () => {
+    const entry = {
+      type: 'holo',
+      stamp: ['staff'],
+      variantId: 'a1',
+      thirdParty: { cardmarket: -4 },
+    };
+    expect(stamped([...plain, entry, { ...entry, stamp: ['pre-release'] }])).toEqual([
+      { key: 'va1', type: 'holo', stamps: ['staff'] },
+    ]);
+  });
+
+  it('reads every detailed variant, keeping up to 30 versions', () => {
+    // A World Championship card: its plain holo listed after 40 stamped ones.
+    const decks = Array.from({ length: 40 }, (_, index) => ({
+      type: 'holo',
+      stamp: [`player-${String(index)}`],
+      variantId: `p${String(index)}`,
+    }));
+    const versions = stamped([...decks, { type: 'holo', variantId: 'jr7oetx1mqug9' }]);
+    expect(versions).toHaveLength(30);
+    expect(versions?.[0]).toEqual({ key: 'vp0', type: 'holo', stamps: ['player-0'] });
+  });
+
+  it('reads names in any case, and skips a subtype or foil that is not a slug', () => {
+    expect(stamped([...plain, { type: 'holo', stamp: ['Pre-Release'], variantId: 'a1' }])).toEqual([
+      { key: 'va1', type: 'holo', stamps: ['pre-release'] },
+    ]);
+    expect(
+      stamped([
+        ...plain,
+        { type: 'holo', stamp: ['staff'], subtype: 'Sans ombre', variantId: 'a1' },
+        { type: 'holo', stamp: ['staff'], foil: 'Lumière', variantId: 'a2' },
+        { type: 'holo', stamp: ['staff'], subtype: 'Shadowless', variantId: 'a3' },
+      ])
+    ).toEqual([{ key: 'va3', type: 'holo', stamps: ['staff'], subtype: 'shadowless' }]);
+  });
+
+  it('is null without detailed variants, and part of a parsed card', () => {
+    expect(stamped(undefined)).toBeNull();
+    expect(stamped([])).toEqual([]);
+    expect(raw().stamped).toBeNull();
+    const card = parseCard({
+      id: 'sm3-94',
+      localId: '94',
+      name: 'Diancie',
+      category: 'Pokemon',
+      variants_detailed: [...plain, { type: 'holo', stamp: ['poke-ball-league'], variantId: 'b2' }],
+    });
+    expect(card?.stamped).toEqual([{ key: 'vb2', type: 'holo', stamps: ['poke-ball-league'] }]);
+  });
+});
+
 describe('trustedLanguages', () => {
   it('leaves out a set’s misattributed languages', () => {
     expect(trustedLanguages('asia', 'SV-P', ['ja', 'zh-tw'])).toEqual(['ja']);
@@ -312,6 +492,53 @@ describe('mergeCard', () => {
       existing: stored,
     });
     expect(listedNone?.tcgplayerFinishes).toEqual(stored.tcgplayerFinishes);
+  });
+
+  it('reads stamped versions from the preferred language only, keeping stored ones', () => {
+    const stamp = { key: 'vb2', type: 'holo' as const, stamps: ['poke-ball-league'] };
+    const fresh = mergeCard({
+      ...base,
+      languages: ['en', 'fr'],
+      fetched: new Map([
+        ['en', raw({ stamped: [stamp] })],
+        ['fr', raw({ name: 'Pomdepik', stamped: [{ ...stamp, stamps: ['ligue-poke-ball'] }] })],
+      ]),
+      existing: undefined,
+    }) as CatalogCard;
+    expect(fresh.stamped).toEqual([stamp]);
+
+    const kept = mergeCard({
+      ...base,
+      languages: ['en', 'fr'],
+      fetched: new Map([['fr', raw({ name: 'Pomdepik', stamped: [] })]]),
+      existing: fresh,
+    });
+    expect(kept?.stamped).toEqual([stamp]);
+
+    // No detailed variants in the response: a gap, not a removal.
+    const gap = mergeCard({
+      ...base,
+      languages: ['en', 'fr'],
+      fetched: new Map([['en', raw()]]),
+      existing: fresh,
+    });
+    expect(gap?.stamped).toEqual([stamp]);
+
+    const dropped = mergeCard({
+      ...base,
+      languages: ['en', 'fr'],
+      fetched: new Map([['en', raw({ stamped: [] })]]),
+      existing: fresh,
+    });
+    expect(dropped).not.toHaveProperty('stamped');
+
+    const onlyFrench = mergeCard({
+      ...base,
+      languages: ['fr'],
+      fetched: new Map([['fr', raw({ name: 'Pomdepik', stamped: [stamp] })]]),
+      existing: undefined,
+    });
+    expect(onlyFrench).not.toHaveProperty('stamped');
   });
 
   it('returns null when no language has data', () => {

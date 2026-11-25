@@ -1,6 +1,20 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  input,
+  output,
+  signal,
+} from '@angular/core';
 import { AlertController, IonButton, IonIcon, IonItem, IonLabel, IonList } from '@ionic/angular';
-import type { CatalogCard, CatalogLanguage, CatalogSet } from '@pokepaper/shared';
+import {
+  collectionEntryId,
+  isStampedVariant,
+  type CatalogCard,
+  type CatalogLanguage,
+  type CatalogSet,
+} from '@pokepaper/shared';
 import { addIcons } from 'ionicons';
 import { informationCircleOutline } from 'ionicons/icons';
 import { LANGUAGE_LABELS } from '../../core/services/catalog-language.service';
@@ -11,6 +25,7 @@ import {
   collectionTarget,
   offeredVariants,
   setLine,
+  stampedRows,
   variantRows,
   type VariantRow,
 } from './card-display';
@@ -175,18 +190,36 @@ export class SetChecklistComponent {
   /** What the set's cards tell about reverse holos, for the variants offered. */
   private readonly setHolos = computed(() => setReverseHolos(this.cards()));
 
+  /** Stamped versions toggled off here (collection entry IDs): their toggles stay. */
+  private readonly keptStamped = signal<ReadonlySet<string>>(new Set());
+
   readonly rows = computed<ChecklistRow[]>(() => {
     const language = this.language();
     const set = this.set();
     const setHolos = this.setHolos();
-    return this.cards().map((card) => ({
-      card,
-      name: cardText(card, language)?.name ?? card.id,
-      setLine: setLine(set, card),
-      variants: variantRows(offeredVariants(card, set, setHolos), (variant) =>
-        this.collection.quantity(collectionTarget(card, variant, language))
-      ),
-    }));
+    const kept = this.keptStamped();
+    return this.cards().map((card) => {
+      const quantity = (variant: VariantRow['variant']) =>
+        this.collection.quantity(collectionTarget(card, variant, language));
+      // Stamped versions only once owned (card detail offers them all), and
+      // those toggled off here, so a mistaken tap can be undone.
+      const owned = [
+        ...this.collection.variantsOwned(card.region, card.id, language),
+        ...[...kept].flatMap((id) => {
+          const variant = id.slice(`${card.region}:${card.id}:`.length, -`:${language}`.length);
+          return id === `${card.region}:${card.id}:${variant}:${language}` ? [variant] : [];
+        }),
+      ];
+      return {
+        card,
+        name: cardText(card, language)?.name ?? card.id,
+        setLine: setLine(set, card),
+        variants: [
+          ...variantRows(offeredVariants(card, set, setHolos), quantity),
+          ...stampedRows(card, owned, quantity, false),
+        ],
+      };
+    });
   });
 
   readonly owned = computed(() => {
@@ -218,6 +251,9 @@ export class SetChecklistComponent {
       return;
     }
     const target = collectionTarget(row.card, variant.variant, this.language());
+    if (isStampedVariant(variant.variant)) {
+      this.keptStamped.update((kept) => new Set([...kept, collectionEntryId(target)]));
+    }
     this.collection.setQuantity(target, variant.quantity === 0 ? 1 : 0).catch((error: unknown) => {
       console.error('collection.toggle_failed', error);
     });

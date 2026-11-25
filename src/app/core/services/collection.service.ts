@@ -8,6 +8,7 @@ import {
   isCollectionQuantity,
   isCollectionTarget,
   isCollectionVariant,
+  isStampedVariant,
   type CatalogLanguage,
   type CatalogRegion,
   type CollectionChange,
@@ -19,13 +20,17 @@ import { catalogKey } from '../data/storage-engine';
 import { inDisplayOrder } from './catalog-language.service';
 import { SyncService } from './sync.service';
 
-/** An entry with a region, variant and language this build knows. */
+/**
+ * An entry with a region, variant and language this build knows: a plain
+ * variant or a stamped version's (`isStampedVariant`), even one the catalog
+ * no longer lists (card detail still shows it).
+ */
 export type ShownEntry = CollectionEntry & { region: CatalogRegion; language: CatalogLanguage };
 
 function isShown(entry: CollectionEntry): entry is ShownEntry {
   return (
     (CATALOG_REGIONS as readonly string[]).includes(entry.region) &&
-    isCollectionVariant(entry.variant) &&
+    (isCollectionVariant(entry.variant) || isStampedVariant(entry.variant)) &&
     isCatalogLanguage(entry.language)
   );
 }
@@ -83,6 +88,21 @@ export class CollectionService {
     return cards;
   });
 
+  /** Variants owned of each card per language, keyed `region:cardId:language`. */
+  private readonly cardVariants = computed(() => {
+    const cards = new Map<string, string[]>();
+    for (const entry of this.shown()) {
+      const key = languageKey(entry.region, entry.cardId, entry.language);
+      const variants = cards.get(key);
+      if (variants) {
+        variants.push(entry.variant);
+      } else {
+        cards.set(key, [entry.variant]);
+      }
+    }
+    return cards;
+  });
+
   /** Owned cards per set and language, keyed `region:setId:language`. */
   private readonly setCards = computed(() => {
     const cards = new Map<string, Set<string>>();
@@ -112,6 +132,11 @@ export class CollectionService {
   /** Copies of one card in one variant and language. */
   quantity(target: CollectionTarget): number {
     return this.entries().get(collectionEntryId(target))?.quantity ?? 0;
+  }
+
+  /** The variants a card is owned in, in `language` (any order). */
+  variantsOwned(region: CatalogRegion, cardId: string, language: CatalogLanguage): string[] {
+    return this.cardVariants().get(languageKey(region, cardId, language)) ?? [];
   }
 
   /** Copies of a card in `language`, across variants. */

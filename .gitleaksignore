@@ -1,0 +1,5 @@
+# False positives (generic-api-key) in a commit of PR #72: test fixtures with a
+# stamped version's collection variant (`stampedVariant`), not a secret. The
+# lines were rewritten in a later commit of the same PR.
+e914ee6610f245682042a88caa11941832ddc704:src/app/features/cards/card-display.spec.ts:generic-api-key:293
+e914ee6610f245682042a88caa11941832ddc704:server/src/catalog/normalize.spec.ts:generic-api-key:208

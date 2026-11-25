@@ -7,12 +7,15 @@ import {
 import {
   catalogSetImageUrl,
   COLLECTION_VARIANTS,
+  isStampedVariant,
   type CatalogCard,
   type CatalogCardPrices,
   type CatalogLanguage,
   type CatalogSet,
+  type CatalogStampedPrinting,
   type CollectionTarget,
   type CollectionVariant,
+  type StampedVariant,
 } from '@pokepaper/shared';
 
 /** The card's text in `language`, else in its first available language. */
@@ -86,6 +89,22 @@ export function cardVariants(card: CatalogCard): [CollectionVariant, ...Collecti
 }
 
 /**
+ * Whether `listedVariants` names the card's Normal Holo: TCGplayer sells it
+ * as a holo and not as a non-holo (`tcgplayerFinishes`), and TCGdex lists
+ * Normal but not Holo.
+ */
+function namesNormalHolo(card: CatalogCard): boolean {
+  const finishes = card.tcgplayerFinishes;
+  const listed = cardVariants(card);
+  return (
+    finishes?.holo === true &&
+    !finishes.normal &&
+    listed.includes('normal') &&
+    !listed.includes('holo')
+  );
+}
+
+/**
  * TCGdex's variants (`cardVariants`), with Normal named Holo when TCGplayer
  * sells the card as a holo and not as a non-holo (`tcgplayerFinishes`):
  * TCGdex lists many holo rares as normal (BREAKthrough Typhlosion). Both are
@@ -93,9 +112,7 @@ export function cardVariants(card: CatalogCard): [CollectionVariant, ...Collecti
  */
 export function listedVariants(card: CatalogCard): CollectionVariant[] {
   const listed = cardVariants(card);
-  const finishes = card.tcgplayerFinishes;
-  const holoOnly = finishes?.holo === true && !finishes.normal;
-  return holoOnly && listed.includes('normal') && !listed.includes('holo')
+  return namesNormalHolo(card)
     ? COLLECTION_VARIANTS.filter(
         (variant) => variant === 'holo' || (variant !== 'normal' && listed.includes(variant))
       )
@@ -123,7 +140,7 @@ export function offeredVariants(
 /** What a copy of `card` in `variant` and `language` is counted under. */
 export function collectionTarget(
   card: CatalogCard,
-  variant: CollectionVariant,
+  variant: CollectionVariant | StampedVariant,
   language: CatalogLanguage
 ): CollectionTarget {
   return { region: card.region, cardId: card.id, setId: card.setId, variant, language };
@@ -131,7 +148,8 @@ export function collectionTarget(
 
 /** A variant of a card with the copies owned, for a stepper or a toggle. */
 export interface VariantRow {
-  variant: CollectionVariant;
+  /** A plain variant, or a stamped version's (`CatalogStampedPrinting.key`). */
+  variant: CollectionVariant | StampedVariant;
   label: string;
   quantity: number;
 }
@@ -150,6 +168,103 @@ export function variantRows(
     label: VARIANT_LABELS[variant],
     quantity: quantity(variant),
   })).filter((row) => offered.includes(row.variant) || row.quantity > 0);
+}
+
+/**
+ * Stamp names TCGdex gives (`pre-release`…) that don't read right as plain
+ * words; any other is shown word by word, capitalized (`set-logo` → "Set
+ * Logo", `worlds-2010` → "Worlds 2010").
+ */
+const STAMP_LABELS: Readonly<Record<string, string>> = {
+  '1st-edition': '1st Edition',
+  'pre-release': 'Prerelease',
+  'pokemon-center': 'Pokémon Center',
+  'pokemon-day': 'Pokémon Day',
+  'poke-ball-league': 'Poké Ball League',
+  pokeball: 'Poké Ball',
+  mcdonalds: "McDonald's",
+  'eb-games': 'EB Games',
+  gamestop: 'GameStop',
+  'toys-r-us': 'Toys "R" Us',
+  'comic-con': 'Comic-Con',
+  'build-a-bear': 'Build-A-Bear',
+  wotc: 'WotC',
+  'top-thirty-two': 'Top 32',
+  'top-sixteen': 'Top 16',
+  'top-eight': 'Top 8',
+  'semi-finalist': 'Semifinalist',
+  'quarter-finalist': 'Quarterfinalist',
+};
+
+/** How a TCGdex name (a stamp, subtype or foil) reads: `STAMP_LABELS`, else capitalized words. */
+export function stampLabel(name: string): string {
+  const known = Object.hasOwn(STAMP_LABELS, name) ? STAMP_LABELS[name] : undefined;
+  return (
+    known ??
+    name
+      .split('-')
+      .filter((word) => word)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ')
+  );
+}
+
+/**
+ * A stamped version's stepper label: its finish, then its stamps, subtype
+ * and foil ("Holo · Prerelease"). The finish is named like the card's plain
+ * variants: Normal is Holo where `listedVariants` names the card's Normal
+ * Holo.
+ */
+export function stampedLabel(card: CatalogCard, printing: CatalogStampedPrinting): string {
+  const finish = printing.type === 'normal' && namesNormalHolo(card) ? 'holo' : printing.type;
+  return [
+    VARIANT_LABELS[finish],
+    ...[...printing.stamps, printing.subtype, printing.foil]
+      .filter((name) => name !== undefined)
+      .map(stampLabel),
+  ].join(' · ');
+}
+
+/** The label of copies counted under a stamped version the catalog no longer lists. */
+export const UNLISTED_STAMPED_LABEL = 'Stamped version no longer listed';
+
+/**
+ * Rows for a card's stamped versions (`CatalogStampedPrinting`), after its
+ * plain variants (`variantRows`): every one the catalog lists when
+ * `offerAll`, else only those owned; then copies counted under a stamped
+ * version it no longer lists, so every counted copy can be seen and
+ * changed. `owned` holds the variants owned of the card (in the language
+ * shown).
+ */
+export function stampedRows(
+  card: CatalogCard,
+  owned: readonly string[],
+  quantity: (variant: StampedVariant) => number,
+  offerAll: boolean
+): VariantRow[] {
+  const printings = (card.stamped ?? []).flatMap((printing) => {
+    const { key } = printing;
+    return isStampedVariant(key) ? [{ key, printing }] : [];
+  });
+  const listed = new Set<string>(printings.map(({ key }) => key));
+  const unlisted = owned
+    .filter((variant): variant is StampedVariant => isStampedVariant(variant))
+    .filter((variant) => !listed.has(variant))
+    .sort();
+  return [
+    ...printings
+      .filter(({ key }) => offerAll || owned.includes(key))
+      .map(({ key, printing }) => ({
+        variant: key,
+        label: stampedLabel(card, printing),
+        quantity: quantity(key),
+      })),
+    ...unlisted.map((variant) => ({
+      variant,
+      label: UNLISTED_STAMPED_LABEL,
+      quantity: quantity(variant),
+    })),
+  ];
 }
 
 /** One finish's prices in card detail's Price section. */

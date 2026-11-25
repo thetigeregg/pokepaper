@@ -109,6 +109,25 @@ describe('CollectionService', () => {
     expect(service.quantity(target({ variant: 'stamped' }))).toBe(5);
   });
 
+  it('counts stamped versions, and lists the variants a card is owned in per language', async () => {
+    seed(
+      { ...target(), quantity: 1 },
+      { ...target({ variant: 'vp2p5qsrlm6y3f8o' }), quantity: 2 },
+      { ...target({ variant: 'vp2p5qsrlm6y3f8o', language: 'de' }), quantity: 4 },
+      { ...target({ variant: 'VNOTSTAMPED' }), quantity: 8 }
+    );
+    const service = await create();
+
+    await vi.waitFor(() => {
+      expect(service.cardTotal('intl', 'sv01-001', 'en')).toBe(3);
+    });
+    expect(service.copiesOfCard('intl:sv01-001')).toBe(7);
+    expect(service.variantsOwned('intl', 'sv01-001', 'en')).toEqual(['normal', 'vp2p5qsrlm6y3f8o']);
+    expect(service.variantsOwned('intl', 'sv01-001', 'de')).toEqual(['vp2p5qsrlm6y3f8o']);
+    expect(service.variantsOwned('intl', 'sv01-001', 'fr')).toEqual([]);
+    expect(service.ownedEntries().map((entry) => entry.variant)).not.toContain('VNOTSTAMPED');
+  });
+
   it('totals a card per language across variants, keeping languages apart', async () => {
     seed(
       { ...target(), quantity: 1 },
