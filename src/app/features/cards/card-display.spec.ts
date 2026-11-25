@@ -1,4 +1,4 @@
-import { catalogSetImageUrl, type CatalogCard } from '@pokepaper/shared';
+import { catalogSetImageUrl, stampedVariant, type CatalogCard } from '@pokepaper/shared';
 import { makeContractCard, makeContractPack } from '../../core/data/storage-engine.contract';
 import {
   cardSubtitle,
@@ -290,7 +290,11 @@ describe('variants offered', () => {
 });
 
 describe('stamped versions', () => {
-  const prerelease = { key: 'vp2p5qsrlm6y3f8o', type: 'holo' as const, stamps: ['pre-release'] };
+  const prerelease = {
+    key: stampedVariant('3a83wf50typ2p5qsrlm6y3f8o'),
+    type: 'holo' as const,
+    stamps: ['pre-release'],
+  };
   const staff = { key: 'va1', type: 'normal' as const, stamps: ['staff', 'worlds-2010'] };
   const stamped = card({ stamped: [prerelease, staff] });
 

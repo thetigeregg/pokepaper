@@ -1,4 +1,4 @@
-import type { CatalogCard } from '@pokepaper/shared';
+import { stampedVariant, type CatalogCard } from '@pokepaper/shared';
 import {
   assetPath,
   mergeCard,
@@ -205,7 +205,12 @@ describe('parseStamped', () => {
         },
       ])
     ).toEqual([
-      { key: 'vp2p5qsrlm6y3f8o', type: 'holo', stamps: ['pre-release'], idProduct: 275574 },
+      {
+        key: stampedVariant('3a83wf50typ2p5qsrlm6y3f8o'),
+        type: 'holo',
+        stamps: ['pre-release'],
+        idProduct: 275574,
+      },
     ]);
   });
 
@@ -267,7 +272,12 @@ describe('parseStamped', () => {
     // reverse holo, or with another stamp, it's a version of its own.
     const own = { ...raichu[1], thirdParty: { cardmarket: 812345 } };
     expect(stamped([raichu[0], own])).toEqual([
-      { key: 'vfopmyclvkikic41', type: 'holo', stamps: ['set-logo'], idProduct: 812345 },
+      {
+        key: stampedVariant('555jb0efopmyclvkikic41'),
+        type: 'holo',
+        stamps: ['set-logo'],
+        idProduct: 812345,
+      },
     ]);
     expect(stamped([...raichu, { type: 'reverse', variantId: 'r1' }])).toHaveLength(1);
     expect(stamped([raichu[0], { ...raichu[1], stamp: ['set-logo', 'staff'] }])).toHaveLength(1);
