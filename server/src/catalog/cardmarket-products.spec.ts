@@ -165,4 +165,50 @@ describe('downloadCardmarketProducts', () => {
     await new Promise((resolve) => setTimeout(resolve));
     expect(cardmarketProductsDue(store, new Date())).toBe(true);
   });
+
+  it('starts a new download for a caller arriving after the last one stopped waiting', async () => {
+    const store = memoryCatalogStore();
+    const log = silentLogger();
+    const held = heldFetch();
+    const controller = new AbortController();
+    const stopped = downloadCardmarketProducts({
+      store,
+      log,
+      fetch: held.fetch,
+      signal: controller.signal,
+    });
+    controller.abort(new Error('stopping'));
+    // Before the stopped download has settled, the matcher asks.
+    const matcher = downloadCardmarketProducts({ store, log, fetch: held.fetch });
+
+    await expect(stopped).rejects.toThrow('stopping');
+    expect(held.fetch).toHaveBeenCalledTimes(2);
+    held.respond();
+    await matcher;
+    expect(store.getCardmarketProduct(483559)).toBeDefined();
+  });
+
+  it('counts a real failure that races the last abort as a failure', async () => {
+    const store = memoryCatalogStore();
+    const log = silentLogger();
+    const controller = new AbortController();
+    const now = new Date('2026-11-24T12:00:00Z');
+    const download = downloadCardmarketProducts({
+      store,
+      log,
+      now: () => now,
+      signal: controller.signal,
+      // Fails on its own, then the caller stops before the failure is handled.
+      fetch: () => {
+        queueMicrotask(() => {
+          controller.abort(new Error('stopping'));
+        });
+        return Promise.reject(new Error('HTTP 503'));
+      },
+    });
+
+    await expect(download).rejects.toThrow();
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(cardmarketProductsDue(store, now)).toBe(false);
+  });
 });

@@ -49,21 +49,27 @@ export function downloadCardmarketProducts(options: CardmarketProductsDownload):
         failures.delete(store);
       })
       .catch((error: unknown) => {
-        if (!controller.signal.aborted) {
+        // Stopped, not failed: the rejection is the abort's own reason (a
+        // real failure racing the abort still counts).
+        if (!(controller.signal.aborted && error === controller.signal.reason)) {
           failures.set(store, now().getTime());
         }
         throw error;
       })
       .finally(() => {
-        downloads.delete(store);
+        // A stopped download already gave its place to any newer one.
+        if (downloads.get(store) === shared) {
+          downloads.delete(store);
+        }
       });
-    shared = { promise, controller, waiting: 0 };
+    shared = { store, promise, controller, waiting: 0 };
     downloads.set(store, shared);
   }
   return join(shared, signal);
 }
 
 interface SharedDownload {
+  store: CatalogStore;
   promise: Promise<void>;
   /** Stops the download, once no caller waits on it any more. */
   controller: AbortController;
@@ -87,6 +93,11 @@ function join(shared: SharedDownload, signal: AbortSignal | undefined): Promise<
     const onAbort = (): void => {
       shared.waiting -= 1;
       if (shared.waiting === 0) {
+        // Out of the way first: a caller from now on starts a new download
+        // rather than joining this stopped one.
+        if (downloads.get(shared.store) === shared) {
+          downloads.delete(shared.store);
+        }
         shared.controller.abort(signal.reason);
       }
       reject(signal.reason as Error);

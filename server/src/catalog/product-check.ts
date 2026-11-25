@@ -108,13 +108,13 @@ function namesMatch(a: string, b: string): boolean {
 /**
  * The gender sign in a name: Nidoran♀ and Nidoran♂ are two cards, which
  * `cardmarketSearchText` (dropping symbols) can't tell apart. Cardmarket
- * writes some as `&female;` / `&male;`, and many without a sign (null).
+ * writes some as `&female;` / `&male;`, and many without a sign (null, as
+ * is a name with both).
  */
 function gender(name: string): 'female' | 'male' | null {
-  if (/♀|&female;/.test(name)) {
-    return 'female';
-  }
-  return /♂|&male;/.test(name) ? 'male' : null;
+  const female = /♀|&female;/.test(name);
+  const male = /♂|&male;/.test(name);
+  return female === male ? null : female ? 'female' : 'male';
 }
 
 /**

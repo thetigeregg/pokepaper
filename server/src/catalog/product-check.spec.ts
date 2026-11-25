@@ -95,6 +95,10 @@ describe('checkProductLink', () => {
     expect(
       checkProductLink(card("Team Rocket's Nidoran♂"), product("Team Rocket's Nidoran ♀"))
     ).toBe('other_card');
+    // A name with both signs is either.
+    expect(checkProductLink(card('Nidoran♀ & Nidoran♂'), product('Nidoran ♀ & Nidoran ♂'))).toBe(
+      'ok'
+    );
   });
 
   it('never takes a name inside another for it', () => {
