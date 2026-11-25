@@ -17,6 +17,7 @@ import {
   IonTitle,
   IonToolbar,
   ModalController,
+  ToastController,
 } from '@ionic/angular';
 import {
   DEFAULT_CATALOG_LANGUAGES,
@@ -66,6 +67,7 @@ interface VirtualWindow {
 })
 export class CardDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   private readonly modalController = inject(ModalController);
+  private readonly toasts = inject(ToastController);
   private readonly catalogLanguage = inject(CatalogLanguageService);
 
   // Set through ModalController componentProps, which assigns plain
@@ -257,6 +259,14 @@ export class CardDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       await show(search);
     } catch (error: unknown) {
       console.error('catalog.card_search_failed', error);
+      // The modal has closed, so say so rather than leave nothing changed.
+      const toast = await this.toasts.create({
+        message: "Couldn't show the search. Try again.",
+        color: 'danger',
+        duration: 3000,
+        position: 'bottom',
+      });
+      await toast.present();
     }
   }
 }

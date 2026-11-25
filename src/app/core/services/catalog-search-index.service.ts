@@ -51,10 +51,20 @@ export class CatalogSearchIndexService {
     const index = this.index();
     return index?.region === this.browse.region() ? index.cards : [];
   });
-  /** The current catalog's illustrator names by filter value (`illustratorKey`). */
+  /** Illustrator names from every catalog loaded so far, by filter value. */
+  private readonly knownIllustrators = signal<ReadonlyMap<string, string>>(new Map());
+  /**
+   * Illustrator names by filter value (`illustratorKey`): the current
+   * catalog's, then any other catalog's loaded before, so a pick kept across
+   * a catalog switch (or made before the switch finishes loading) still
+   * reads as a name.
+   */
   readonly illustrators = computed<ReadonlyMap<string, string>>(() => {
     const index = this.index();
-    return index?.region === this.browse.region() ? index.illustrators : new Map();
+    const known = this.knownIllustrators();
+    return index?.region === this.browse.region()
+      ? new Map([...known, ...index.illustrators])
+      : known;
   });
   /** Whether the current catalog's search rows have loaded. */
   readonly ready = computed(() => this.index()?.region === this.browse.region());
@@ -103,7 +113,9 @@ export class CatalogSearchIndexService {
         number: parseCardNumber(row.number ?? ''),
         illustrator: illustratorKey(row.illustrator),
       }));
-      this.index.set({ region, cards, illustrators: illustratorNames(cards) });
+      const illustrators = illustratorNames(cards);
+      this.index.set({ region, cards, illustrators });
+      this.knownIllustrators.update((known) => new Map([...known, ...illustrators]));
     } catch (error: unknown) {
       console.error('catalog.search_load_failed', error);
       if (load === this.loads) {

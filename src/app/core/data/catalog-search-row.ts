@@ -1,5 +1,5 @@
 import type { CatalogCard } from '@pokepaper/shared';
-import { illustratorKey, normalizeSearchText } from '../utils/search-text.util';
+import { illustratorName, normalizeSearchText } from '../utils/search-text.util';
 import { catalogKey, type CatalogSearchRow } from './storage-engine';
 
 /**
@@ -28,6 +28,6 @@ export function catalogSearchRow(card: CatalogCard, setKey: string): CatalogSear
     subtype: card.trainerType ?? card.energyType,
     rarity: card.rarity,
     types: card.types,
-    illustrator: illustratorKey(card.illustrator) ? (card.illustrator?.trim() ?? null) : null,
+    illustrator: illustratorName(card.illustrator),
   };
 }

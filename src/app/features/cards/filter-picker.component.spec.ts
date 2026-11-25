@@ -197,6 +197,10 @@ describe('FilterPickerComponent', () => {
     picker.query.set('SUGI');
     fixture.detectChanges();
     expect(testIds('filter-option-')).toEqual(['filter-option-kensugimori']);
+    // Spaces aside, as spellings merged into one value differ in them.
+    picker.query.set('akyCG');
+    fixture.detectChanges();
+    expect(testIds('filter-option-')).toEqual(['filter-option-akycgworks']);
     picker.query.set('nobody');
     fixture.detectChanges();
     expect(root().querySelector('[data-testid="filter-empty"]')?.textContent).toContain(

@@ -318,6 +318,21 @@ describe('CatalogSearchService', () => {
       expect(service.filters()).toEqual({ ...NO_FILTERS, sets: ['asia:SV2a'] });
       expect(keys(service)).toEqual(['asia:SV2a-1']);
     });
+
+    it('still names illustrators picked in the catalog switched from', async () => {
+      const service = await create();
+      await service.showOnly('intl', { illustrators: ['kensugimori'] });
+
+      await TestBed.inject(CatalogBrowseService).setRegion('asia');
+      TestBed.tick();
+      await vi.waitFor(() => {
+        expect(service.ready()).toBe(true);
+      });
+
+      // Kept across the switch (no Asian card has it), and still named.
+      expect(service.filters().illustrators).toEqual(['kensugimori']);
+      expect(service.filterNames().illustrators.get('kensugimori')).toBe('Ken Sugimori');
+    });
   });
 
   it('counts filter values in the catalog, most common first', async () => {

@@ -143,3 +143,8 @@ export function illustratorKey(name: string | null | undefined): string | null {
   const normalized = normalizeSearchText(name ?? '');
   return normalized === '' || normalized === NO_ILLUSTRATOR ? null : normalized.replace(/ /g, '');
 }
+
+/** The illustrator as TCGdex spells it (trimmed), or null when it has no `illustratorKey`. */
+export function illustratorName(name: string | null | undefined): string | null {
+  return illustratorKey(name) ? (name?.trim() ?? null) : null;
+}

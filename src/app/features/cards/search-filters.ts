@@ -143,17 +143,19 @@ export function rarityOptions(counts: readonly FilterCount[]): FilterOption[] {
 
 /**
  * Illustrators A–Z by name (`names`, by filter value), keeping those whose
- * name contains `query`. Picked ones are expected in `counts` (`withPicked`).
+ * name contains `query`, spaces aside as in their filter values ("akycg"
+ * finds "aky CG Works"). Picked ones are expected in `counts` (`withPicked`).
  */
 export function illustratorOptions(
   counts: readonly FilterCount[],
   names: ReadonlyMap<string, string>,
   query: string
 ): FilterOption[] {
-  const needle = normalizeSearchText(query);
+  const compact = (text: string) => normalizeSearchText(text).replace(/ /g, '');
+  const needle = compact(query);
   return counts
     .map(({ value, count }) => ({ value, label: names.get(value) ?? value, count }))
-    .filter((option) => normalizeSearchText(option.label).includes(needle))
+    .filter((option) => compact(option.label).includes(needle))
     .sort((a, b) => a.label.localeCompare(b.label, 'en', { sensitivity: 'base' }));
 }
 

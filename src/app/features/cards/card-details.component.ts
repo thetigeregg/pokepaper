@@ -40,7 +40,7 @@ import { CollectionService } from '../../core/services/collection.service';
 import type { SearchFilters } from '../../core/services/catalog-search.service';
 import { LayoutService } from '../../core/services/layout.service';
 import { displayImage } from '../../core/utils/catalog-image.util';
-import { illustratorKey } from '../../core/utils/search-text.util';
+import { illustratorKey, illustratorName } from '../../core/utils/search-text.util';
 import {
   UNKNOWN_SET_REVERSE_HOLOS,
   type SetReverseHolos,
@@ -153,10 +153,7 @@ export class CardDetailsComponent {
     return `${localized(set.names, this.language()) || set.id} · ${cardNumber(set, this.card())}`;
   });
   /** The illustrator as TCGdex spells it, or null without one (or TCGdex's "N/A"). */
-  readonly illustrator = computed(() => {
-    const { illustrator } = this.card();
-    return illustratorKey(illustrator) ? (illustrator?.trim() ?? null) : null;
-  });
+  readonly illustrator = computed(() => illustratorName(this.card().illustrator));
   /** Whether the scan shown is another printing's (basic Energy; docs/catalog.md). */
   readonly borrowedScan = computed(
     () => displayImage(this.card(), this.language(), 'high')?.borrowed ?? false

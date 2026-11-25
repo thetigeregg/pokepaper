@@ -1,6 +1,6 @@
 import { signal } from '@angular/core';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
-import { ModalController } from '@ionic/angular';
+import { ModalController, ToastController } from '@ionic/angular';
 import { DEFAULT_CATALOG_LANGUAGES } from '@pokepaper/shared';
 import { vi } from 'vitest';
 import { makeContractPack } from '../../core/data/storage-engine.contract';
@@ -60,6 +60,10 @@ describe('CardDetailComponent', () => {
   const pack = makeContractPack('intl', 'sv01', ['sv01-001', 'sv01-002', 'sv01-003']);
   const cards = [...pack.cards].sort((a, b) => a.sortIndex - b.sortIndex);
   const dismiss = vi.fn(() => Promise.resolve(true));
+  const presentToast = vi.fn(() => Promise.resolve());
+  const createToast = vi.fn((_options: Record<string, unknown>) =>
+    Promise.resolve({ present: presentToast })
+  );
   const pick = vi.fn(() => Promise.resolve());
 
   let fixture: ComponentFixture<CardDetailComponent>;
@@ -92,6 +96,7 @@ describe('CardDetailComponent', () => {
       providers: [
         { provide: CollectionService, useValue: EMPTY_COLLECTION },
         { provide: ModalController, useValue: { dismiss } },
+        { provide: ToastController, useValue: { create: createToast } },
         { provide: LayoutService, useValue: { wide: signal(false) } },
         {
           // A remembered language other than the default, to tell them apart.
@@ -237,7 +242,7 @@ describe('CardDetailComponent', () => {
       expect(dismiss).not.toHaveBeenCalled();
     });
 
-    it('logs a search that fails to show', async () => {
+    it('says when a search fails to show, and logs it', async () => {
       const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
       fixture = TestBed.createComponent(CardDetailComponent);
       const detail = fixture.componentInstance;
@@ -249,6 +254,13 @@ describe('CardDetailComponent', () => {
       await detail.showSearch({ region: 'asia', filters: { sets: ['asia:SV2a'] } });
 
       expect(error).toHaveBeenCalledWith('catalog.card_search_failed', expect.any(Error));
+      expect(createToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: "Couldn't show the search. Try again.",
+          color: 'danger',
+        })
+      );
+      expect(presentToast).toHaveBeenCalled();
       error.mockRestore();
     });
   });

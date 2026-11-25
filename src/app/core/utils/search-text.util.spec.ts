@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   cardMatches,
   illustratorKey,
+  illustratorName,
   normalizeSearchText,
   parseCardNumber,
   prepareName,
@@ -162,5 +163,13 @@ describe('illustratorKey', () => {
     expect(illustratorKey(undefined)).toBeNull();
     expect(illustratorKey('  ')).toBeNull();
     expect(illustratorKey('N/A')).toBeNull();
+  });
+});
+
+describe('illustratorName', () => {
+  it('keeps the spelling, trimmed, and has none without a key', () => {
+    expect(illustratorName(' aky CG Works ')).toBe('aky CG Works');
+    expect(illustratorName('N/A')).toBeNull();
+    expect(illustratorName(null)).toBeNull();
   });
 });
