@@ -78,7 +78,14 @@
   @for (group of groups(); track group.setKey) {
     <ion-item-group>
       <ion-item-divider [sticky]="true">
-        <ion-label>{{ group.name }} · {{ group.count }}</ion-label>
+        <ion-label>
+          <span class="icon-text">
+            @if (group.set; as set) {
+              <app-set-symbol [region]="set.region" [setId]="set.id" />
+            }
+            <span class="icon-text-label">{{ group.name }} · {{ group.count }}</span>
+          </span>
+        </ion-label>
       </ion-item-divider>
       <ion-grid>
         <ion-row>

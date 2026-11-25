@@ -12,6 +12,7 @@ const row = (cardId: string, card = true): DeckRow => ({
   list: 'cards',
   slot: { region: 'intl', cardId, count: 1 },
   card: card ? makeContractCard('intl', 'sv01', cardId, 0) : null,
+  set: null,
   language: 'en',
   name: cardId,
   line: `SVI · ${cardId}`,

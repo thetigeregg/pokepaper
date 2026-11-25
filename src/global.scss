@@ -83,8 +83,11 @@ ion-list > ion-item:last-of-type {
 
 /* Icons and badges beside text sit centered on it (docs/ui.md → Lists):
    a title followed by a badge ("Synced", "This device"), or a symbol before
-   its text (a rarity). Flex centering, not vertical-align, so it holds in
-   any font. The symbol keeps its own spacing (none when it has no image). */
+   its text (a rarity, a set symbol). Flex centering, not vertical-align
+   offsets, so it holds in any font. The symbol keeps its own spacing (none
+   when it has no image). An icon-text is top-aligned in its line: otherwise
+   its baseline is the symbol's bottom edge, which lifts it off center and
+   adds space under the line. */
 .title-row {
   display: flex;
   align-items: center;
@@ -95,6 +98,17 @@ ion-list > ion-item:last-of-type {
 .icon-text {
   display: inline-flex;
   align-items: center;
+  vertical-align: top;
+  max-width: 100%;
+}
+
+/* Text after the symbol that can shrink inside the flex box, so it wraps or
+   truncates as its line does (a header wraps; a one-line row's ellipsis
+   doesn't reach into a flex box otherwise). */
+.icon-text > .icon-text-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .media-row > .media-row-text {

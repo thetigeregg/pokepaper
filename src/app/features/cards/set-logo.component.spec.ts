@@ -21,8 +21,16 @@ class HostComponent {
 }
 
 describe('SetLogoComponent', () => {
-  const plain = makeContractPack('intl', 'sv01', []).set;
-  const set: CatalogSet = { ...plain, logos: { en: 'en/sv/sv01/logo' }, symbol: 'sv/sv01/symbol' };
+  // A TCG Pocket set: it has no bundled symbol, so TCGdex's is the fallback.
+  const plain = makeContractPack('intl', 'A1', []).set;
+  const set: CatalogSet = { ...plain, logos: { en: 'en/tcgp/A1/logo' }, symbol: 'tcgp/A1/symbol' };
+  // Surging Sparks: its symbol is bundled.
+  const bundled: CatalogSet = {
+    ...makeContractPack('intl', 'sv08', []).set,
+    logos: { en: 'en/sv/sv08/logo' },
+    symbol: 'sv/sv08/symbol',
+  };
+  const bundledLogo = catalogSetImageUrl(bundled, { kind: 'logo', language: 'en' });
   const logo = catalogSetImageUrl(set, { kind: 'logo', language: 'en' });
   const symbol = catalogSetImageUrl(set, { kind: 'symbol' });
 
@@ -106,6 +114,68 @@ describe('SetLogoComponent', () => {
     expect((query(fixture, 'img') as HTMLImageElement).getAttribute('src')).toBe(`blob:${symbol}`);
   });
 
+  it('falls back to the bundled symbol, not TCGdex’s, when the server has no logo', async () => {
+    resolve.mockResolvedValue(null);
+    const fixture = await create(bundled);
+
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(resolve).toHaveBeenCalledWith(bundledLogo);
+    expect((query(fixture, 'img') as HTMLImageElement).getAttribute('src')).toBe(
+      'assets/set-symbols/sv08.png'
+    );
+  });
+
+  it('falls back to the bundled symbol when offline with no cached logo', async () => {
+    resolve.mockRejectedValue(new Error('offline'));
+    const fixture = await create(bundled);
+
+    expect((query(fixture, 'img') as HTMLImageElement).getAttribute('src')).toBe(
+      'assets/set-symbols/sv08.png'
+    );
+  });
+
+  it('shows the bundled symbol for a set without other images', async () => {
+    const fixture = await create({ ...bundled, logos: {}, symbol: null });
+
+    expect(resolve).not.toHaveBeenCalled();
+    expect((query(fixture, 'img') as HTMLImageElement).getAttribute('src')).toBe(
+      'assets/set-symbols/sv08.png'
+    );
+  });
+
+  it('falls back to TCGdex’s symbol when the bundled one fails to load', async () => {
+    resolve.mockImplementation((url) =>
+      Promise.resolve(url === bundledLogo ? null : `blob:${url}`)
+    );
+    const fixture = await create(bundled);
+    query(fixture, 'img')?.dispatchEvent(new Event('error'));
+    await settle(fixture);
+
+    const tcgdexSymbol = catalogSetImageUrl(bundled, { kind: 'symbol' });
+    expect(resolve).toHaveBeenLastCalledWith(tcgdexSymbol);
+    expect((query(fixture, 'img') as HTMLImageElement).getAttribute('src')).toBe(
+      `blob:${tcgdexSymbol}`
+    );
+  });
+
+  it('shows the icon when the bundled symbol fails and TCGdex has none', async () => {
+    resolve.mockResolvedValue(null);
+    const fixture = await create({ ...bundled, symbol: null });
+    query(fixture, 'img')?.dispatchEvent(new Event('error'));
+    await settle(fixture);
+
+    expect(query(fixture, 'img')).toBeNull();
+    expect(query(fixture, 'ion-icon')).not.toBeNull();
+  });
+
+  it('prefers the logo to the bundled symbol', async () => {
+    const fixture = await create(bundled);
+
+    expect((query(fixture, 'img') as HTMLImageElement).getAttribute('src')).toBe(
+      `blob:${bundledLogo}`
+    );
+  });
+
   it('shows an icon when the set has no images', async () => {
     const fixture = await create(plain);
 
@@ -116,21 +186,24 @@ describe('SetLogoComponent', () => {
 
   it('shows the projected name instead in logo-only mode, never the symbol', async () => {
     resolve.mockResolvedValue(null);
-    const fixture = await create(set, true);
+    for (const hostSet of [set, bundled]) {
+      resolve.mockClear();
+      const fixture = await create(hostSet, true);
 
-    expect(resolve).toHaveBeenCalledTimes(1);
-    expect(resolve).toHaveBeenCalledWith(logo);
-    expect(query(fixture, 'img')).toBeNull();
-    expect(query(fixture, '.name')?.textContent).toBe('Scarlet & Violet');
-    expect(query(fixture, 'app-set-logo')?.classList).toContain('logo-only');
+      expect(resolve).toHaveBeenCalledTimes(1);
+      expect(resolve).toHaveBeenCalledWith(hostSet === set ? logo : bundledLogo);
+      expect(query(fixture, 'img')).toBeNull();
+      expect(query(fixture, '.name')?.textContent).toBe('Scarlet & Violet');
+      expect(query(fixture, 'app-set-logo')?.classList).toContain('logo-only');
+    }
   });
 
   it('switches to the new set’s logo', async () => {
     const fixture = await create(set);
     const other: CatalogSet = {
       ...set,
-      id: 'sv02',
-      logos: { en: 'en/sv/sv02/logo' },
+      id: 'A2',
+      logos: { en: 'en/tcgp/A2/logo' },
       symbol: null,
     };
 

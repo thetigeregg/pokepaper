@@ -275,6 +275,21 @@ Images are 48 px tall (widths in `RARITY_ICON_WIDTHS`, which a spec checks again
 - **Unused images:** `jp/ssr` and `jp/tr` match no TCGdex rarity; `jp/s` only shows if TCGdex adds rarities to the Japanese shiny sets.
 - **Rarities with no symbol in a region:** a rarity that isn't in its region's table (a new TCGdex name, say) shows text only until it's added.
 
+## Set symbols
+
+International sets show their symbol before the set's name in the card detail's Set row, before the set line in deck rows, and before the set's name in the search results' set headers (`setSymbol()` in `src/app/features/cards/set-symbol.ts`, images in `src/assets/set-symbols/<setId>.png`). The sets list and the Set filter picker show the logo, and the symbol only in its place.
+
+- **Source:** pokesymbols.com's English set symbol sheet (a PDF, October 2026), not TCGdex. TCGdex links a symbol for 168 of the 220 International sets, but only 125 load: 23 exist only as PNG (the image route only takes WebP), 20 point to missing files, and modern ones are 25–40 px. The sheet's are 484 px JPEGs on white, matched to sets by name (14 by hand: trainer kits, HeartGold SoulSilver's sets, 30th Classic Collection, Scarlet & Violet Energy and Promos, Futsal). Each was cut out of its background (only the white touching the edges, so white inside a symbol stays), cropped, fitted to 48 px tall and at most 120 px wide, and outlined in white so it shows in dark mode.
+- **Images** are 48 px tall (widths in `SET_SYMBOL_WIDTHS`, which a spec checks against the files, so rows keep the symbol's space while it loads). They're cached by the service worker as they're first shown, not prefetched (194 images, about 590 KB).
+- **Sets list fallback:** `SetLogoComponent` falls back to the bundled symbol when a set's logo is missing or can't load offline, else to TCGdex's symbol for sets without a bundled one (the set page header never shows a symbol).
+- **Shared symbols:** MEP Black Star Promos isn't on the sheet, so it shows SVP Black Star Promos' star, which every Black Star Promos set prints (`SHARED_SET_SYMBOLS`).
+- **Adding a set:** a 48 px tall PNG outlined in white, named by its TCGdex set ID, plus its width in `SET_SYMBOL_WIDTHS`; or, for a set that prints another set's symbol, an entry in `SHARED_SET_SYMBOLS`.
+
+**Not covered** (no symbol, text only):
+
+- **No symbol on the sheet:** TCG Pocket's 15 sets (A1–B2a, Promos-A), My First Battle, Mega Evolution Energy, Miscellaneous Promos (not a Black Star Promos set), McDonald's Collection 2013 and the French 2018 and 2019 ones, Yellow A Alternate, Unseen Forces Unown Collection and Poké Card Creator Pack. Base Set has no symbol; the sheet shows the TCG logo in its place, which isn't used.
+- **The Japan & Asia catalog:** none yet. Since Sun & Moon its symbols are the set code in a box (`sv4a`, `s12a`, `M4`), matching TCGdex's set IDs, so they could be drawn from the ID; older sets need images.
+
 ## Storage
 
 The catalog lives in **`catalog.db`**, next to `pokepaper.db` in `DATA_DIR`, with its own migrations in `server/src/catalog/migrations/`. It holds no user data and can be rebuilt from TCGdex (and Cardmarket's downloads), so it's **not included in the server's backups** (it would add about 120 MB to each). Cardmarket matches made by hand live in `pokepaper.db`, which is backed up. To rebuild it from scratch, stop the server, delete `catalog.db` (and any `catalog.db-wal` / `catalog.db-shm`), and start it again: the first run is a full refresh.
@@ -293,4 +308,4 @@ Cached images live in `DATA_DIR/images/catalog/` and are also rebuildable (delet
 
 ## Attribution
 
-Card data: [TCGdex](https://github.com/tcgdex/cards-database) (MIT License). Prices: Cardmarket's price guide (products matched to cards via TCGdex, or by hand from Cardmarket's product list). Exchange rates: European Central Bank euro reference rates. Energy symbol icons: from ilkcmp's [Neo Neo Blank Symbolsheet](https://www.deviantart.com/ilkcmp/art/Neo-Neo-Blank-Symbolsheet-486883197) (free for non-commercial use). Rarity symbol icons: collected from community sources. Card images, energy and rarity symbols, and names are © The Pokémon Company, Nintendo, Game Freak and Creatures. PokePaper is a personal, non-commercial project not affiliated with them.
+Card data: [TCGdex](https://github.com/tcgdex/cards-database) (MIT License). Prices: Cardmarket's price guide (products matched to cards via TCGdex, or by hand from Cardmarket's product list). Exchange rates: European Central Bank euro reference rates. Energy symbol icons: from ilkcmp's [Neo Neo Blank Symbolsheet](https://www.deviantart.com/ilkcmp/art/Neo-Neo-Blank-Symbolsheet-486883197) (free for non-commercial use). Rarity symbol icons: collected from community sources. Set symbol icons: from [Pokemon Symbols](https://pokesymbols.com)' set symbol sheet. Card images, energy, rarity and set symbols, and names are © The Pokémon Company, Nintendo, Game Freak and Creatures. PokePaper is a personal, non-commercial project not affiliated with them.

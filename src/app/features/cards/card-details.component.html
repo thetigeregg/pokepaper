@@ -155,9 +155,12 @@
     }
 
     <ion-list-header><ion-label>Details</ion-label></ion-list-header>
-    <ion-item>
+    <ion-item class="wrapping-detail">
       <ion-label>Set</ion-label>
-      <ion-note slot="end" data-testid="detail-set">{{ setLine() }}</ion-note>
+      <ion-note slot="end" class="icon-text" data-testid="detail-set">
+        <app-set-symbol [region]="set().region" [setId]="set().id" />
+        {{ setDetail() }}
+      </ion-note>
     </ion-item>
     @if (card().rarity) {
       <ion-item>

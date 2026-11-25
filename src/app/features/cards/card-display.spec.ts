@@ -1,6 +1,7 @@
 import { catalogSetImageUrl, stampedVariant, type CatalogCard } from '@pokepaper/shared';
 import { makeContractCard, makeContractPack } from '../../core/data/storage-engine.contract';
 import {
+  cardNumber,
   cardSubtitle,
   cardText,
   cardTint,
@@ -51,6 +52,16 @@ describe('card display helpers', () => {
 
   it('falls back to the first language with text', () => {
     expect(cardText(card({}), 'de')?.name).toBe('sv01-001');
+  });
+
+  it("gives the card's number over the official count, when known", () => {
+    const { set } = makeContractPack('intl', 'sv01', []);
+    expect(
+      cardNumber({ ...set, cardCount: { total: 258, official: 198 } }, card({ localId: '004' }))
+    ).toBe('004/198');
+    expect(
+      cardNumber({ ...set, cardCount: { total: 3, official: 0 } }, card({ localId: '1' }))
+    ).toBe('1');
   });
 
   it('builds the set line with the official count', () => {

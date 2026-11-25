@@ -168,6 +168,11 @@ describe('SearchResultsComponent', () => {
       ['Paldea Evolved', 1, 1],
       ['Scarlet & Violet', 3, 2],
     ]);
+    expect(
+      [...root().querySelectorAll('ion-item-divider [data-testid="set-symbol"]')].map((img) =>
+        img.getAttribute('src')
+      )
+    ).toEqual(['assets/set-symbols/sv02.png', 'assets/set-symbols/sv01.png']);
     expect([...root().querySelectorAll('.caption')].map((c) => c.textContent)).toEqual([
       '001 · sv02-001',
       '002 · sv01-002',
