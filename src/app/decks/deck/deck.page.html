@@ -272,7 +272,14 @@
 <ng-template #rowText let-row>
   <div class="media-row-text">
     {{ row.name }}
-    <p class="hint">{{ row.line }}</p>
+    <p class="hint" data-testid="set-line">
+      <span class="icon-text">
+        @if (row.card; as card) {
+          <app-set-symbol [region]="card.region" [setId]="card.setId" />
+        }
+        {{ row.line }}
+      </span>
+    </p>
     @if (ownedLine(row); as owned) {
       <p class="hint owned-line" [class.short]="owned.short" data-testid="owned-line">
         @if (!owned.short) {

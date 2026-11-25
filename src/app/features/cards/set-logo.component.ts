@@ -18,11 +18,12 @@ import { ImageCacheService } from '../../core/services/image-cache.service';
 import { ImageSlot } from '../../core/services/image-slot';
 import { VisibilityService } from '../../core/services/visibility.service';
 import { setLogoUrl } from './card-display';
+import { setSymbol } from './set-symbol';
 
 /**
  * A set's logo in `language` (else another language's), cached on the
  * device and loaded as it nears the viewport. In the sets list it falls back
- * to the set's symbol, then an icon; with `logoOnly` (the set page header) it
+ * to the set's symbol (the bundled one, else TCGdex's), then an icon; with `logoOnly` (the set page header) it
  * shows its projected content, the set's name, instead.
  */
 @Component({
@@ -85,12 +86,17 @@ export class SetLogoComponent {
   readonly src = signal<string | null>(null);
   private readonly visible = signal(false);
 
+  /** The bundled symbol, shown when the logo can't be. */
+  private readonly bundledSymbol = computed(() =>
+    this.logoOnly() ? null : setSymbol(this.set().region, this.set().id)
+  );
   private readonly candidates = computed(() => {
     const set = this.set();
     const logo = setLogoUrl(set, this.language());
+    const tcgdexSymbol = set.symbol && !this.logoOnly() && !this.bundledSymbol();
     return [
       ...(logo ? [logo] : []),
-      ...(set.symbol && !this.logoOnly() ? [catalogSetImageUrl(set, { kind: 'symbol' })] : []),
+      ...(tcgdexSymbol ? [catalogSetImageUrl(set, { kind: 'symbol' })] : []),
     ];
   });
 
@@ -134,7 +140,7 @@ export class SetLogoComponent {
     }
     if (candidates === this.candidates()) {
       this.slot.clear();
-      this.src.set(null);
+      this.src.set(this.bundledSymbol()?.url ?? null);
     }
   }
 }

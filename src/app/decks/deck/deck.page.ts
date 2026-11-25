@@ -75,6 +75,7 @@ import { LayoutService } from '../../core/services/layout.service';
 import { CardDetailComponent } from '../../features/cards/card-detail.component';
 import { cardText, setLine } from '../../features/cards/card-display';
 import { CardImageComponent } from '../../features/cards/card-image.component';
+import { SetSymbolComponent } from '../../features/cards/set-symbol.component';
 import {
   HeaderActionsComponent,
   type HeaderAction,
@@ -205,6 +206,7 @@ function isCatalogRegion(value: string): value is CatalogRegion {
     NgTemplateOutlet,
     CardImageComponent,
     HeaderActionsComponent,
+    SetSymbolComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

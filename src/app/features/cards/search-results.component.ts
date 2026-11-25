@@ -36,6 +36,7 @@ import { LayoutService } from '../../core/services/layout.service';
 import { CardDetailComponent } from './card-detail.component';
 import { cardText, setLine } from './card-display';
 import { CardTileComponent } from './card-tile.component';
+import { SetSymbolComponent } from './set-symbol.component';
 
 /** Cards loaded per page as the results scroll. */
 export const RESULTS_PAGE_SIZE = 60;
@@ -98,6 +99,7 @@ interface ResultGroup {
     IonInfiniteScroll,
     IonInfiniteScrollContent,
     CardTileComponent,
+    SetSymbolComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

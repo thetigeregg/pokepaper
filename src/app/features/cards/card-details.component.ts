@@ -61,6 +61,7 @@ import { CardTextComponent } from './card-text.component';
 import { CardmarketMatcherComponent } from './cardmarket-matcher.component';
 import { EnergyIconComponent } from './energy-icon.component';
 import { RarityIconComponent } from './rarity-icon.component';
+import { SetSymbolComponent } from './set-symbol.component';
 
 /**
  * One card's scan and full text in `language` (docs/ui.md → Card detail):
@@ -87,6 +88,7 @@ import { RarityIconComponent } from './rarity-icon.component';
     CardTextComponent,
     EnergyIconComponent,
     RarityIconComponent,
+    SetSymbolComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

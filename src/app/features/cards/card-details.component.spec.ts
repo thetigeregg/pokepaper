@@ -180,6 +180,11 @@ describe('CardDetailsComponent', () => {
       'Resistance none'
     );
     expect(detail(fixture, 'set')).toBe('SVI · 004/198');
+    expect(
+      root
+        .querySelector('[data-testid="detail-set"] [data-testid="set-symbol"]')
+        ?.getAttribute('src')
+    ).toBe('assets/set-symbols/sv01.png');
     expect(detail(fixture, 'rarity')).toBe('Common');
     expect(
       root

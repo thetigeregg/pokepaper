@@ -190,6 +190,9 @@ describe('DeckPage', () => {
     const row = query('[data-testid="deck-card-intl:sv01-001"]');
     expect(row?.textContent).toContain('sv01-001');
     expect(row?.querySelector('.hint')?.textContent.trim()).toBe('SVI · 001/198');
+    expect(row?.querySelector('.hint [data-testid="set-symbol"]')?.getAttribute('src')).toBe(
+      'assets/set-symbols/sv01.png'
+    );
     expect(row?.querySelector('[data-testid="count"]')?.textContent.trim()).toBe('3');
   });
 
@@ -208,6 +211,7 @@ describe('DeckPage', () => {
     const missing = query('[data-testid="deck-card-intl:gone-1"]');
     expect(missing?.textContent).toContain('gone-1');
     expect(missing?.querySelector('[data-testid="open-card"]')).toBeNull();
+    expect(missing?.querySelector('[data-testid="set-symbol"]')).toBeNull();
   });
 
   it('offers Add cards for an empty deck', async () => {
