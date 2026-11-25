@@ -1,4 +1,6 @@
+import { CARDMARKET_PRODUCTS_URL } from './cardmarket-products.js';
 import { openCatalogDatabase } from './db.js';
+import { CARDMARKET_PRICE_GUIDE_URL } from './prices.js';
 import { runCatalogIngest } from './ingest.js';
 import { nextRunKind, pricesDue, startCatalogSchedule } from './schedule.js';
 import { CatalogStore } from './store.js';
@@ -7,6 +9,7 @@ import {
   fakeCardmarket,
   fakeClient,
   fakeTcgdex,
+  fixtureProductList,
   memoryCatalogStore,
   silentLogger,
 } from './test-helpers.js';
@@ -224,6 +227,44 @@ describe('startCatalogSchedule', () => {
     clock += 12 * HOUR;
     await vi.advanceTimersByTimeAsync(12 * HOUR);
     expect(priceRuns()).toBe(2);
+
+    await schedule.stop();
+  });
+
+  it('downloads Cardmarket’s product list before a price pass, which checks products by it', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const store = memoryCatalogStore();
+    const fake = fakeTcgdex();
+    const products = fakeCardmarket(fixtureProductList());
+    const urls: string[] = [];
+    const schedule = startCatalogSchedule({
+      store,
+      fetch: (input, init) => {
+        const url =
+          input instanceof Request ? input.url : input instanceof URL ? input.href : input;
+        urls.push(url);
+        return url === CARDMARKET_PRODUCTS_URL
+          ? products.fetch(input, init)
+          : outside.fetch(input, init);
+      },
+      languages: ['en', 'fr'],
+      refreshHours: 12,
+      fullRefreshDays: 7,
+      pricesRefreshHours: 24,
+      log: silentLogger(),
+      initialDelayMs: 0,
+      createClient: (signal) => fakeClient(fake, signal),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(urls.indexOf(CARDMARKET_PRODUCTS_URL)).toBeGreaterThanOrEqual(0);
+    expect(urls.indexOf(CARDMARKET_PRODUCTS_URL)).toBeLessThan(
+      urls.indexOf(CARDMARKET_PRICE_GUIDE_URL)
+    );
+    expect(store.getPriceGuideState()?.productListCreatedAt).toBe(
+      store.getCardmarketProductsState()?.createdAt
+    );
 
     await schedule.stop();
   });

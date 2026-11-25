@@ -14,6 +14,7 @@ import { DB_FILENAME, openDatabase, type Db } from '../db.js';
 import { CATALOG_DB_FILENAME, openCatalogDatabase } from './db.js';
 import { runCatalogIngest, type CatalogLogger } from './ingest.js';
 import { CardmarketMatchStore } from './matches-store.js';
+import { refreshCardmarketProductsIfDue } from './cardmarket-products.js';
 import { runPriceRefresh } from './prices.js';
 import { refreshExchangeRates } from './rates.js';
 import { CatalogStore } from './store.js';
@@ -63,6 +64,7 @@ try {
     serverDb = existsSync(serverDbPath) ? openDatabase(serverDbPath) : undefined;
     const matches = serverDb ? new CardmarketMatchStore(serverDb) : undefined;
     if (process.argv.includes('--prices')) {
+      await refreshCardmarketProductsIfDue(options);
       if ((await runPriceRefresh({ ...options, matches })).status === 'failed') {
         process.exitCode = 1;
       }

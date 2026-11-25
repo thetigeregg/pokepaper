@@ -4,9 +4,11 @@ import {
   type CatalogLanguage,
   type CatalogRegion,
 } from '@pokepaper/shared';
+import { readCapped } from './download.js';
 import type { CatalogLogger } from './ingest.js';
 import { inLanguageOrder } from './normalize.js';
 import { parseGuideEntry, parseProductId, type StoredCardPrices } from './price-data.js';
+import { checkProductLink } from './product-check.js';
 import type { CatalogStore } from './store.js';
 import type { TcgdexClient } from './tcgdex-client.js';
 
@@ -32,6 +34,8 @@ const MIN_PRODUCTS_FOR_SHARE = 100;
  */
 export const PRODUCT_LOOKUP_DAYS = 60;
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** Rejected cards named in the pass's log line; the rest are counted. */
+const MAX_LOGGED_REJECTIONS = 50;
 
 /** Cardmarket products matched to cards by hand (`CardmarketMatchStore`). */
 export interface CardmarketMatchSource {
@@ -70,9 +74,10 @@ export interface PriceRefreshStats {
   /**
    * `priced`: has prices. `unpriced`: its product has no figures, or isn't in
    * the guide. `unmapped`: no known Cardmarket product; left as it was.
-   * `changed`: stored prices that changed.
+   * `rejected`: TCGdex's product is another card's or printing's
+   * (`tcgdexProductRejected`); unpriced. `changed`: stored prices that changed.
    */
-  cards: { priced: number; unpriced: number; unmapped: number; changed: number };
+  cards: { priced: number; unpriced: number; unmapped: number; rejected: number; changed: number };
   /**
    * Recent cards without a product, looked up on TCGdex: `checked`, of which
    * `mapped` now have one and `failed` couldn't be fetched.
@@ -108,7 +113,7 @@ export async function runPriceRefresh(options: PriceRefreshOptions): Promise<Pri
     status: 'ok',
     guideCreatedAt: null,
     products: 0,
-    cards: { priced: 0, unpriced: 0, unmapped: 0, changed: 0 },
+    cards: { priced: 0, unpriced: 0, unmapped: 0, rejected: 0, changed: 0 },
     lookups: { checked: 0, mapped: 0, failed: 0 },
     pruned: 0,
     durationMs: 0,
@@ -128,9 +133,13 @@ export async function runPriceRefresh(options: PriceRefreshOptions): Promise<Pri
     const previous = store.getPriceGuideState();
     const productsVersion = store.productsVersion();
     const matchesVersion = options.matches?.version() ?? 0;
-    // Products or matches changed since the guide was applied: apply it anew (no 304).
+    const productListCreatedAt = store.getCardmarketProductsState()?.createdAt ?? null;
+    // Products, matches or the product list changed since the guide was
+    // applied: apply it anew (no 304).
     const etag =
-      previous?.productsVersion === productsVersion && previous.matchesVersion === matchesVersion
+      previous?.productsVersion === productsVersion &&
+      previous.matchesVersion === matchesVersion &&
+      previous.productListCreatedAt === productListCreatedAt
         ? previous.etag
         : null;
     let download: GuideDownload | 'unchanged';
@@ -153,11 +162,28 @@ export async function runPriceRefresh(options: PriceRefreshOptions): Promise<Pri
     const regions = CATALOG_REGIONS.map((region) => {
       const products = store.listCardmarketProducts(region);
       const byHand = options.matches?.list(region) ?? new Map<string, number>();
+      const rejected = new Set(
+        [...products]
+          .filter(
+            ([cardId, idProduct]) =>
+              !byHand.has(cardId) && tcgdexProductRejected(store, region, cardId, idProduct)
+          )
+          .map(([cardId]) => cardId)
+      );
       for (const [cardId, idProduct] of byHand) {
         products.set(cardId, idProduct);
       }
-      return { region, products, byHand };
+      return { region, products, byHand, rejected };
     });
+    const rejected = regions.flatMap(({ region, rejected: cards }) =>
+      [...cards].map((cardId) => `${region}:${cardId}`)
+    );
+    if (rejected.length > 0) {
+      log.info(
+        { count: rejected.length, cards: rejected.slice(0, MAX_LOGGED_REJECTIONS) },
+        'catalog.cardmarket_products_rejected'
+      );
+    }
     const mapped = new Set(regions.flatMap(({ products }) => [...products.values()]));
     const found = [...mapped].filter((idProduct) => download.entries.has(idProduct)).length;
     if (mapped.size >= MIN_PRODUCTS_FOR_SHARE && found < mapped.size * MIN_FOUND_SHARE) {
@@ -168,13 +194,17 @@ export async function runPriceRefresh(options: PriceRefreshOptions): Promise<Pri
       return finish('failed');
     }
 
-    for (const { region, products, byHand } of regions) {
+    for (const { region, products, byHand, rejected: wrong } of regions) {
       signal?.throwIfAborted();
       const entries = store.listCardIds(region).map((cardId) => {
         const idProduct = products.get(cardId);
         if (idProduct === undefined) {
           stats.cards.unmapped += 1;
           return null; // Left as it was: forgetting a product removes its prices.
+        }
+        if (wrong.has(cardId)) {
+          stats.cards.rejected += 1;
+          return { cardId, prices: null };
         }
         const entry = download.entries.get(idProduct);
         const prices = guidePrices(entry, download.createdAt, byHand.has(cardId));
@@ -199,6 +229,7 @@ export async function runPriceRefresh(options: PriceRefreshOptions): Promise<Pri
         createdAt: download.createdAt,
         productsVersion,
         matchesVersion,
+        productListCreatedAt,
       });
     });
     return finish('ok');
@@ -218,6 +249,28 @@ export async function runPriceRefresh(options: PriceRefreshOptions): Promise<Pri
   }
 }
 
+/**
+ * Whether TCGdex's product for a card is, by the stored Cardmarket product
+ * list, another card or another printing of it (`checkProductLink`;
+ * docs/catalog.md → Checking TCGdex's products). Such a card is left
+ * unpriced, to be matched by hand. A card or product the stores lack isn't
+ * rejected: there's nothing to check it against.
+ */
+export function tcgdexProductRejected(
+  store: CatalogStore,
+  region: CatalogRegion,
+  cardId: string,
+  idProduct: number
+): boolean {
+  const card = store.getCard(region, cardId);
+  const product = store.getCardmarketProduct(idProduct);
+  if (!card || !product) {
+    return false;
+  }
+  const check = checkProductLink(card, product);
+  return check === 'other_card' || check === 'other_printing';
+}
+
 /** A card's prices from its product's guide entry, flagged when matched by hand. */
 function guidePrices(
   entry: unknown,
@@ -230,8 +283,9 @@ function guidePrices(
 
 /**
  * Prices one card from the stored price guide, right after its match by
- * hand changed: by its match, else TCGdex's product; a card with neither
- * loses its prices. Returns false, changing nothing, when no guide is stored
+ * hand changed: by its match, else TCGdex's product unless it's another
+ * card's or printing's (`tcgdexProductRejected`); a card with neither loses
+ * its prices. Returns false, changing nothing, when no guide is stored
  * yet: the next price pass prices it (the matches version changed).
  */
 export function repriceCard(
@@ -245,7 +299,12 @@ export function repriceCard(
     return false;
   }
   const byHand = matches.get(region, cardId);
-  const idProduct = byHand ?? store.getCardmarketProductOf(region, cardId);
+  const tcgdex = store.getCardmarketProductOf(region, cardId);
+  const idProduct =
+    byHand ??
+    (tcgdex !== undefined && !tcgdexProductRejected(store, region, cardId, tcgdex)
+      ? tcgdex
+      : undefined);
   const entry =
     idProduct === undefined ? undefined : store.getPriceGuideEntries([idProduct]).get(idProduct);
   store.writeCardPrices(region, [
@@ -285,39 +344,6 @@ async function downloadGuide(
     throw new Error('Cardmarket price guide: unexpected content');
   }
   return { etag: response.headers.get('etag'), ...guide };
-}
-
-/**
- * The body as text, failing once it passes `maxBytes` (whatever the headers
- * say). `label` names the download in the error.
- */
-export async function readCapped(
-  response: Response,
-  maxBytes: number,
-  label: string
-): Promise<string> {
-  if (Number(response.headers.get('content-length') ?? 0) > maxBytes) {
-    throw new Error(`${label}: too large`);
-  }
-  const reader = response.body?.getReader();
-  if (!reader) {
-    return '';
-  }
-  const decoder = new TextDecoder();
-  let text = '';
-  let bytes = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) {
-      return text + decoder.decode();
-    }
-    bytes += value.byteLength;
-    if (bytes > maxBytes) {
-      await reader.cancel();
-      throw new Error(`${label}: too large`);
-    }
-    text += decoder.decode(value, { stream: true });
-  }
 }
 
 /**

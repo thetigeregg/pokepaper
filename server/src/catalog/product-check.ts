@@ -1,0 +1,123 @@
+import type { CatalogCard } from '@pokepaper/shared';
+import { cardmarketSearchText, type CardmarketProduct } from './store.js';
+
+/**
+ * Whether TCGdex's Cardmarket product for a card is that card
+ * (docs/catalog.md → Checking TCGdex's products):
+ *
+ * - `ok`: named like the card, sharing an attack or ability when both list any.
+ * - `other_card`: named for another card (Team Magma vs Team Aqua's Maxie
+ *   linked to a Psyduck).
+ * - `other_printing`: the card's name but none of its attacks or abilities,
+ *   another printing of it (HeartGold & SoulSilver's Typhlosion Prime linked
+ *   to the plain Typhlosion).
+ * - `unchecked`: the card has no English text to compare (Cardmarket names
+ *   products in English).
+ */
+export type ProductLinkCheck = 'ok' | 'unchecked' | 'other_card' | 'other_printing';
+
+/**
+ * How alike two names must be (1 − edit distance ÷ the longer length) to be
+ * taken as one spelled two ways: "Adventure Lantern" and "Adventuring
+ * Lantern", "Star Cipher" and "Star Cypher".
+ */
+export const MIN_NAME_SIMILARITY = 0.75;
+
+/** Bracketed words naming one half of a split card ("Ho-Oh LEGEND [Top]"), not its moves. */
+const CARD_HALVES = new Set(['top', 'bottom', 'left', 'right']);
+
+/**
+ * Checks a card's Cardmarket product against it, by Cardmarket's product
+ * name: the card's name before any bracket ("Staraptor [FB] Lv.50 [Quick
+ * Attack | Whirlwind]"), then its attacks and abilities in the last
+ * brackets. Names are compared as `cardmarketSearchText`: equal, one
+ * holding the other ("Pelipper" in "Pelipper Lv.50"), or alike enough
+ * (`MIN_NAME_SIMILARITY`).
+ */
+export function checkProductLink(
+  card: Pick<CatalogCard, 'text'>,
+  product: Pick<CardmarketProduct, 'name'>
+): ProductLinkCheck {
+  const text = card.text.en;
+  const name = text ? cardmarketSearchText(text.name) : '';
+  const productName = product.name.split('[')[0] ?? '';
+  if (!text || !name || !cardmarketSearchText(productName)) {
+    return 'unchecked';
+  }
+  if (!namesMatch(text.name, productName)) {
+    return 'other_card';
+  }
+  const moves = [...text.attacks, ...text.abilities]
+    .map((move) => cardmarketSearchText(move.name))
+    // McDonald's cards list the Pokémon's own name as an attack in some data.
+    .filter((move) => move && move !== name);
+  const listed = lastBrackets(product.name)
+    .map(cardmarketSearchText)
+    .filter((move) => move && !CARD_HALVES.has(move));
+  if (moves.length === 0 || listed.length === 0) {
+    return 'ok';
+  }
+  return moves.some((move) => listed.some((other) => similar(move, other)))
+    ? 'ok'
+    : 'other_printing';
+}
+
+/**
+ * Whether two names are one card's: as `cardmarketSearchText`, equal, one
+ * holding the other or alike (`similar`); else word by word, the shorter's
+ * words all in the longer ("Legendary Trench", "Legendary Marine Trench"),
+ * one standing for the longer's other words' initials ("Blend Energy GFPD").
+ */
+function namesMatch(a: string, b: string): boolean {
+  const [textA, textB] = [cardmarketSearchText(a), cardmarketSearchText(b)];
+  if (textA.includes(textB) || textB.includes(textA) || similar(textA, textB)) {
+    return true;
+  }
+  const [shorter, longer] = [words(a), words(b)].sort((x, y) => x.length - y.length) as [
+    string[],
+    string[],
+  ];
+  const initials = longer
+    .filter((word) => !shorter.includes(word))
+    .map((word) => word.charAt(0))
+    .join('');
+  return shorter.every((word) => longer.includes(word) || word === initials);
+}
+
+/** A name's words, lowercased without accents: "Team Aqua's Walrein" → team, aqua, s, walrein. */
+function words(name: string): string[] {
+  return name
+    .normalize('NFKD')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word);
+}
+
+/** The `|`-separated entries of a product name's last brackets: `[Mirror Move | Feather Lance]`. */
+function lastBrackets(name: string): string[] {
+  const groups = [...name.matchAll(/\[([^\]]*)\]/g)];
+  return groups.at(-1)?.[1]?.split('|') ?? [];
+}
+
+/** Equal, or alike enough to be one name spelled two ways (`MIN_NAME_SIMILARITY`). */
+function similar(a: string, b: string): boolean {
+  if (a === b) {
+    return true;
+  }
+  const longer = Math.max(a.length, b.length);
+  return 1 - editDistance(a, b) / longer >= MIN_NAME_SIMILARITY;
+}
+
+/** Levenshtein distance: insertions, deletions and substitutions turning `a` into `b`. */
+function editDistance(a: string, b: string): number {
+  let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i++) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j++) {
+      const substitution = (previous[j - 1] ?? 0) + (a[i - 1] === b[j - 1] ? 0 : 1);
+      current.push(Math.min((previous[j] ?? 0) + 1, (current[j - 1] ?? 0) + 1, substitution));
+    }
+    previous = current;
+  }
+  return previous[b.length] ?? 0;
+}
