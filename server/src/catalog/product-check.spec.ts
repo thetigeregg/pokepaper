@@ -103,6 +103,46 @@ describe('checkProductLink', () => {
     ).toBe('ok');
   });
 
+  it('reads accented names word by word without splitting at the accent', () => {
+    expect(
+      checkProductLink(
+        card('Pokémon Communication'),
+        product('Pokemon Communication (Team Plasma)')
+      )
+    ).toBe('ok');
+    expect(
+      checkProductLink(card('Flabébé', ['Razor Leaf']), product('Flabébé Lv.10 [Razor Leaf]'))
+    ).toBe('ok');
+  });
+
+  it('takes a bracket of only set codes or letters for tags, not moves', () => {
+    // Tags alone: nothing to compare, so not another printing.
+    expect(
+      checkProductLink(
+        card('Tohoku’s Pikachu', ['Thunder Shock']),
+        product('Tohoku’s Pikachu [SV-P]')
+      )
+    ).toBe('ok');
+    expect(checkProductLink(card('Unown', ['Hidden Power']), product('Unown [A]'))).toBe('ok');
+    // Tags beside moves: the moves decide.
+    expect(
+      checkProductLink(card('Bulbasaur', ['Leech Seed']), product('Bulbasaur [Leech Seed | MEP]'))
+    ).toBe('ok');
+    expect(
+      checkProductLink(card('Bulbasaur', ['Vine Whip']), product('Bulbasaur [Leech Seed | 151]'))
+    ).toBe('other_printing');
+    // Short moves, capitalized or all caps beside others, are moves.
+    expect(checkProductLink(card('Tauros', ['Horn Attack']), product('Tauros [Ram]'))).toBe(
+      'other_printing'
+    );
+    expect(
+      checkProductLink(
+        card('Unown', ['DARK', 'Hidden Power']),
+        product('Unown [C] [CALL | Psychic]')
+      )
+    ).toBe('other_printing');
+  });
+
   it('flags another printing of the card: its name, none of its attacks', () => {
     // Short moves one letter apart are other moves.
     expect(checkProductLink(card('Zubat', ['Bite']), product('Zubat [Bide]'))).toBe(

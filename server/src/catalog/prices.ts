@@ -205,7 +205,15 @@ export async function runPriceRefresh(options: PriceRefreshOptions): Promise<Pri
 
     for (const { region, products, byHand, rejected: wrong } of regions) {
       signal?.throwIfAborted();
+      // Matches read before the downloads: one changed by hand since (the
+      // matcher repriced that card) is left alone, and the next pass applies
+      // the guide anew, as the matches version it saves is the older one.
+      // Read right before the write, with no await between.
+      const handNow = options.matches?.list(region) ?? new Map<string, number>();
       const entries = store.listCardIds(region).map((cardId) => {
+        if (byHand.get(cardId) !== handNow.get(cardId)) {
+          return null;
+        }
         const idProduct = products.get(cardId);
         if (idProduct === undefined) {
           stats.cards.unmapped += 1;

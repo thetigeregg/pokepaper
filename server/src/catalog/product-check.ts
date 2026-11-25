@@ -29,6 +29,15 @@ const MIN_SIMILAR_LENGTH = 6;
 const CARD_HALVES = new Set(['top', 'bottom', 'left', 'right']);
 
 /**
+ * A bracketed entry shaped like a tag: a set code ("SV-P", "MEP", "151",
+ * "30C", "s10a") or a letter ("A"). Some moves look like one too (Unown's
+ * "HEAL", "DARK"), so only a bracket of nothing else is taken for tags
+ * (`moveBrackets`): "Tohoku's Pikachu [SV-P]", "Unown [A]". Beside moves
+ * ("Bulbasaur [Leech Seed | MEP]") the moves decide anyway.
+ */
+const TAG = /^(?:[A-Z0-9]{1,4}(?:-[A-Z0-9]{1,2})?|[a-z]{1,3}\d+[a-z]?)$/;
+
+/**
  * Checks a card's Cardmarket product against it, by Cardmarket's product
  * name: the card's name before any bracket ("Staraptor [FB] Lv.50 [Quick
  * Attack | Whirlwind]", `namesMatch`), then its attacks and abilities in
@@ -90,10 +99,14 @@ function namesMatch(a: string, b: string): boolean {
   return shorter.every((word) => longer.includes(word) || (shared.length > 0 && word === initials));
 }
 
-/** A name's words, lowercased without accents: "Team Aqua's Walrein" → team, aqua, s, walrein. */
+/**
+ * A name's words, lowercased without accents: "Team Aqua's Walrein" → team,
+ * aqua, s, walrein; "Pokémon" → pokemon (the accent removed, not a break).
+ */
 function words(name: string): string[] {
   return name
     .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter((word) => word);
@@ -102,10 +115,14 @@ function words(name: string): string[] {
 /**
  * The `|`-separated moves in the brackets ending a product name: `Pidgeot
  * [Mirror Move | Feather Lance]`. None when the name doesn't end in
- * brackets: "Staraptor [FB] Lv.50" names a level-up tag, not moves.
+ * brackets ("Staraptor [FB] Lv.50" names a level-up tag), or when they hold
+ * only tags (`TAG`: "Tohoku's Pikachu [SV-P]").
  */
 function moveBrackets(name: string): string[] {
-  return /\[([^\]]*)\]\s*$/.exec(name)?.[1]?.split('|') ?? [];
+  const entries = (/\[([^\]]*)\]\s*$/.exec(name)?.[1]?.split('|') ?? []).map((entry) =>
+    entry.trim()
+  );
+  return entries.every((entry) => TAG.test(entry)) ? [] : entries;
 }
 
 /**
