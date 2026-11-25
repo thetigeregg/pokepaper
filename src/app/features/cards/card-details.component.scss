@@ -84,6 +84,14 @@
   color: var(--ion-text-color);
 }
 
+/* A long value (the set's name) wraps at the end instead of squeezing out
+   its label ("Set", 48 px kept for it): Ionic would shrink the label away. */
+.wrapping-detail ion-note {
+  max-width: calc(100% - 48px);
+  padding-block: 10px;
+  text-align: end;
+}
+
 /* Price: the headline figure (an `amount`), a little larger. */
 .price {
   font-size: 1.05rem;

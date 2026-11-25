@@ -30,6 +30,7 @@ import {
 import { addIcons } from 'ionicons';
 import { addCircleOutline, openOutline, removeCircleOutline } from 'ionicons/icons';
 import { catalogKey } from '../../core/data/storage-engine';
+import { localized } from '../../core/services/catalog-browse.service';
 import { LANGUAGE_LABELS } from '../../core/services/catalog-language.service';
 import { CatalogPriceService } from '../../core/services/catalog-price.service';
 import { CurrencyService } from '../../core/services/currency.service';
@@ -42,6 +43,7 @@ import {
 } from '../../core/utils/catalog-price.util';
 import { POCKET_SERIES } from '../decks/deck-rules';
 import {
+  cardNumber,
   cardSubtitle,
   cardText,
   collectionTarget,
@@ -132,6 +134,11 @@ export class CardDetailsComponent {
   readonly text = computed(() => cardText(this.card(), this.language()));
   readonly subtitle = computed(() => cardSubtitle(this.card()));
   readonly setLine = computed(() => setLine(this.set(), this.card()));
+  /** "Scarlet & Violet · 001/198": the Details Set row, with the set named in the language. */
+  readonly setDetail = computed(() => {
+    const set = this.set();
+    return `${localized(set.names, this.language()) || set.id} · ${cardNumber(set, this.card())}`;
+  });
   /** Whether the scan shown is another printing's (basic Energy; docs/catalog.md). */
   readonly borrowedScan = computed(
     () => displayImage(this.card(), this.language(), 'high')?.borrowed ?? false

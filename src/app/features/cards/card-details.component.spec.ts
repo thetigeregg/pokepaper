@@ -28,6 +28,7 @@ describe('CardDetailsComponent', () => {
   const base = makeContractCard('intl', 'sv01', 'sv01-004', 3);
   const set: CatalogSet = {
     ...makeContractPack('intl', 'sv01', []).set,
+    names: { en: 'Scarlet & Violet', fr: 'Écarlate et Violet' },
     languages: ['en', 'fr', 'de'],
     abbreviation: 'SVI',
     cardCount: { total: 258, official: 198 },
@@ -179,7 +180,7 @@ describe('CardDetailsComponent', () => {
     expect(root.querySelector('.stats')?.textContent.replace(/\s+/g, ' ')).toContain(
       'Resistance none'
     );
-    expect(detail(fixture, 'set')).toBe('SVI · 004/198');
+    expect(detail(fixture, 'set')).toBe('Scarlet & Violet · 004/198');
     expect(
       root
         .querySelector('[data-testid="detail-set"] [data-testid="set-symbol"]')
@@ -195,6 +196,11 @@ describe('CardDetailsComponent', () => {
     expect(detail(fixture, 'regulation-mark')).toBe('G');
     expect(detail(fixture, 'legal')).toBe('Expanded');
     expect(root.querySelector('app-card-image')).not.toBeNull();
+  });
+
+  it('names the set in the language, else in another', () => {
+    expect(detail(create(base, 'fr'), 'set')).toBe('Écarlate et Violet · 004/198');
+    expect(detail(create(base, 'de'), 'set')).toBe('Scarlet & Violet · 004/198');
   });
 
   it('notes when the scan is another printing’s, and only then', () => {

@@ -57,11 +57,15 @@ export function formatStage(stage: string | null): string | null {
   return stage?.replace(/^Stage(\d)$/, 'Stage $1') ?? null;
 }
 
+/** "001/198": a card's number in its set, over the set's official count when known. */
+export function cardNumber(set: CatalogSet, card: CatalogCard): string {
+  const total = set.cardCount.official > 0 ? `/${String(set.cardCount.official)}` : '';
+  return `${card.localId}${total}`;
+}
+
 /** "SVI · 001/198" for a card in its set (bottom line of no-scan cards). */
 export function setLine(set: CatalogSet, card: CatalogCard): string {
-  const prefix = set.abbreviation ?? set.id;
-  const total = set.cardCount.official > 0 ? `/${String(set.cardCount.official)}` : '';
-  return `${prefix} · ${card.localId}${total}`;
+  return `${set.abbreviation ?? set.id} · ${cardNumber(set, card)}`;
 }
 
 /** The set's logo in `language`, else in another language; null without one. */

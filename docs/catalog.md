@@ -268,7 +268,7 @@ Images are 48 px tall (widths in `RARITY_ICON_WIDTHS`, which a spec checks again
 
 ## Set symbols
 
-International sets show their symbol before the set line in the card detail's Set row and deck rows, and before the set's name in the search results' set headers (`setSymbol()` in `src/app/features/cards/set-symbol.ts`, images in `src/assets/set-symbols/<setId>.png`). The sets list and the Set filter picker show the logo, and the symbol only in its place.
+International sets show their symbol before the set's name in the card detail's Set row, before the set line in deck rows, and before the set's name in the search results' set headers (`setSymbol()` in `src/app/features/cards/set-symbol.ts`, images in `src/assets/set-symbols/<setId>.png`). The sets list and the Set filter picker show the logo, and the symbol only in its place.
 
 - **Source:** pokesymbols.com's English set symbol sheet (a PDF, October 2026), not TCGdex. TCGdex links a symbol for 168 of the 220 International sets, but only 125 load: 23 exist only as PNG (the image route only takes WebP), 20 point to missing files, and modern ones are 25–40 px. The sheet's are 484 px JPEGs on white, matched to sets by name (14 by hand: trainer kits, HeartGold SoulSilver's sets, 30th Classic Collection, Scarlet & Violet Energy and Promos, Futsal). Each was cut out of its background (only the white touching the edges, so white inside a symbol stays), cropped, fitted to 48 px tall and at most 120 px wide, and outlined in white so it shows in dark mode.
 - **Images** are 48 px tall (widths in `SET_SYMBOL_WIDTHS`, which a spec checks against the files, so rows keep the symbol's space while it loads). They're cached by the service worker as they're first shown, not prefetched (194 images, about 590 KB).
