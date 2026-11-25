@@ -342,6 +342,7 @@ describe('variantFigures', () => {
     expect(variantFigures(card, 'reverse')?.trend).toBe(2);
     expect(variantFigures(card, 'firstEdition')).toBeNull();
     expect(variantFigures(card, 'wPromo')).toBeNull();
+    expect(variantFigures(card, 'vp2p5qsrlm6y3f8o')).toBeNull(); // a stamped version
     expect(variantFigures(card, 'staff-stamp')).toBeNull(); // a variant from a newer build
   });
 
@@ -396,13 +397,14 @@ describe('collectionValue', () => {
         entry({ quantity: 2 }),
         entry({ variant: 'firstEdition', quantity: 1 }),
         entry({ variant: 'reverse', quantity: 1 }),
+        entry({ variant: 'vp2p5qsrlm6y3f8o', quantity: 2 }),
         entry({ cardId: 'unpriced', quantity: 4 }),
       ],
       new Map([['intl:sv01-001', prices(1.5)]])
     );
 
     expect(value).toEqual([
-      { region: 'intl', copies: 8, unpriced: 6, value: 3, updated: '2026-11-21T05:47:42.306Z' },
+      { region: 'intl', copies: 10, unpriced: 8, value: 3, updated: '2026-11-21T05:47:42.306Z' },
     ]);
   });
 

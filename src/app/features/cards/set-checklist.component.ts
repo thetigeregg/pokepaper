@@ -11,6 +11,7 @@ import {
   collectionTarget,
   offeredVariants,
   setLine,
+  stampedRows,
   variantRows,
   type VariantRow,
 } from './card-display';
@@ -179,14 +180,21 @@ export class SetChecklistComponent {
     const language = this.language();
     const set = this.set();
     const setHolos = this.setHolos();
-    return this.cards().map((card) => ({
-      card,
-      name: cardText(card, language)?.name ?? card.id,
-      setLine: setLine(set, card),
-      variants: variantRows(offeredVariants(card, set, setHolos), (variant) =>
-        this.collection.quantity(collectionTarget(card, variant, language))
-      ),
-    }));
+    return this.cards().map((card) => {
+      const quantity = (variant: string) =>
+        this.collection.quantity(collectionTarget(card, variant, language));
+      const owned = this.collection.variantsOwned(card.region, card.id, language);
+      return {
+        card,
+        name: cardText(card, language)?.name ?? card.id,
+        setLine: setLine(set, card),
+        // Stamped versions only once owned: card detail offers them all.
+        variants: [
+          ...variantRows(offeredVariants(card, set, setHolos), quantity),
+          ...stampedRows(card, owned, quantity, false),
+        ],
+      };
+    });
   });
 
   readonly owned = computed(() => {

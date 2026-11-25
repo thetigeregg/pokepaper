@@ -46,6 +46,12 @@ describe('SetChecklistComponent', () => {
       Object.entries(owned())
         .filter(([id]) => id.startsWith(`intl:${cardId}:`) && id.endsWith(`:${language}`))
         .reduce((total, [, quantity]) => total + quantity, 0),
+    variantsOwned: (_region: string, cardId: string, language: string) =>
+      Object.entries(owned())
+        .filter(([id, quantity]) => quantity > 0 && id.startsWith(`intl:${cardId}:`))
+        .map(([id]) => id.split(':'))
+        .filter((parts) => parts[3] === language)
+        .map((parts) => parts[2] ?? ''),
     ownedInSet: vi.fn(() => 1),
     setQuantity: vi.fn((target: CollectionTarget, quantity: number) => {
       owned.update((current) => ({ ...current, [collectionEntryId(target)]: quantity }));
@@ -155,6 +161,32 @@ describe('SetChecklistComponent', () => {
       '1 / 3 owned'
     );
     expect(collection.ownedInSet).toHaveBeenCalledWith('intl', 'sv01', 'en');
+  });
+
+  it('adds a toggle for each stamped version owned, but not the others', () => {
+    owned.set({ 'intl:sv01-001:va1:en': 1, 'intl:sv01-001:vb2:de': 1 });
+    const checklist = create();
+    fixture.componentRef.setInput('cards', [
+      card('sv01-001', 0, {
+        stamped: [
+          { key: 'va1', type: 'normal', stamps: ['staff'] },
+          { key: 'vb2', type: 'holo', stamps: ['pre-release'] },
+        ],
+      }),
+    ]);
+    fixture.detectChanges();
+
+    expect(checklist.rows()[0]?.variants).toEqual([
+      { variant: 'normal', label: 'Normal', quantity: 0 },
+      { variant: 'reverse', label: 'Reverse holo', quantity: 0 },
+      { variant: 'va1', label: 'Normal · Staff', quantity: 1 },
+    ]);
+
+    chip('sv01-001', 'va1')?.click();
+    expect(collection.setQuantity).toHaveBeenCalledWith(
+      { region: 'intl', cardId: 'sv01-001', setId: 'sv01', variant: 'va1', language: 'en' },
+      0
+    );
   });
 
   it('toggles a variant between 0 and 1 copy in the current language', () => {

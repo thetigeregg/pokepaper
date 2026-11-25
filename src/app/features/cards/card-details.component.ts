@@ -26,7 +26,6 @@ import {
   type CatalogLanguage,
   type CatalogSet,
   type CollectionTarget,
-  type CollectionVariant,
 } from '@pokepaper/shared';
 import { addIcons } from 'ionicons';
 import { addCircleOutline, openOutline, removeCircleOutline } from 'ionicons/icons';
@@ -53,7 +52,9 @@ import {
   retreatCost,
   retreatLabel,
   setLine,
+  stampedRows,
   variantRows,
+  type VariantRow,
 } from './card-display';
 import { CardImageComponent } from './card-image.component';
 import { CardTextComponent } from './card-text.component';
@@ -105,15 +106,17 @@ export class CardDetailsComponent {
   readonly ready = this.collection.loaded;
   readonly languageName = computed(() => LANGUAGE_LABELS[this.language()].name);
   /**
-   * Copies owned in the current language per variant (`variantRows`). A
-   * reverse holo TCGdex doesn't flag is offered once the set's cards have
-   * been read (`offeredVariants`).
+   * Copies owned in the current language per variant (`variantRows`), then
+   * per stamped version (`stampedRows`). A reverse holo TCGdex doesn't flag
+   * is offered once the set's cards have been read (`offeredVariants`).
    */
   readonly variants = computed(() => {
     const card = this.card();
     const setHolos = this.setHolos();
     const offered = setHolos ? offeredVariants(card, this.set(), setHolos) : listedVariants(card);
-    return variantRows(offered, (variant) => this.collection.quantity(this.target(variant)));
+    const quantity = (variant: string) => this.collection.quantity(this.target(variant));
+    const owned = this.collection.variantsOwned(card.region, card.id, this.language());
+    return [...variantRows(offered, quantity), ...stampedRows(card, owned, quantity, true)];
   });
   /** "2 in German · 1 in French": copies owned in the card's other languages. */
   readonly otherLanguages = computed(() => {
@@ -277,7 +280,7 @@ export class CardDetailsComponent {
   }
 
   /** Adds (`+1`) or removes (`-1`) a copy of `variant` in the current language. */
-  step(variant: CollectionVariant, delta: 1 | -1): void {
+  step(variant: VariantRow['variant'], delta: 1 | -1): void {
     const target = this.target(variant);
     const quantity = Math.min(
       MAX_COLLECTION_QUANTITY,
@@ -288,7 +291,7 @@ export class CardDetailsComponent {
     });
   }
 
-  private target(variant: CollectionVariant): CollectionTarget {
+  private target(variant: VariantRow['variant']): CollectionTarget {
     return collectionTarget(this.card(), variant, this.language());
   }
 }

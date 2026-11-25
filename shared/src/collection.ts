@@ -27,6 +27,25 @@ export function isCollectionVariant(value: unknown): value is CollectionVariant 
 }
 
 /**
+ * A stamped version's variant (`CatalogStampedPrinting.key`): `v` and the
+ * last 15 characters of TCGdex's `variantId`, a base-36 hash of the
+ * version's finish, stamps, subtype, size and foil that's the same in every
+ * language. The last characters are the hash modulo 36^15, so the variants
+ * of one card don't collide; the length fits a collection entry's variant
+ * (16 characters). Never change this: tracked copies are stored under it.
+ */
+export function stampedVariant(variantId: string): string {
+  return `v${variantId.slice(-15)}`;
+}
+
+const STAMPED_VARIANT = /^v[0-9a-z]{1,15}$/;
+
+/** Whether `value` has the shape `stampedVariant` produces. */
+export function isStampedVariant(value: unknown): value is string {
+  return typeof value === 'string' && STAMPED_VARIANT.test(value);
+}
+
+/**
  * Copies of one card in one variant and language. `region`, `variant` and
  * `language` are plain strings on the wire: a newer client may know values
  * this one doesn't, and those entries still sync (the app ignores them).

@@ -88,6 +88,26 @@ export interface CatalogFinishes {
   firstEdition: boolean;
 }
 
+/**
+ * A stamped version of a card (a prerelease, league, staff or set logo
+ * stamp…), from TCGdex's detailed variants (docs/catalog.md → Stamped
+ * versions). Collected under its own variant, `key`.
+ */
+export interface CatalogStampedPrinting {
+  /** The collection variant its copies are counted under (`stampedVariant`). */
+  key: string;
+  /** The finish under the stamp. */
+  type: 'normal' | 'holo' | 'reverse';
+  /** TCGdex's stamp names (`pre-release`, `set-logo`…), as listed: at least one. */
+  stamps: string[];
+  /** TCGdex's subtype (`shadowless`…), when it names one. */
+  subtype?: string;
+  /** TCGdex's foil pattern (`pokeball`…), when it names one. */
+  foil?: string;
+  /** The Cardmarket product TCGdex gives it, if any. */
+  idProduct?: number;
+}
+
 export interface CatalogTypeModifier {
   /** Canonical (English) energy type, e.g. `Fire`. */
   type: string;
@@ -195,6 +215,8 @@ export interface CatalogCard {
   variants: CatalogVariants;
   /** Absent when TCGplayer lists no finish for the card (`CatalogFinishes`). */
   tcgplayerFinishes?: CatalogFinishes;
+  /** Absent when TCGdex lists no stamped version (`CatalogStampedPrinting`). */
+  stamped?: CatalogStampedPrinting[];
   legal: CatalogLegality;
   weaknesses: CatalogTypeModifier[];
   resistances: CatalogTypeModifier[];

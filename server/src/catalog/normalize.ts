@@ -10,11 +10,13 @@ import {
   type CatalogRegion,
   type CatalogSeries,
   type CatalogSet,
+  type CatalogStampedPrinting,
   type CatalogTypeModifier,
   type CatalogVariants,
   type Localized,
+  stampedVariant,
 } from '@pokepaper/shared';
-import { parseProductId } from './price-data.js';
+import { isProductId, parseProductId } from './price-data.js';
 import { TCGDEX_ASSET_BASE } from './tcgdex-client.js';
 
 /**
@@ -129,6 +131,8 @@ export interface RawCard {
   variants: CatalogVariants;
   /** TCGplayer's finishes (`pricing.tcgplayer`), when it lists any. */
   tcgplayerFinishes: CatalogFinishes | null;
+  /** Stamped versions (`variants_detailed`); names as in the response's language. */
+  stamped: CatalogStampedPrinting[];
   legal: CatalogLegality;
   weaknesses: CatalogTypeModifier[];
   resistances: CatalogTypeModifier[];
@@ -291,6 +295,111 @@ export function parseTcgplayerFinishes(card: Json): CatalogFinishes | null {
   return known ? finishes : null;
 }
 
+const STAMPED_TYPES: readonly CatalogStampedPrinting['type'][] = ['normal', 'holo', 'reverse'];
+/** Stamps the plain variants already cover (`firstEdition`, `wPromo`). */
+const PLAIN_STAMPS = new Set(['1st-edition', 'w-promo']);
+const VARIANT_ID = /^[0-9a-z]{1,64}$/;
+/** TCGdex's `variantId` for entries it builds from a card's flags (no detailed variants). */
+const GENERATED_VARIANT_ID = 'generated';
+const SLUG = /^[0-9a-z][0-9a-z-]{0,59}$/;
+const SET_LOGO_STAMP = 'set-logo';
+const MAX_STAMPED = 30;
+
+function slug(value: unknown): string | null {
+  return typeof value === 'string' && SLUG.test(value) ? value : null;
+}
+
+/** A detailed variant's finish, if it's one a stamped version can have. */
+function stampedType(entry: Json): CatalogStampedPrinting['type'] | undefined {
+  return STAMPED_TYPES.find((candidate) => candidate === entry['type']);
+}
+
+function standardSize(entry: Json): boolean {
+  return entry['size'] === undefined || entry['size'] === 'standard';
+}
+
+/** Whether a detailed variant has a stamp the plain variants don't cover. */
+function stampedOnly(entry: Json): boolean {
+  return !list(entry['stamp'], 10).every(
+    (stamp) => typeof stamp === 'string' && PLAIN_STAMPS.has(stamp.toLowerCase())
+  );
+}
+
+/** A detailed variant's Cardmarket product (`thirdParty.cardmarket`), if any. */
+function cardmarketProduct(entry: Json): number | null {
+  const thirdParty = entry['thirdParty'];
+  const idProduct = isObject(thirdParty) ? thirdParty['cardmarket'] : undefined;
+  return isProductId(idProduct) ? idProduct : null;
+}
+
+/**
+ * A card's stamped versions, from TCGdex's `variants_detailed`
+ * (docs/catalog.md → Stamped versions): standard-size entries with a stamp
+ * other than 1st edition or W promo, keyed by `variantId`, of a finish the
+ * card also has an entry for without one. A stamped entry that's the
+ * card's only one of its finish is that finish's plain variant (an EX-era
+ * reverse holo, all stamped with the set logo; a promo only ever stamped),
+ * which TCGdex's flags already list, and so is a set logo stamp without a
+ * product of its own on a card listing no reverse holo (below). TCGdex names stamps in the response's
+ * language, so only the region's preferred language is read for them
+ * (`mergeCard`); names that aren't slugs (`1. Auflage`) drop the entry.
+ */
+export function parseStamped(card: Json): CatalogStampedPrinting[] {
+  const entries = list(card['variants_detailed'], MAX_STAMPED).filter(isObject);
+  const plainTypes = new Set(
+    entries.filter((entry) => standardSize(entry) && !stampedOnly(entry)).map(stampedType)
+  );
+  const plainProducts = new Set(
+    entries.filter((entry) => !stampedOnly(entry)).map((entry) => cardmarketProduct(entry))
+  );
+  const listsReverse = entries.some((entry) => stampedType(entry) === 'reverse');
+  const seen = new Set<string>();
+  return entries.flatMap((entry) => {
+    const variantId = entry['variantId'];
+    const type = stampedType(entry);
+    const stamps = list(entry['stamp'], 10).map(slug);
+    const idProduct = cardmarketProduct(entry);
+    // TCGdex lists the EX-era reverse holos of Delta Species to Power
+    // Keepers, all stamped with the set's logo, as Normal or Holo with the
+    // stamp, without a product of their own, and no reverse holo entry.
+    const reverseHolo =
+      !listsReverse &&
+      stamps.length === 1 &&
+      stamps[0] === SET_LOGO_STAMP &&
+      (idProduct === null || plainProducts.has(idProduct));
+    if (
+      reverseHolo ||
+      typeof variantId !== 'string' ||
+      !VARIANT_ID.test(variantId) ||
+      variantId === GENERATED_VARIANT_ID ||
+      !type ||
+      !plainTypes.has(type) ||
+      !standardSize(entry) ||
+      stamps.includes(null) ||
+      !stamps.some((stamp) => stamp !== null && !PLAIN_STAMPS.has(stamp))
+    ) {
+      return [];
+    }
+    const key = stampedVariant(variantId);
+    if (seen.has(key)) {
+      return [];
+    }
+    seen.add(key);
+    const subtype = slug(entry['subtype']);
+    const foil = slug(entry['foil']);
+    return [
+      {
+        key,
+        type,
+        stamps: stamps.filter((stamp) => stamp !== null),
+        ...(subtype && { subtype }),
+        ...(foil && { foil }),
+        ...(idProduct !== null && { idProduct }),
+      },
+    ];
+  });
+}
+
 /** `GET /{lang}/cards/{id}`; null when it isn't a usable card. */
 export function parseCard(value: unknown): RawCard | null {
   if (!isObject(value)) {
@@ -331,6 +440,7 @@ export function parseCard(value: unknown): RawCard | null {
       wPromo: variants['wPromo'] === true,
     },
     tcgplayerFinishes: parseTcgplayerFinishes(value),
+    stamped: parseStamped(value),
     legal: legality(value['legal']),
     weaknesses: modifiers(value['weaknesses']),
     resistances: modifiers(value['resistances']),
@@ -591,8 +701,11 @@ export function mergeCard(input: MergeCardInput): CatalogCard | null {
   if (!neutral) {
     return null;
   }
-  const { tcgplayerFinishes: fresh, ...rest } = neutral;
+  const { tcgplayerFinishes: fresh, stamped: _stored, ...rest } = neutral;
   const tcgplayerFinishes = keptFinishes(fresh, existing?.tcgplayerFinishes);
+  // Stamp names are in the response's language: only the preferred one's
+  // are read, else the stored ones are kept.
+  const stamped = preferredRaw ? preferredRaw.stamped : (existing?.stamped ?? []);
 
   return {
     region,
@@ -602,6 +715,7 @@ export function mergeCard(input: MergeCardInput): CatalogCard | null {
     sortIndex: input.sortIndex,
     ...rest,
     ...(tcgplayerFinishes && { tcgplayerFinishes }),
+    ...(stamped.length > 0 && { stamped }),
     text: texts,
   };
 }

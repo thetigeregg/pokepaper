@@ -415,6 +415,41 @@ describe('CardDetailsComponent', () => {
       ]);
     });
 
+    it('lists every stamped version after the variants, and copies under unlisted ones', async () => {
+      stored.set('intl:sv01-004:va1:en', entry({ variant: 'va1', quantity: 2 }));
+      stored.set('intl:sv01-004:vgone:en', entry({ variant: 'vgone', quantity: 1 }));
+      const fixture = create({
+        ...base,
+        stamped: [
+          { key: 'va1', type: 'normal', stamps: ['staff'] },
+          { key: 'vb2', type: 'holo', stamps: ['pre-release'], idProduct: 275574 },
+        ],
+      });
+      await settle(fixture);
+
+      expect(rows(fixture)).toEqual([
+        { variant: 'variant-normal', quantity: '0' },
+        { variant: 'variant-reverse', quantity: '0' },
+        { variant: 'variant-va1', quantity: '2' },
+        { variant: 'variant-vb2', quantity: '0' },
+        { variant: 'variant-vgone', quantity: '1' },
+      ]);
+      const labels = [...element(fixture).querySelectorAll('[data-testid^="variant-v"] ion-label')];
+      expect(labels.map((label) => label.textContent.trim())).toEqual([
+        'Normal · Staff',
+        'Holo · Prerelease',
+        'Stamped version no longer listed',
+      ]);
+
+      button(fixture, 'vb2', 'add-copy')?.click();
+      button(fixture, 'vgone', 'remove-copy')?.click();
+      await settle(fixture);
+
+      expect(stored.get('intl:sv01-004:vb2:en')).toEqual(entry({ variant: 'vb2' }));
+      expect(stored.has('intl:sv01-004:vgone:en')).toBe(false);
+      expect(rows(fixture).map((row) => row.variant)).not.toContain('variant-vgone');
+    });
+
     it('notes copies in languages the set no longer lists', async () => {
       stored.set('intl:sv01-004:normal:it', entry({ language: 'it', quantity: 3 }));
       const fixture = create(base);

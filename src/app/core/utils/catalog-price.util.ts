@@ -184,8 +184,10 @@ export function headlinePrice(figures: CardmarketFigures): number | null {
  * the base finish (Cardmarket prices a holo-only card as its base product),
  * reverse holos by the reverse holo, except in a set from before reverse
  * holos (`beforeReverseHolos`), where the copy TCGdex flags as one is
- * valued by the base finish too. First edition and W promo copies (and
- * variants this build doesn't know) have no Cardmarket figures of their own.
+ * valued by the base finish too. First edition, W promo and stamped copies
+ * (and variants this build doesn't know) have no Cardmarket figures of
+ * their own: TCGdex links many stamped versions to the card's product that
+ * Cardmarket sells apart (docs/collection.md → Value).
  */
 export function variantFigures(
   prices: CatalogCardPrices,

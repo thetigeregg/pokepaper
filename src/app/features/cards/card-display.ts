@@ -7,10 +7,12 @@ import {
 import {
   catalogSetImageUrl,
   COLLECTION_VARIANTS,
+  isStampedVariant,
   type CatalogCard,
   type CatalogCardPrices,
   type CatalogLanguage,
   type CatalogSet,
+  type CatalogStampedPrinting,
   type CollectionTarget,
   type CollectionVariant,
 } from '@pokepaper/shared';
@@ -85,6 +87,12 @@ export function cardVariants(card: CatalogCard): [CollectionVariant, ...Collecti
   return listed.length > 0 ? [first, ...rest] : ['normal'];
 }
 
+/** Whether TCGplayer sells the card as a holo and not as a non-holo (`tcgplayerFinishes`). */
+function soldHoloOnly(card: CatalogCard): boolean {
+  const finishes = card.tcgplayerFinishes;
+  return finishes?.holo === true && !finishes.normal;
+}
+
 /**
  * TCGdex's variants (`cardVariants`), with Normal named Holo when TCGplayer
  * sells the card as a holo and not as a non-holo (`tcgplayerFinishes`):
@@ -93,9 +101,7 @@ export function cardVariants(card: CatalogCard): [CollectionVariant, ...Collecti
  */
 export function listedVariants(card: CatalogCard): CollectionVariant[] {
   const listed = cardVariants(card);
-  const finishes = card.tcgplayerFinishes;
-  const holoOnly = finishes?.holo === true && !finishes.normal;
-  return holoOnly && listed.includes('normal') && !listed.includes('holo')
+  return soldHoloOnly(card) && listed.includes('normal') && !listed.includes('holo')
     ? COLLECTION_VARIANTS.filter(
         (variant) => variant === 'holo' || (variant !== 'normal' && listed.includes(variant))
       )
@@ -123,7 +129,7 @@ export function offeredVariants(
 /** What a copy of `card` in `variant` and `language` is counted under. */
 export function collectionTarget(
   card: CatalogCard,
-  variant: CollectionVariant,
+  variant: CollectionVariant | (string & {}),
   language: CatalogLanguage
 ): CollectionTarget {
   return { region: card.region, cardId: card.id, setId: card.setId, variant, language };
@@ -131,7 +137,8 @@ export function collectionTarget(
 
 /** A variant of a card with the copies owned, for a stepper or a toggle. */
 export interface VariantRow {
-  variant: CollectionVariant;
+  /** A plain variant, or a stamped version's (`CatalogStampedPrinting.key`). */
+  variant: CollectionVariant | (string & {});
   label: string;
   quantity: number;
 }
@@ -150,6 +157,92 @@ export function variantRows(
     label: VARIANT_LABELS[variant],
     quantity: quantity(variant),
   })).filter((row) => offered.includes(row.variant) || row.quantity > 0);
+}
+
+/**
+ * Stamp names TCGdex gives (`pre-release`…) that don't read right as plain
+ * words; any other is shown word by word, capitalized (`set-logo` → "Set
+ * Logo", `worlds-2010` → "Worlds 2010").
+ */
+const STAMP_LABELS: Readonly<Record<string, string>> = {
+  '1st-edition': '1st Edition',
+  'pre-release': 'Prerelease',
+  'pokemon-center': 'Pokémon Center',
+  'pokemon-day': 'Pokémon Day',
+  'poke-ball-league': 'Poké Ball League',
+  pokeball: 'Poké Ball',
+  mcdonalds: "McDonald's",
+  'eb-games': 'EB Games',
+  gamestop: 'GameStop',
+  'toys-r-us': 'Toys "R" Us',
+  'comic-con': 'Comic-Con',
+  'build-a-bear': 'Build-A-Bear',
+  wotc: 'WotC',
+  'top-thirty-two': 'Top 32',
+  'top-sixteen': 'Top 16',
+  'top-eight': 'Top 8',
+  'semi-finalist': 'Semifinalist',
+  'quarter-finalist': 'Quarterfinalist',
+};
+
+/** How a TCGdex name (a stamp, subtype or foil) reads: `STAMP_LABELS`, else capitalized words. */
+export function stampLabel(name: string): string {
+  return Object.hasOwn(STAMP_LABELS, name)
+    ? (STAMP_LABELS[name] ?? name)
+    : name
+        .split('-')
+        .filter((word) => word)
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+}
+
+/**
+ * A stamped version's stepper label: its finish, then its stamps, subtype
+ * and foil ("Holo · Prerelease"). The finish is named like the card's plain
+ * variants: Normal is Holo for a card TCGplayer sells only as a holo
+ * (`listedVariants`).
+ */
+export function stampedLabel(card: CatalogCard, printing: CatalogStampedPrinting): string {
+  const finish = printing.type === 'normal' && soldHoloOnly(card) ? 'holo' : printing.type;
+  return [
+    VARIANT_LABELS[finish],
+    ...[...printing.stamps, printing.subtype, printing.foil]
+      .filter((name) => name !== undefined)
+      .map(stampLabel),
+  ].join(' · ');
+}
+
+/** The label of copies counted under a stamped version the catalog no longer lists. */
+export const UNLISTED_STAMPED_LABEL = 'Stamped version no longer listed';
+
+/**
+ * Rows for a card's stamped versions (`CatalogStampedPrinting`), after its
+ * plain variants (`variantRows`): every one the catalog lists when
+ * `offerAll`, else only those owned; then copies counted under a stamped
+ * version it no longer lists, so every counted copy can be seen and
+ * changed. `owned` holds the variants owned of the card (in the language
+ * shown).
+ */
+export function stampedRows(
+  card: CatalogCard,
+  owned: readonly string[],
+  quantity: (variant: string) => number,
+  offerAll: boolean
+): VariantRow[] {
+  const printings = card.stamped ?? [];
+  const listed = new Set(printings.map((printing) => printing.key));
+  return [
+    ...printings
+      .filter((printing) => offerAll || owned.includes(printing.key))
+      .map((printing) => ({
+        variant: printing.key,
+        label: stampedLabel(card, printing),
+        quantity: quantity(printing.key),
+      })),
+    ...owned
+      .filter((variant) => isStampedVariant(variant) && !listed.has(variant))
+      .map((variant) => ({ variant, label: UNLISTED_STAMPED_LABEL, quantity: quantity(variant) })),
+  ];
 }
 
 /** One finish's prices in card detail's Price section. */

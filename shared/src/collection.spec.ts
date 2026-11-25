@@ -7,7 +7,9 @@ import {
   isCollectionQuantity,
   isCollectionTarget,
   isCollectionVariant,
+  isStampedVariant,
   MAX_COLLECTION_QUANTITY,
+  stampedVariant,
   type CollectionEntry,
 } from './index';
 
@@ -83,6 +85,41 @@ describe('isCollectionVariant', () => {
     expect(isCollectionVariant('stamped')).toBe(false);
     expect(isCollectionVariant(undefined)).toBe(false);
   });
+});
+
+describe('stampedVariant', () => {
+  // TCGdex variantIds of real stamped versions: these keys are stored with
+  // tracked copies, so they must never change.
+  it.each([
+    ['3a83wf50typ2p5qsrlm6y3f8o', 'vp2p5qsrlm6y3f8o'],
+    ['1jz5lzkp5fm97k7tuu0kr67dblurfi', 'vtuu0kr67dblurfi'],
+    ['555jb0efopmyclvkikic41', 'vfopmyclvkikic41'],
+  ])('keys %s as %s', (variantId, key) => {
+    expect(stampedVariant(variantId)).toBe(key);
+  });
+
+  it('keeps a short variantId whole', () => {
+    expect(stampedVariant('jr7oetx1mqug9')).toBe('vjr7oetx1mqug9');
+  });
+
+  it('makes valid collection entry variants', () => {
+    const variant = stampedVariant('mtltux8qtgdu4exu903oasum21juxbvx6lx');
+    expect(isStampedVariant(variant)).toBe(true);
+    expect(isCollectionTarget({ ...entry, variant })).toBe(true);
+  });
+});
+
+describe('isStampedVariant', () => {
+  it.each(['vjr7oetx1mqug9', 'v0'])('accepts %s', (value) => {
+    expect(isStampedVariant(value)).toBe(true);
+  });
+
+  it.each([...COLLECTION_VARIANTS, 'v', 'v0123456789abcdef', 'vABC', 'x123', 1])(
+    'rejects %s',
+    (value) => {
+      expect(isStampedVariant(value)).toBe(false);
+    }
+  );
 });
 
 describe('collectionEntry', () => {
