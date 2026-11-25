@@ -81,9 +81,14 @@ export function checkProductLink(
  * shorter's words all in the longer ("Pelipper", "Pelipper Lv.50"; "Legendary
  * Trench", "Legendary Marine Trench"), or one standing for the longer's other
  * words' initials ("Blend Energy GFPD"). Never one name merely inside the
- * other: "N" isn't "Nidoking", nor "Mew" "Mewtwo".
+ * other: "N" isn't "Nidoking", nor "Mew" "Mewtwo"; nor Nidoran♀ Nidoran♂
+ * (`gender`), though a name without the sign is either.
  */
 function namesMatch(a: string, b: string): boolean {
+  const [genderA, genderB] = [gender(a), gender(b)];
+  if (genderA && genderB && genderA !== genderB) {
+    return false;
+  }
   if (similar(cardmarketSearchText(a), cardmarketSearchText(b))) {
     return true;
   }
@@ -98,6 +103,18 @@ function namesMatch(a: string, b: string): boolean {
     .join('');
   // Initials stand in only beside a shared word: "N" isn't Nidoking's initial.
   return shorter.every((word) => longer.includes(word) || (shared.length > 0 && word === initials));
+}
+
+/**
+ * The gender sign in a name: Nidoran♀ and Nidoran♂ are two cards, which
+ * `cardmarketSearchText` (dropping symbols) can't tell apart. Cardmarket
+ * writes some as `&female;` / `&male;`, and many without a sign (null, as
+ * is a name with both).
+ */
+function gender(name: string): 'female' | 'male' | null {
+  const female = /♀|&female;/.test(name);
+  const male = /♂|&male;/.test(name);
+  return female === male ? null : female ? 'female' : 'male';
 }
 
 /**
