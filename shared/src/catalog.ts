@@ -321,6 +321,12 @@ export interface CardmarketCandidate {
 export interface CardmarketCandidates {
   /** The card's product now, if any: TCGdex's, or one matched by hand. */
   current: { idProduct: number; matchedByHand: boolean; name: string | null } | null;
+  /**
+   * TCGdex's product for the card, unless it's another card's or printing's
+   * (rejected: docs/catalog.md → Checking TCGdex's products): what the card
+   * goes back to when its match by hand is removed. Null when there's none.
+   */
+  tcgdex: { idProduct: number; name: string | null } | null;
   products: CardmarketCandidate[];
   /** More products matched than `products` holds: narrow the search. */
   truncated: boolean;

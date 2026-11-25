@@ -80,13 +80,13 @@ export class CardmarketMatcher {
         : this.suggestions(card, expansions);
 
     const byHand = matches.get(region, cardId);
-    const tcgdex = store.getCardmarketProductOf(region, cardId);
-    // TCGdex's product isn't offered as the card's when it's another card's.
-    const current =
-      byHand ??
-      (tcgdex !== undefined && !productLinkChecker(store, this.now())(region, cardId, tcgdex)
-        ? tcgdex
-        : undefined);
+    const linked = store.getCardmarketProductOf(region, cardId);
+    // TCGdex's product isn't offered as the card's when it's another card's or printing's.
+    const tcgdex =
+      linked !== undefined && !productLinkChecker(store, this.now())(region, cardId, linked)
+        ? linked
+        : undefined;
+    const current = byHand ?? tcgdex;
     const guide = store.getPriceGuideState();
     const entries = store.getPriceGuideEntries(found.map((product) => product.idProduct));
     const products = found.slice(0, MAX_CANDIDATES).map((product): CardmarketCandidate => ({
@@ -105,6 +105,10 @@ export class CardmarketMatcher {
               matchedByHand: byHand !== undefined,
               name: store.getCardmarketProduct(current)?.name ?? null,
             },
+      tcgdex:
+        tcgdex === undefined
+          ? null
+          : { idProduct: tcgdex, name: store.getCardmarketProduct(tcgdex)?.name ?? null },
       products,
       truncated: found.length > MAX_CANDIDATES,
       searched: search.length >= MIN_QUERY_LENGTH,

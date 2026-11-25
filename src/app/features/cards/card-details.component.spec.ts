@@ -754,13 +754,16 @@ describe('CardDetailsComponent', () => {
       expect(modals.create).toHaveBeenCalled();
     });
 
-    it('offers no match change for prices TCGdex matched', async () => {
+    it('offers to change a product TCGdex matched, which can be another printing’s', async () => {
       storedPrices.set(base.id, prices());
       const fixture = create(base);
       await settle(fixture);
 
-      expect(testId(fixture, 'price-change-match')).toBeNull();
+      expect(testId(fixture, 'price-updated')?.textContent).not.toContain('matched by hand');
       expect(testId(fixture, 'price-find')).toBeNull();
+      testId(fixture, 'price-change-match')?.click();
+      await settle(fixture);
+      expect(modals.create).toHaveBeenCalled();
     });
 
     it('shows new prices when a sync stores them', async () => {

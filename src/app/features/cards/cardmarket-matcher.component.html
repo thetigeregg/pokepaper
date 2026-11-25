@@ -48,15 +48,37 @@
         </ion-label>
       </ion-item>
       @if (current.matchedByHand) {
-        <ion-item
-          button="true"
-          [detail]="false"
-          [disabled]="busy()"
-          (click)="clear()"
-          data-testid="matcher-clear"
-        >
-          <ion-label color="danger">Remove match</ion-label>
-        </ion-item>
+        @if (result()?.tcgdex; as tcgdex) {
+          <!-- Removing the match goes back to TCGdex's product: say so. -->
+          <ion-item
+            button="true"
+            [detail]="false"
+            [disabled]="busy()"
+            (click)="clear()"
+            data-testid="matcher-restore"
+          >
+            <ion-label color="primary" class="ion-text-wrap">
+              Restore TCGdex’s match
+              <p class="hint">
+                @if (tcgdex.idProduct === current.idProduct) {
+                  The same product, then following TCGdex’s changes
+                } @else {
+                  {{ tcgdex.name ?? 'Product ' + tcgdex.idProduct }}
+                }
+              </p>
+            </ion-label>
+          </ion-item>
+        } @else {
+          <ion-item
+            button="true"
+            [detail]="false"
+            [disabled]="busy()"
+            (click)="clear()"
+            data-testid="matcher-clear"
+          >
+            <ion-label color="danger">Remove match</ion-label>
+          </ion-item>
+        }
       }
     }
 
@@ -77,12 +99,13 @@
           <ion-item lines="inset" [attr.data-testid]="'candidate-' + product.idProduct">
             <ion-label class="ion-text-wrap">
               {{ product.name }}
-              <p class="hint">
-                {{ product.inSet ? 'This set' : 'Another set' }}
-                @if (product.added; as added) {
-                  · added {{ added | date: 'mediumDate' }}
-                }
-              </p>
+              <p class="hint">{{ product.inSet ? 'This set' : 'Another set' }}</p>
+              @if (product.added; as added) {
+                <p class="hint">Added {{ added | date: 'mediumDate' }}</p>
+              }
+              @if (result()?.tcgdex?.idProduct === product.idProduct) {
+                <p class="hint" data-testid="candidate-tcgdex">TCGdex’s match</p>
+              }
             </ion-label>
             @if (price(product); as price) {
               <ion-note slot="end" class="amount" data-testid="candidate-price">
@@ -108,6 +131,17 @@
                 aria-label="Current match"
                 data-testid="candidate-matched"
               ></ion-icon>
+            } @else if (restores(product)) {
+              <!-- Matching TCGdex's product by hand would pin it: restore it instead. -->
+              <ion-button
+                slot="end"
+                fill="clear"
+                [disabled]="busy()"
+                (click)="clear()"
+                data-testid="candidate-restore"
+              >
+                Restore
+              </ion-button>
             } @else {
               <ion-button
                 slot="end"

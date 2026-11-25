@@ -47,6 +47,7 @@ describe('CardmarketMatcherComponent', () => {
 
   const answer = (overrides: Partial<CardmarketCandidates> = {}): CardmarketCandidates => ({
     current: null,
+    tcgdex: null,
     products: [product(286309), product(363682, { added: null, inSet: false, prices: null })],
     truncated: false,
     searched: false,
@@ -79,6 +80,11 @@ describe('CardmarketMatcherComponent', () => {
   const query = (testId: string) =>
     (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>(`[data-testid="${testId}"]`);
   const text = (testId: string) => query(testId)?.textContent.replace(/\s+/g, ' ').trim();
+  /** A candidate's hint lines. */
+  const hints = (idProduct: number) =>
+    [...(query(`candidate-${String(idProduct)}`)?.querySelectorAll('p.hint') ?? [])].map((hint) =>
+      hint.textContent.trim()
+    );
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -106,7 +112,8 @@ describe('CardmarketMatcherComponent', () => {
 
     expect(matches.candidates).toHaveBeenCalledWith('intl', 'xy8-63', '');
     expect(text('matcher-card')).toContain('BKT · 63/162');
-    expect(text('candidate-286309')).toContain('This set · added Nov 12, 2015');
+    expect(hints(286309)).toEqual(['This set', 'Added Nov 12, 2015']);
+    expect(hints(363682)).toEqual(['Another set']);
     expect(text('candidate-286309')).toContain('€114.68');
     expect(text('candidate-363682')).toContain('Another set');
     expect(query('candidate-363682')?.querySelector('[data-testid="candidate-price"]')).toBeNull();
@@ -200,6 +207,7 @@ describe('CardmarketMatcherComponent', () => {
       query('candidate-286309')?.querySelector('[data-testid="candidate-matched"]')
     ).not.toBeNull();
     expect(query('candidate-286309')?.querySelector('[data-testid="candidate-match"]')).toBeNull();
+    expect(query('matcher-restore')).toBeNull();
     query('matcher-clear')?.click();
     await settle();
 
@@ -207,12 +215,86 @@ describe('CardmarketMatcherComponent', () => {
     expect(modals.dismiss).toHaveBeenCalledWith(undefined, 'clear');
   });
 
+  it('offers to restore TCGdex’s product in place of a match made by hand', async () => {
+    await create(
+      answer({
+        current: { idProduct: 286309, matchedByHand: true, name: 'MMewtwo EX [Vanishing Strike]' },
+        tcgdex: { idProduct: 363682, name: 'MMewtwo EX [Psychic Infinity]' },
+      })
+    );
+
+    expect(query('matcher-clear')).toBeNull();
+    expect(hints(363682)).toEqual(['Another set', 'TCGdex’s match']);
+    expect(query('candidate-286309')?.querySelector('[data-testid="candidate-tcgdex"]')).toBeNull();
+    expect(text('matcher-restore')).toContain('Restore TCGdex’s match');
+    expect(text('matcher-restore')).toContain('MMewtwo EX [Psychic Infinity]');
+    expect(query('candidate-363682')?.querySelector('[data-testid="candidate-match"]')).toBeNull();
+    expect(
+      query('candidate-363682')?.querySelector('[data-testid="candidate-restore"]')
+    ).not.toBeNull();
+    expect(
+      query('candidate-286309')?.querySelector('[data-testid="candidate-restore"]')
+    ).toBeNull();
+    query('matcher-restore')?.click();
+    await settle();
+
+    expect(matches.clear).toHaveBeenCalledWith('intl', 'xy8-63');
+    expect(modals.dismiss).toHaveBeenCalledWith(undefined, 'clear');
+  });
+
+  it('restores TCGdex’s product from its row rather than matching it by hand', async () => {
+    await create(
+      answer({
+        current: { idProduct: 286309, matchedByHand: true, name: 'MMewtwo EX [Vanishing Strike]' },
+        tcgdex: { idProduct: 363682, name: 'MMewtwo EX [Psychic Infinity]' },
+      })
+    );
+
+    query('candidate-363682')
+      ?.querySelector<HTMLElement>('[data-testid="candidate-restore"]')
+      ?.click();
+    await settle();
+
+    expect(matches.match).not.toHaveBeenCalled();
+    expect(matches.clear).toHaveBeenCalledWith('intl', 'xy8-63');
+    expect(modals.dismiss).toHaveBeenCalledWith(undefined, 'clear');
+  });
+
+  it('says restoring a hand match of TCGdex’s own product follows TCGdex from then on', async () => {
+    await create(
+      answer({
+        current: { idProduct: 286309, matchedByHand: true, name: 'MMewtwo EX [Vanishing Strike]' },
+        tcgdex: { idProduct: 286309, name: 'MMewtwo EX [Vanishing Strike]' },
+      })
+    );
+
+    expect(text('matcher-restore')).toContain('The same product, then following TCGdex’s changes');
+    expect(text('matcher-restore')).not.toContain('Vanishing Strike');
+  });
+
+  it('names TCGdex’s product by ID when Cardmarket’s list lacks it', async () => {
+    await create(
+      answer({
+        current: { idProduct: 286309, matchedByHand: true, name: null },
+        tcgdex: { idProduct: 363682, name: null },
+      })
+    );
+
+    expect(text('matcher-restore')).toContain('Product 363682');
+  });
+
   it('shows TCGdex’s product as the current one, without removing or matching it', async () => {
-    await create(answer({ current: { idProduct: 286309, matchedByHand: false, name: null } }));
+    await create(
+      answer({
+        current: { idProduct: 286309, matchedByHand: false, name: null },
+        tcgdex: { idProduct: 286309, name: null },
+      })
+    );
 
     expect(text('matcher-current')).toContain('Product 286309');
     expect(text('matcher-current')).toContain('From TCGdex');
     expect(query('matcher-clear')).toBeNull();
+    expect(query('matcher-restore')).toBeNull();
     expect(
       query('candidate-286309')?.querySelector('[data-testid="candidate-matched"]')
     ).not.toBeNull();
