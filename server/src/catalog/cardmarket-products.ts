@@ -29,34 +29,74 @@ type Json = Record<string, unknown>;
  * Downloads Cardmarket's product list and stores it (`replaceCardmarketProducts`),
  * or records that the stored one is still current (304). Throws when it
  * can't be downloaded or isn't one; the stored list is left as it was.
+ *
+ * Callers at the same time share one download (`downloads`). Each waits with
+ * its own `signal`: aborting it rejects that caller at once (with the
+ * signal's reason), and the download itself stops only once every caller
+ * still waiting has aborted. An abort isn't a failure (`PRODUCTS_RETRY_MS`).
  */
 export function downloadCardmarketProducts(options: CardmarketProductsDownload): Promise<void> {
-  const { store } = options;
-  const running = downloads.get(store);
-  if (running) {
-    return running;
+  const { store, signal } = options;
+  if (signal?.aborted) {
+    return Promise.reject(signal.reason as Error);
   }
-  const now = options.now ?? ((): Date => new Date());
-  const download = fetchProducts(options)
-    .then(() => {
-      failures.delete(store);
-    })
-    .catch((error: unknown) => {
-      failures.set(store, now().getTime());
-      throw error;
-    })
-    .finally(() => {
-      downloads.delete(store);
-    });
-  downloads.set(store, download);
-  return download;
+  let shared = downloads.get(store);
+  if (!shared) {
+    const controller = new AbortController();
+    const now = options.now ?? ((): Date => new Date());
+    const promise = fetchProducts({ ...options, signal: controller.signal })
+      .then(() => {
+        failures.delete(store);
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          failures.set(store, now().getTime());
+        }
+        throw error;
+      })
+      .finally(() => {
+        downloads.delete(store);
+      });
+    shared = { promise, controller, waiting: 0 };
+    downloads.set(store, shared);
+  }
+  return join(shared, signal);
+}
+
+interface SharedDownload {
+  promise: Promise<void>;
+  /** Stops the download, once no caller waits on it any more. */
+  controller: AbortController;
+  /** Callers waiting on it that haven't aborted (one without a signal never does). */
+  waiting: number;
 }
 
 /**
  * Downloads in progress, per store: the matcher and the scheduled price
  * pass share one. Kept per store, not per process, so tests stay apart.
  */
-const downloads = new WeakMap<CatalogStore, Promise<void>>();
+const downloads = new WeakMap<CatalogStore, SharedDownload>();
+
+/** Waits on a shared download, until it settles or `signal` aborts. */
+function join(shared: SharedDownload, signal: AbortSignal | undefined): Promise<void> {
+  shared.waiting += 1;
+  if (!signal) {
+    return shared.promise;
+  }
+  return new Promise<void>((resolve, reject) => {
+    const onAbort = (): void => {
+      shared.waiting -= 1;
+      if (shared.waiting === 0) {
+        shared.controller.abort(signal.reason);
+      }
+      reject(signal.reason as Error);
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    shared.promise.then(resolve, reject).finally(() => {
+      signal.removeEventListener('abort', onAbort);
+    });
+  });
+}
 /** When each store's last download failed (ms since the epoch), until one succeeds. */
 const failures = new WeakMap<CatalogStore, number>();
 

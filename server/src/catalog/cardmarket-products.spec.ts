@@ -1,6 +1,8 @@
 import { vi } from 'vitest';
 import {
   CARDMARKET_PRODUCTS_URL,
+  cardmarketProductsDue,
+  downloadCardmarketProducts,
   PRODUCTS_MAX_AGE_MS,
   PRODUCTS_RETRY_MS,
   refreshCardmarketProductsIfDue,
@@ -81,18 +83,86 @@ describe('refreshCardmarketProductsIfDue', () => {
     expect(fetch).toHaveBeenCalledTimes(3);
   });
 
-  it('rethrows when aborted', async () => {
+  it('rethrows when aborted, without downloading', async () => {
     const store = memoryCatalogStore();
     const controller = new AbortController();
     controller.abort(new Error('stopping'));
+    const fetch = vi.fn(() => Promise.reject(new Error('aborted')));
 
     await expect(
       refreshCardmarketProductsIfDue({
         store,
         log: silentLogger(),
         signal: controller.signal,
-        fetch: () => Promise.reject(new Error('aborted')),
+        fetch,
       })
-    ).rejects.toThrow('aborted');
+    ).rejects.toThrow('stopping');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('downloadCardmarketProducts', () => {
+  /** A fetch that answers once `respond` is called, recording the signal it got. */
+  function heldFetch() {
+    const products = fakeCardmarket(fixtureProductList());
+    let respond = (): void => undefined;
+    let signal: AbortSignal | undefined;
+    const fetch = vi.fn((url: string | URL | Request, init?: RequestInit) => {
+      signal = init?.signal ?? undefined;
+      return new Promise<Response>((resolve, reject) => {
+        signal?.addEventListener('abort', () => {
+          reject(signal?.reason as Error);
+        });
+        respond = () => {
+          resolve(products.fetch(url, init));
+        };
+      });
+    });
+    return {
+      fetch,
+      respond: (): void => {
+        respond();
+      },
+      signal: () => signal,
+    };
+  }
+
+  it('lets a caller stop waiting without stopping the download for the others', async () => {
+    const store = memoryCatalogStore();
+    const log = silentLogger();
+    const { fetch, respond, signal } = heldFetch();
+    const matcher = downloadCardmarketProducts({ store, log, fetch });
+    const controller = new AbortController();
+    const scheduled = downloadCardmarketProducts({ store, log, fetch, signal: controller.signal });
+
+    controller.abort(new Error('stopping'));
+
+    await expect(scheduled).rejects.toThrow('stopping');
+    expect(signal()?.aborted).toBe(false);
+    respond();
+    await matcher;
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(store.getCardmarketProduct(483559)).toBeDefined();
+  });
+
+  it('stops the download once every caller has stopped waiting, not counting it a failure', async () => {
+    const store = memoryCatalogStore();
+    const log = silentLogger();
+    const { fetch, signal } = heldFetch();
+    const [first, second] = [new AbortController(), new AbortController()];
+    const one = downloadCardmarketProducts({ store, log, fetch, signal: first.signal });
+    const two = downloadCardmarketProducts({ store, log, fetch, signal: second.signal });
+
+    first.abort(new Error('stopping'));
+    await expect(one).rejects.toThrow('stopping');
+    expect(signal()?.aborted).toBe(false);
+    second.abort(new Error('stopping'));
+    await expect(two).rejects.toThrow('stopping');
+
+    expect(signal()?.aborted).toBe(true);
+    // Once the stopped download settles: an abort isn't a failed download,
+    // so no hour's wait before the next.
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(cardmarketProductsDue(store, new Date())).toBe(true);
   });
 });

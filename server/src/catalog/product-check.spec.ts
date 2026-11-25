@@ -84,6 +84,19 @@ describe('checkProductLink', () => {
     );
   });
 
+  it('tells Nidoran♀ from Nidoran♂, however Cardmarket writes the sign', () => {
+    const female = card('Nidoran♀', ['Double Kick']);
+    expect(checkProductLink(female, product('Nidoran ♂ [Double Kick]'))).toBe('other_card');
+    expect(checkProductLink(female, product('Nidoran &male; [Double Kick]'))).toBe('other_card');
+    expect(checkProductLink(female, product('Nidoran ♀ [Double Kick]'))).toBe('ok');
+    expect(checkProductLink(female, product('Nidoran &female; [Double Kick]'))).toBe('ok');
+    // Many products leave the sign out: either card's.
+    expect(checkProductLink(female, product('Nidoran [Double Kick]'))).toBe('ok');
+    expect(
+      checkProductLink(card("Team Rocket's Nidoran♂"), product("Team Rocket's Nidoran ♀"))
+    ).toBe('other_card');
+  });
+
   it('never takes a name inside another for it', () => {
     expect(checkProductLink(card('N'), product('Nidoking [Poison Jab]'))).toBe('other_card');
     expect(checkProductLink(card('Mew', ['Psywave']), product('Mewtwo [Super Psywave]'))).toBe(
