@@ -477,6 +477,81 @@ describe('runPriceRefresh', () => {
       expect(store.getCardPrices('intl', 'sv01-001')).toMatchObject({ matchedByHand: true });
     });
 
+    type CardmarketFetch = ReturnType<typeof fakeCardmarket>['fetch'];
+
+    /** Matches that change while a pass downloads the guide, as the matcher changes them. */
+    function changingMatches(store: CatalogStore, initial: Record<string, number> = {}) {
+      const matched = new Map(Object.entries(initial));
+      let version = 1;
+      const matches: CardmarketMatchSource = {
+        get: (region, cardId) => (region === 'intl' ? matched.get(cardId) : undefined),
+        list: (region) => (region === 'intl' ? new Map(matched) : new Map()),
+        version: () => version,
+      };
+      /** `fetch`, making `change` first and repricing the card, as the matcher does. */
+      const during =
+        (fetch: CardmarketFetch, change: () => void): CardmarketFetch =>
+        async (...args) => {
+          change();
+          version += 1;
+          repriceCard(store, matches, 'intl', 'sv01-001');
+          return fetch(...args);
+        };
+      return { matched, matches, during };
+    }
+
+    it('price a card matched by hand while the pass runs by its match', async () => {
+      const { store, cardmarket, refresh } = await setup();
+      await refresh();
+      storeProductList(store, { [PRODUCTS.pineco]: 'Psyduck [Confusion Wave]' });
+      const { matched, matches, during } = changingMatches(store);
+
+      const stats = await refresh({
+        matches,
+        fetch: during(cardmarket.fetch, () => matched.set('sv01-001', PRODUCTS.pineco)),
+      });
+
+      expect(stats.cards.rejected).toBe(0);
+      expect(stats.cards.priced).toBeGreaterThan(0);
+      expect(store.getCardPrices('intl', 'sv01-001')).toMatchObject({ matchedByHand: true });
+      // The next pass sees the newer matches: the guide is applied anew.
+      const next = await refresh({ matches });
+      expect(next.status).toBe('ok');
+      expect(store.getCardPrices('intl', 'sv01-001')).toMatchObject({ matchedByHand: true });
+    });
+
+    it('price a card matched during the first pass, before any guide is kept', async () => {
+      const { store, cardmarket, refresh } = await setup();
+      storeProductList(store, { [PRODUCTS.pineco]: 'Psyduck [Confusion Wave]' });
+      const { matched, matches, during } = changingMatches(store);
+
+      await refresh({
+        matches,
+        fetch: during(cardmarket.fetch, () => matched.set('sv01-001', PRODUCTS.pineco)),
+      });
+
+      expect(store.getCardPrices('intl', 'sv01-001')).toMatchObject({ matchedByHand: true });
+    });
+
+    it('check TCGdex’s product of a card whose match is cleared while the pass runs', async () => {
+      const { store, refresh } = await setup();
+      storeProductList(store, { [PRODUCTS.pineco]: 'Psyduck [Confusion Wave]' });
+      const { matched, matches, during } = changingMatches(store, {
+        'sv01-001': PRODUCTS.pineco,
+      });
+      await refresh({ matches });
+      // A newer guide, so the pass writes prices rather than finding it unchanged.
+      const newer = fakeCardmarket(fixtureGuide('2026-11-21T02:43:56+0100'));
+
+      const stats = await refresh({
+        matches,
+        fetch: during(newer.fetch, () => matched.delete('sv01-001')),
+      });
+
+      expect(stats.cards.rejected).toBe(1);
+      expect(store.getCardPrices('intl', 'sv01-001')).toBeUndefined();
+    });
+
     it('are applied anew, not skipped as unchanged, once the product list changes', async () => {
       const { store, cardmarket, refresh } = await setup();
       await refresh();

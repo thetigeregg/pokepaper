@@ -205,18 +205,34 @@ export async function runPriceRefresh(options: PriceRefreshOptions): Promise<Pri
 
     for (const { region, products, byHand, rejected: wrong } of regions) {
       signal?.throwIfAborted();
+      // The matches were read before the downloads: a card matched or cleared
+      // by hand since is priced as it is now, by its match, else TCGdex's
+      // product unless rejected. Read right before the write, with no await
+      // between. (The next pass applies the guide anew all the same: the
+      // matches version saved is the one read first.)
+      const handNow = options.matches?.list(region) ?? new Map<string, number>();
       const entries = store.listCardIds(region).map((cardId) => {
-        const idProduct = products.get(cardId);
+        let idProduct = products.get(cardId);
+        let matchedByHand = byHand.has(cardId);
+        let isWrong = wrong.has(cardId);
+        if (byHand.get(cardId) !== handNow.get(cardId)) {
+          const matched = handNow.get(cardId);
+          const tcgdex =
+            matched === undefined ? store.getCardmarketProductOf(region, cardId) : undefined;
+          idProduct = matched ?? tcgdex;
+          matchedByHand = matched !== undefined;
+          isWrong = tcgdex !== undefined && rejects(region, cardId, tcgdex);
+        }
         if (idProduct === undefined) {
           stats.cards.unmapped += 1;
           return null; // Left as it was: forgetting a product removes its prices.
         }
-        if (wrong.has(cardId)) {
+        if (isWrong) {
           stats.cards.rejected += 1;
           return { cardId, prices: null };
         }
         const entry = download.entries.get(idProduct);
-        const prices = guidePrices(entry, download.createdAt, byHand.has(cardId));
+        const prices = guidePrices(entry, download.createdAt, matchedByHand);
         stats.cards[prices ? 'priced' : 'unpriced'] += 1;
         return { cardId, prices };
       });
