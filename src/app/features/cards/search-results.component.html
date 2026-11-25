@@ -83,7 +83,7 @@
             @if (group.set; as set) {
               <app-set-symbol [region]="set.region" [setId]="set.id" />
             }
-            {{ group.name }} · {{ group.count }}
+            <span class="icon-text-label">{{ group.name }} · {{ group.count }}</span>
           </span>
         </ion-label>
       </ion-item-divider>

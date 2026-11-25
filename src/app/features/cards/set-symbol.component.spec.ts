@@ -57,5 +57,12 @@ describe('SetSymbolComponent', () => {
     expect(images(fixture).map((img) => img.getAttribute('src'))).toEqual([
       'assets/set-symbols/sv07.png',
     ]);
+
+    // Back to the set that failed: tried again (it may load now).
+    fixture.componentRef.setInput('setId', 'sv08');
+    fixture.detectChanges();
+    expect(images(fixture).map((img) => img.getAttribute('src'))).toEqual([
+      'assets/set-symbols/sv08.png',
+    ]);
   });
 });

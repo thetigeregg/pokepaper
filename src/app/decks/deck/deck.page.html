@@ -274,10 +274,10 @@
     {{ row.name }}
     <p class="hint" data-testid="set-line">
       <span class="icon-text">
-        @if (row.card; as card) {
-          <app-set-symbol [region]="card.region" [setId]="card.setId" />
+        @if (row.set; as set) {
+          <app-set-symbol [region]="set.region" [setId]="set.id" />
         }
-        {{ row.line }}
+        <span class="icon-text-label">{{ row.line }}</span>
       </span>
     </p>
     @if (ownedLine(row); as owned) {

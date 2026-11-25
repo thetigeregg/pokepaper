@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, linkedSignal } from '@angular/core';
 import type { CatalogRegion } from '@pokepaper/shared';
 import { SET_SYMBOL_HEIGHT, setSymbol } from './set-symbol';
 
@@ -22,7 +22,7 @@ import { SET_SYMBOL_HEIGHT, setSymbol } from './set-symbol';
         alt=""
         aria-hidden="true"
         data-testid="set-symbol"
-        (error)="failedSrc.set(src())"
+        (error)="failed.set(true)"
       />
     }
   `,
@@ -30,6 +30,7 @@ import { SET_SYMBOL_HEIGHT, setSymbol } from './set-symbol';
     `
       :host {
         display: inline-flex;
+        flex-shrink: 0;
         line-height: 0;
       }
       :host(.shown) {
@@ -48,11 +49,11 @@ export class SetSymbolComponent {
   /** TCGdex set ID, e.g. `sv08`. */
   readonly setId = input.required<string>();
 
-  /** The image that failed to load, hidden until the set changes. */
-  readonly failedSrc = signal<string | null>(null);
   private readonly symbol = computed(() => setSymbol(this.region(), this.setId()));
   readonly src = computed(() => this.symbol()?.url ?? '');
   readonly width = computed(() => this.symbol()?.width ?? null);
   readonly height = SET_SYMBOL_HEIGHT;
-  readonly shown = computed(() => this.symbol() !== null && this.failedSrc() !== this.src());
+  /** Whether the image failed to load: hidden until it changes (tried again on return). */
+  readonly failed = linkedSignal({ source: this.src, computation: () => false });
+  readonly shown = computed(() => this.symbol() !== null && !this.failed());
 }

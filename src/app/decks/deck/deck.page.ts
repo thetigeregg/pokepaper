@@ -109,6 +109,8 @@ export interface DeckRow {
   slot: DeckCard;
   /** Null when the card isn't in the catalog on this device. */
   card: CatalogCard | null;
+  /** The card's set; null without the card, or while its set isn't read. */
+  set: CatalogSet | null;
   language: CatalogLanguage;
   name: string;
   /** "OBF · 125/197", or the card ID without its set. */
@@ -815,6 +817,7 @@ export class DeckPage {
       list,
       slot,
       card,
+      set,
       language,
       name: card ? (cardText(card, language)?.name ?? card.id) : slot.cardId,
       line: card && set ? setLine(set, card) : slot.cardId,

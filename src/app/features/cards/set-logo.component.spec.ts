@@ -143,6 +143,31 @@ describe('SetLogoComponent', () => {
     );
   });
 
+  it('falls back to TCGdex’s symbol when the bundled one fails to load', async () => {
+    resolve.mockImplementation((url) =>
+      Promise.resolve(url === bundledLogo ? null : `blob:${url}`)
+    );
+    const fixture = await create(bundled);
+    query(fixture, 'img')?.dispatchEvent(new Event('error'));
+    await settle(fixture);
+
+    const tcgdexSymbol = catalogSetImageUrl(bundled, { kind: 'symbol' });
+    expect(resolve).toHaveBeenLastCalledWith(tcgdexSymbol);
+    expect((query(fixture, 'img') as HTMLImageElement).getAttribute('src')).toBe(
+      `blob:${tcgdexSymbol}`
+    );
+  });
+
+  it('shows the icon when the bundled symbol fails and TCGdex has none', async () => {
+    resolve.mockResolvedValue(null);
+    const fixture = await create({ ...bundled, symbol: null });
+    query(fixture, 'img')?.dispatchEvent(new Event('error'));
+    await settle(fixture);
+
+    expect(query(fixture, 'img')).toBeNull();
+    expect(query(fixture, 'ion-icon')).not.toBeNull();
+  });
+
   it('prefers the logo to the bundled symbol', async () => {
     const fixture = await create(bundled);
 

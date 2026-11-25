@@ -196,6 +196,20 @@ describe('DeckPage', () => {
     expect(row?.querySelector('[data-testid="count"]')?.textContent.trim()).toBe('3');
   });
 
+  it('shows no set symbol for a card whose set is not on this device', async () => {
+    const readSet = engine.getCatalogSet.getMockImplementation();
+    engine.getCatalogSet.mockResolvedValue(undefined);
+    try {
+      await create();
+
+      const row = query('[data-testid="deck-card-intl:sv01-001"]');
+      expect(row?.querySelector('.hint')?.textContent.trim()).toBe('sv01-001');
+      expect(row?.querySelector('[data-testid="set-symbol"]')).toBeNull();
+    } finally {
+      if (readSet) engine.getCatalogSet.mockImplementation(readSet);
+    }
+  });
+
   it('lists cards not on this device by ID, and other categories apart', async () => {
     current.set(
       makeDeck({

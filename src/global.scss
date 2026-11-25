@@ -99,6 +99,16 @@ ion-list > ion-item:last-of-type {
   display: inline-flex;
   align-items: center;
   vertical-align: top;
+  max-width: 100%;
+}
+
+/* Text after the symbol that can shrink inside the flex box, so it wraps or
+   truncates as its line does (a header wraps; a one-line row's ellipsis
+   doesn't reach into a flex box otherwise). */
+.icon-text > .icon-text-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .media-row > .media-row-text {
