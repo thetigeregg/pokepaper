@@ -245,3 +245,7 @@
 ## v0.38.0 - 2026-11-25
 
 - 79c005d feat(cards): show set symbols beside set names (#74)
+
+## v0.38.1 - 2026-11-25
+
+- 836fc5d fix(prices): keep hand matches and correct products in price passes (#75)
