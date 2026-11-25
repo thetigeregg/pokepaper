@@ -80,6 +80,11 @@ describe('CardmarketMatcherComponent', () => {
   const query = (testId: string) =>
     (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>(`[data-testid="${testId}"]`);
   const text = (testId: string) => query(testId)?.textContent.replace(/\s+/g, ' ').trim();
+  /** A candidate's hint lines. */
+  const hints = (idProduct: number) =>
+    [...(query(`candidate-${String(idProduct)}`)?.querySelectorAll('p.hint') ?? [])].map((hint) =>
+      hint.textContent.trim()
+    );
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -107,7 +112,8 @@ describe('CardmarketMatcherComponent', () => {
 
     expect(matches.candidates).toHaveBeenCalledWith('intl', 'xy8-63', '');
     expect(text('matcher-card')).toContain('BKT · 63/162');
-    expect(text('candidate-286309')).toContain('This set · added Nov 12, 2015');
+    expect(hints(286309)).toEqual(['This set', 'Added Nov 12, 2015']);
+    expect(hints(363682)).toEqual(['Another set']);
     expect(text('candidate-286309')).toContain('€114.68');
     expect(text('candidate-363682')).toContain('Another set');
     expect(query('candidate-363682')?.querySelector('[data-testid="candidate-price"]')).toBeNull();
@@ -218,8 +224,8 @@ describe('CardmarketMatcherComponent', () => {
     );
 
     expect(query('matcher-clear')).toBeNull();
-    expect(text('candidate-363682')).toContain('Another set · TCGdex’s match');
-    expect(text('candidate-286309')).not.toContain('TCGdex’s match');
+    expect(hints(363682)).toEqual(['Another set', 'TCGdex’s match']);
+    expect(query('candidate-286309')?.querySelector('[data-testid="candidate-tcgdex"]')).toBeNull();
     expect(text('matcher-restore')).toContain('Restore TCGdex’s match');
     expect(text('matcher-restore')).toContain('MMewtwo EX [Psychic Infinity]');
     query('matcher-restore')?.click();

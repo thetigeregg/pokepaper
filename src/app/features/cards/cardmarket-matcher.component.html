@@ -93,15 +93,13 @@
           <ion-item lines="inset" [attr.data-testid]="'candidate-' + product.idProduct">
             <ion-label class="ion-text-wrap">
               {{ product.name }}
-              <p class="hint">
-                {{ product.inSet ? 'This set' : 'Another set' }}
-                @if (product.added; as added) {
-                  · added {{ added | date: 'mediumDate' }}
-                }
-                @if (result()?.tcgdex?.idProduct === product.idProduct) {
-                  · TCGdex’s match
-                }
-              </p>
+              <p class="hint">{{ product.inSet ? 'This set' : 'Another set' }}</p>
+              @if (product.added; as added) {
+                <p class="hint">Added {{ added | date: 'mediumDate' }}</p>
+              }
+              @if (result()?.tcgdex?.idProduct === product.idProduct) {
+                <p class="hint" data-testid="candidate-tcgdex">TCGdex’s match</p>
+              }
             </ion-label>
             @if (price(product); as price) {
               <ion-note slot="end" class="amount" data-testid="candidate-price">
