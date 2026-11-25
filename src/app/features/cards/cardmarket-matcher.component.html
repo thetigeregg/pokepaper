@@ -59,7 +59,13 @@
           >
             <ion-label color="primary" class="ion-text-wrap">
               Restore TCGdex’s match
-              <p class="hint">{{ tcgdex.name ?? 'Product ' + tcgdex.idProduct }}</p>
+              <p class="hint">
+                @if (tcgdex.idProduct === current.idProduct) {
+                  The same product, then following TCGdex’s changes
+                } @else {
+                  {{ tcgdex.name ?? 'Product ' + tcgdex.idProduct }}
+                }
+              </p>
             </ion-label>
           </ion-item>
         } @else {
@@ -125,6 +131,17 @@
                 aria-label="Current match"
                 data-testid="candidate-matched"
               ></ion-icon>
+            } @else if (restores(product)) {
+              <!-- Matching TCGdex's product by hand would pin it: restore it instead. -->
+              <ion-button
+                slot="end"
+                fill="clear"
+                [disabled]="busy()"
+                (click)="clear()"
+                data-testid="candidate-restore"
+              >
+                Restore
+              </ion-button>
             } @else {
               <ion-button
                 slot="end"

@@ -162,6 +162,17 @@ export class CardmarketMatcherComponent implements OnInit {
     return euros === null ? null : this.currencyService.format(euros);
   }
 
+  /**
+   * Whether picking the product means restoring TCGdex's match: it's TCGdex's
+   * product and the card is matched by hand to another one.
+   */
+  restores(product: CardmarketCandidate): boolean {
+    const result = this.result();
+    return (
+      result?.current?.matchedByHand === true && result.tcgdex?.idProduct === product.idProduct
+    );
+  }
+
   /** The product's Cardmarket page, offers filtered to the card's language. */
   url(idProduct: number): string {
     return cardmarketProductUrl(idProduct, { language: this.languageProp });

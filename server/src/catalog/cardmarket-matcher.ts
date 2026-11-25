@@ -81,7 +81,7 @@ export class CardmarketMatcher {
 
     const byHand = matches.get(region, cardId);
     const linked = store.getCardmarketProductOf(region, cardId);
-    // TCGdex's product isn't offered as the card's when it's another card's.
+    // TCGdex's product isn't offered as the card's when it's another card's or printing's.
     const tcgdex =
       linked !== undefined && !productLinkChecker(store, this.now())(region, cardId, linked)
         ? linked

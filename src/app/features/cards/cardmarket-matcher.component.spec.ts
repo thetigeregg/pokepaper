@@ -228,11 +228,48 @@ describe('CardmarketMatcherComponent', () => {
     expect(query('candidate-286309')?.querySelector('[data-testid="candidate-tcgdex"]')).toBeNull();
     expect(text('matcher-restore')).toContain('Restore TCGdex’s match');
     expect(text('matcher-restore')).toContain('MMewtwo EX [Psychic Infinity]');
+    expect(query('candidate-363682')?.querySelector('[data-testid="candidate-match"]')).toBeNull();
+    expect(
+      query('candidate-363682')?.querySelector('[data-testid="candidate-restore"]')
+    ).not.toBeNull();
+    expect(
+      query('candidate-286309')?.querySelector('[data-testid="candidate-restore"]')
+    ).toBeNull();
     query('matcher-restore')?.click();
     await settle();
 
     expect(matches.clear).toHaveBeenCalledWith('intl', 'xy8-63');
     expect(modals.dismiss).toHaveBeenCalledWith(undefined, 'clear');
+  });
+
+  it('restores TCGdex’s product from its row rather than matching it by hand', async () => {
+    await create(
+      answer({
+        current: { idProduct: 286309, matchedByHand: true, name: 'MMewtwo EX [Vanishing Strike]' },
+        tcgdex: { idProduct: 363682, name: 'MMewtwo EX [Psychic Infinity]' },
+      })
+    );
+
+    query('candidate-363682')
+      ?.querySelector<HTMLElement>('[data-testid="candidate-restore"]')
+      ?.click();
+    await settle();
+
+    expect(matches.match).not.toHaveBeenCalled();
+    expect(matches.clear).toHaveBeenCalledWith('intl', 'xy8-63');
+    expect(modals.dismiss).toHaveBeenCalledWith(undefined, 'clear');
+  });
+
+  it('says restoring a hand match of TCGdex’s own product follows TCGdex from then on', async () => {
+    await create(
+      answer({
+        current: { idProduct: 286309, matchedByHand: true, name: 'MMewtwo EX [Vanishing Strike]' },
+        tcgdex: { idProduct: 286309, name: 'MMewtwo EX [Vanishing Strike]' },
+      })
+    );
+
+    expect(text('matcher-restore')).toContain('The same product, then following TCGdex’s changes');
+    expect(text('matcher-restore')).not.toContain('Vanishing Strike');
   });
 
   it('names TCGdex’s product by ID when Cardmarket’s list lacks it', async () => {
