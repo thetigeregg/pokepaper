@@ -204,6 +204,55 @@ describe('CardDetailComponent', () => {
     expect(dismiss).toHaveBeenCalled();
   });
 
+  describe('Set and Illustrator rows', () => {
+    it('closes, then shows the search they ask for', async () => {
+      const order: string[] = [];
+      dismiss.mockImplementationOnce(() => {
+        order.push('dismiss');
+        return Promise.resolve(true);
+      });
+      const showSearch = vi.fn(() => {
+        order.push('search');
+        return Promise.resolve();
+      });
+      fixture = TestBed.createComponent(CardDetailComponent);
+      const detail = fixture.componentInstance;
+      detail.setProp = pack.set;
+      detail.cardsProp = cards;
+      detail.showSearchProp = showSearch;
+      fixture.detectChanges();
+      expect(detail.searchable()).toBe(true);
+
+      await detail.showSearch({ region: 'intl', filters: { sets: ['intl:sv01'] } });
+
+      expect(showSearch).toHaveBeenCalledWith({ region: 'intl', filters: { sets: ['intl:sv01'] } });
+      expect(order).toEqual(['dismiss', 'search']);
+    });
+
+    it('stay plain without a search to show', async () => {
+      const detail = create(0);
+
+      expect(detail.searchable()).toBe(false);
+      await detail.showSearch({ region: 'intl', filters: { sets: ['intl:sv01'] } });
+      expect(dismiss).not.toHaveBeenCalled();
+    });
+
+    it('logs a search that fails to show', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      fixture = TestBed.createComponent(CardDetailComponent);
+      const detail = fixture.componentInstance;
+      detail.setProp = pack.set;
+      detail.cardsProp = cards;
+      detail.showSearchProp = () => Promise.reject(new Error('storage'));
+      fixture.detectChanges();
+
+      await detail.showSearch({ region: 'asia', filters: { sets: ['asia:SV2a'] } });
+
+      expect(error).toHaveBeenCalledWith('catalog.card_search_failed', expect.any(Error));
+      error.mockRestore();
+    });
+  });
+
   it('defaults the language until ngOnInit copies the modal props', () => {
     fixture = TestBed.createComponent(CardDetailComponent);
     const detail = fixture.componentInstance;

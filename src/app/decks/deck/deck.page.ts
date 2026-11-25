@@ -65,6 +65,7 @@ import { catalogKey, type StorageEngine } from '../../core/data/storage-engine';
 import { StorageEngineFactory } from '../../core/data/storage-engine.factory';
 import { CatalogLanguageService } from '../../core/services/catalog-language.service';
 import { CatalogPriceService } from '../../core/services/catalog-price.service';
+import { CatalogSearchService } from '../../core/services/catalog-search.service';
 import { CurrencyService } from '../../core/services/currency.service';
 import { costToComplete } from '../../features/decks/deck-cost';
 import { CatalogSyncService } from '../../core/services/catalog-sync.service';
@@ -73,6 +74,8 @@ import type { DeckOwned } from '../../features/decks/deck-owned';
 import { DeckService, type DeckList } from '../../core/services/deck.service';
 import { LayoutService } from '../../core/services/layout.service';
 import { CardDetailComponent } from '../../features/cards/card-detail.component';
+import type { CardSearch } from '../../features/cards/card-details.component';
+import { CARDS_HOME_URL } from '../../features/cards/card-searchbar.component';
 import { cardText, setLine } from '../../features/cards/card-display';
 import { CardImageComponent } from '../../features/cards/card-image.component';
 import { SetSymbolComponent } from '../../features/cards/set-symbol.component';
@@ -221,6 +224,8 @@ export class DeckPage {
   private readonly modals = inject(ModalController);
   private readonly nav = inject(NavController);
   private readonly layout = inject(LayoutService);
+  /** The Cards tab's search, which a card's Set and Illustrator rows show. */
+  private readonly search = inject(CatalogSearchService);
   private readonly priceService = inject(CatalogPriceService);
   private readonly currencyService = inject(CurrencyService);
 
@@ -752,11 +757,25 @@ export class DeckPage {
     const sheet = !this.layout.wide();
     const modal = await this.modals.create({
       component: CardDetailComponent,
-      componentProps: { setsProp: this.catalog().sets, cardsProp: cards, startIndex: index },
+      componentProps: {
+        setsProp: this.catalog().sets,
+        cardsProp: cards,
+        startIndex: index,
+        showSearchProp: (search: CardSearch) => this.showSearch(search),
+      },
       cssClass: 'card-detail-modal',
       ...(sheet ? { breakpoints: [0, 1], initialBreakpoint: 1, handle: true } : {}),
     });
     await modal.present();
+  }
+  /**
+   * A card's Set or Illustrator row: the Cards tab's search, filtered to it
+   * (in the card's catalog). Opens the Cards tab at its root, where results
+   * show; the deck stays open in the Decks tab.
+   */
+  private async showSearch(search: CardSearch): Promise<void> {
+    await this.search.showOnly(search.region, search.filters);
+    await this.nav.navigateRoot(CARDS_HOME_URL);
   }
 
   /** Reads the deck's cards again (Try again, after a failed read). */

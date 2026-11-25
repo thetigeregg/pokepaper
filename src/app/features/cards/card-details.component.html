@@ -155,7 +155,14 @@
     }
 
     <ion-list-header><ion-label>Details</ion-label></ion-list-header>
-    <ion-item class="wrapping-detail">
+    <!-- With a search to show, Set and Illustrator open it, filtered to the value. -->
+    <ion-item
+      class="wrapping-detail"
+      [button]="searchable()"
+      [detail]="searchable()"
+      (click)="searchSet()"
+      data-testid="detail-set-row"
+    >
       <ion-label>Set</ion-label>
       <ion-note slot="end" class="icon-text" data-testid="detail-set">
         <app-set-symbol [region]="set().region" [setId]="set().id" />
@@ -175,10 +182,15 @@
         </ion-note>
       </ion-item>
     }
-    @if (card().illustrator) {
-      <ion-item>
+    @if (illustrator(); as illustrator) {
+      <ion-item
+        [button]="searchable()"
+        [detail]="searchable()"
+        (click)="searchIllustrator()"
+        data-testid="detail-illustrator-row"
+      >
         <ion-label>Illustrator</ion-label>
-        <ion-note slot="end" data-testid="detail-illustrator">{{ card().illustrator }}</ion-note>
+        <ion-note slot="end" data-testid="detail-illustrator">{{ illustrator }}</ion-note>
       </ion-item>
     }
     @if (card().regulationMark) {

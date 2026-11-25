@@ -89,7 +89,7 @@ export class SearchFiltersComponent {
 
   readonly chips = computed(() => {
     const filters = this.search.filters();
-    const names = this.search.setNames();
+    const names = this.search.filterNames();
     return FILTER_KINDS.map((kind) => ({
       kind,
       active: kindActive(filters, kind),

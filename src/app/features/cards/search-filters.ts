@@ -10,12 +10,13 @@ import { normalizeSearchText } from '../../core/utils/search-text.util';
 import { ENERGY_TYPES } from './energy';
 
 /** The filter chips on the search results (docs/ui.md → Cards → Search). */
-export type FilterKind = 'collection' | 'category' | 'type' | 'rarity' | 'set';
+export type FilterKind = 'collection' | 'category' | 'type' | 'rarity' | 'illustrator' | 'set';
 export const FILTER_KINDS: readonly FilterKind[] = [
   'collection',
   'category',
   'type',
   'rarity',
+  'illustrator',
   'set',
 ];
 
@@ -24,6 +25,7 @@ export const FILTER_TITLES: Readonly<Record<FilterKind, string>> = {
   category: 'Category',
   type: 'Type',
   rarity: 'Rarity',
+  illustrator: 'Illustrator',
   set: 'Set',
 };
 
@@ -52,6 +54,7 @@ export const FILTER_FIELDS: Readonly<
   category: { groups: 'categories', options: 'categories' },
   type: { groups: null, options: 'types' },
   rarity: { groups: null, options: 'rarities' },
+  illustrator: { groups: null, options: 'illustrators' },
   set: { groups: 'series', options: 'sets' },
 };
 
@@ -139,6 +142,22 @@ export function rarityOptions(counts: readonly FilterCount[]): FilterOption[] {
 }
 
 /**
+ * Illustrators A–Z by name (`names`, by filter value), keeping those whose
+ * name contains `query`. Picked ones are expected in `counts` (`withPicked`).
+ */
+export function illustratorOptions(
+  counts: readonly FilterCount[],
+  names: ReadonlyMap<string, string>,
+  query: string
+): FilterOption[] {
+  const needle = normalizeSearchText(query);
+  return counts
+    .map(({ value, count }) => ({ value, label: names.get(value) ?? value, count }))
+    .filter((option) => normalizeSearchText(option.label).includes(needle))
+    .sort((a, b) => a.label.localeCompare(b.label, 'en', { sensitivity: 'base' }));
+}
+
+/**
  * Series and their sets as in the sets list, with card counts. Keeps sets
  * with cards (by `counts`) or picked, and whose name or series name contains
  * `query`; a picked series stays listed even with none left.
@@ -204,21 +223,25 @@ export function chipLabel(
   return summary ? `${FILTER_TITLES[kind]}: ${summary}` : FILTER_TITLES[kind];
 }
 
-/** What the current catalog calls its sets and series, for labeling picks. */
-export interface SetNames {
+/** What the current catalog calls its sets, series and illustrators, for labeling picks. */
+export interface FilterNames {
   sets: ReadonlyMap<string, { set: CatalogSet }>;
   seriesNames: ReadonlyMap<string, string>;
+  /** Illustrator names by filter value (`illustratorKey`). */
+  illustrators: ReadonlyMap<string, string>;
   language: CatalogLanguage;
 }
 
-/** How a picked value of `kind` reads: "Supporter", "Paldea Evolved", "Fire". */
-export function valueLabel(kind: FilterKind, names: SetNames): (value: string) => string {
+/** How a picked value of `kind` reads: "Supporter", "Paldea Evolved", "Fire", "Ken Sugimori". */
+export function valueLabel(kind: FilterKind, names: FilterNames): (value: string) => string {
   return (value) => {
     switch (kind) {
       case 'collection':
         return isOwnedValue(value) ? OWNED_LABELS[value] : value;
       case 'category':
         return categoryLabel(value);
+      case 'illustrator':
+        return names.illustrators.get(value) ?? value;
       case 'set': {
         const set = names.sets.get(value)?.set;
         return set ? localized(set.names, names.language) : (names.seriesNames.get(value) ?? value);

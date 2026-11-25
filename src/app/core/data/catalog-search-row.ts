@@ -1,12 +1,12 @@
 import type { CatalogCard } from '@pokepaper/shared';
-import { normalizeSearchText } from '../utils/search-text.util';
+import { illustratorKey, normalizeSearchText } from '../utils/search-text.util';
 import { catalogKey, type CatalogSearchRow } from './storage-engine';
 
 /**
  * Bumped whenever `catalogSearchRow()` changes what it stores, so stored rows
  * are rebuilt (`CatalogSearchIndexService`).
  */
-export const CATALOG_SEARCH_ROW_VERSION = 2;
+export const CATALOG_SEARCH_ROW_VERSION = 3;
 
 /** A card's search row (see `CatalogSearchRow`), for the set it's stored under. */
 export function catalogSearchRow(card: CatalogCard, setKey: string): CatalogSearchRow {
@@ -28,5 +28,6 @@ export function catalogSearchRow(card: CatalogCard, setKey: string): CatalogSear
     subtype: card.trainerType ?? card.energyType,
     rarity: card.rarity,
     types: card.types,
+    illustrator: illustratorKey(card.illustrator) ? (card.illustrator?.trim() ?? null) : null,
   };
 }

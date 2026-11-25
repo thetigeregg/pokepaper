@@ -5,13 +5,13 @@
       <ion-button (click)="done()" data-testid="filter-done">Done</ion-button>
     </ion-buttons>
   </ion-toolbar>
-  @if (kind() === 'set') {
+  @if (searchPlaceholder(); as placeholder) {
     <ion-toolbar>
       <ion-searchbar
-        placeholder="Search sets"
+        [placeholder]="placeholder"
         [debounce]="100"
-        (ionInput)="setQuery.set($event.detail.value ?? '')"
-        data-testid="set-search"
+        (ionInput)="query.set($event.detail.value ?? '')"
+        [attr.data-testid]="kind() + '-search'"
       ></ion-searchbar>
     </ion-toolbar>
   }
@@ -137,7 +137,7 @@
           <ion-note slot="end">{{ option.count | number }}</ion-note>
         </ion-item>
       } @empty {
-        <ion-item data-testid="filter-empty">No cards match this search</ion-item>
+        <ion-item data-testid="filter-empty">{{ emptyText() }}</ion-item>
       }
     </ion-list>
   }

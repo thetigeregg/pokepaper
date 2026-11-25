@@ -6,6 +6,7 @@ import {
   effect,
   inject,
   input,
+  output,
   signal,
 } from '@angular/core';
 import {
@@ -24,6 +25,7 @@ import {
   type CatalogCard,
   type CatalogCardPrices,
   type CatalogLanguage,
+  type CatalogRegion,
   type CatalogSet,
   type CollectionTarget,
 } from '@pokepaper/shared';
@@ -35,8 +37,10 @@ import { LANGUAGE_LABELS } from '../../core/services/catalog-language.service';
 import { CatalogPriceService } from '../../core/services/catalog-price.service';
 import { CurrencyService } from '../../core/services/currency.service';
 import { CollectionService } from '../../core/services/collection.service';
+import type { SearchFilters } from '../../core/services/catalog-search.service';
 import { LayoutService } from '../../core/services/layout.service';
 import { displayImage } from '../../core/utils/catalog-image.util';
+import { illustratorKey } from '../../core/utils/search-text.util';
 import {
   UNKNOWN_SET_REVERSE_HOLOS,
   type SetReverseHolos,
@@ -64,6 +68,12 @@ import { CardmarketMatcherComponent } from './cardmarket-matcher.component';
 import { EnergyIconComponent } from './energy-icon.component';
 import { RarityIconComponent } from './rarity-icon.component';
 import { SetSymbolComponent } from './set-symbol.component';
+
+/** A search for one value of the card's (its set, its illustrator), in the card's catalog. */
+export interface CardSearch {
+  region: CatalogRegion;
+  filters: Partial<SearchFilters>;
+}
 
 /**
  * One card's scan and full text in `language` (docs/ui.md → Card detail):
@@ -104,6 +114,9 @@ export class CardDetailsComponent {
   readonly card = input.required<CatalogCard>();
   readonly set = input.required<CatalogSet>();
   readonly language = input.required<CatalogLanguage>();
+  /** The Set and Illustrator rows are buttons that ask for a search of their value. */
+  readonly searchable = input(false);
+  readonly searchFor = output<CardSearch>();
 
   readonly maxQuantity = MAX_COLLECTION_QUANTITY;
   /** Steppers stay disabled until the collection has loaded (they'd count from 0). */
@@ -138,6 +151,11 @@ export class CardDetailsComponent {
   readonly setDetail = computed(() => {
     const set = this.set();
     return `${localized(set.names, this.language()) || set.id} · ${cardNumber(set, this.card())}`;
+  });
+  /** The illustrator as TCGdex spells it, or null without one (or TCGdex's "N/A"). */
+  readonly illustrator = computed(() => {
+    const { illustrator } = this.card();
+    return illustratorKey(illustrator) ? (illustrator?.trim() ?? null) : null;
   });
   /** Whether the scan shown is another printing's (basic Energy; docs/catalog.md). */
   readonly borrowedScan = computed(
@@ -282,6 +300,22 @@ export class CardDetailsComponent {
       ...(sheet ? { breakpoints: [0, 0.75, 1], initialBreakpoint: 1, handle: true } : {}),
     });
     await modal.present();
+  }
+
+  /** The Set row: the cards of the card's set. */
+  searchSet(): void {
+    if (this.searchable()) {
+      const { region, id } = this.set();
+      this.searchFor.emit({ region, filters: { sets: [catalogKey(region, id)] } });
+    }
+  }
+
+  /** The Illustrator row: the cards the same artist drew. */
+  searchIllustrator(): void {
+    const key = illustratorKey(this.card().illustrator);
+    if (this.searchable() && key) {
+      this.searchFor.emit({ region: this.card().region, filters: { illustrators: [key] } });
+    }
   }
 
   /** A price in euros, in the currency picked in Settings ("CHF 0.13"). */

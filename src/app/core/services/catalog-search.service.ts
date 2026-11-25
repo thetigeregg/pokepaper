@@ -1,5 +1,5 @@
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
-import type { CatalogSet } from '@pokepaper/shared';
+import type { CatalogRegion, CatalogSet } from '@pokepaper/shared';
 import { catalogKey, type CatalogSearchRow } from '../data/storage-engine';
 import { cardMatches, prepareQuery } from '../utils/search-text.util';
 import { CatalogBrowseService } from './catalog-browse.service';
@@ -21,6 +21,8 @@ export interface SearchFilters {
   series: string[];
   /** Set keys (`region:id`). */
   sets: string[];
+  /** Illustrators by filter value (`illustratorKey`), so spellings TCGdex varies are one. */
+  illustrators: string[];
   /**
    * Collection status (docs/collection.md): `owned` and/or `missing`, by the
    * copies owned in the language the card's set opens in.
@@ -36,6 +38,7 @@ export const NO_FILTERS: SearchFilters = {
   rarities: [],
   series: [],
   sets: [],
+  illustrators: [],
   owned: [],
 };
 
@@ -165,9 +168,9 @@ export class CatalogSearchService {
     const filters = { ...this._filters(), owned: [] };
     const sets = this.sets();
     const tally: Record<OwnedValue, number> = { owned: 0, missing: 0 };
-    for (const { row } of this.queryMatches()) {
-      if (matchesFilters(row, filters, sets.get(row.setKey)?.seriesKey, owned)) {
-        tally[owned(row)] += 1;
+    for (const card of this.queryMatches()) {
+      if (matchesFilters(card, filters, sets.get(card.row.setKey)?.seriesKey, owned)) {
+        tally[owned(card.row)] += 1;
       }
     }
     return [
@@ -176,10 +179,11 @@ export class CatalogSearchService {
     ];
   });
 
-  /** What the current catalog calls its sets and series, for labeling filter picks. */
-  readonly setNames = computed(() => ({
+  /** What the current catalog calls its sets, series and illustrators, for labeling filter picks. */
+  readonly filterNames = computed(() => ({
     sets: this.sets(),
     seriesNames: this.seriesNames(),
+    illustrators: this.searchIndex.illustrators(),
     language: this.language(),
   }));
 
@@ -202,7 +206,7 @@ export class CatalogSearchService {
     const sets = this.sets();
     const owned = this.ownedTest();
     const matches = this.queryMatches().filter((card) =>
-      matchesFilters(card.row, filters, sets.get(card.row.setKey)?.seriesKey, owned)
+      matchesFilters(card, filters, sets.get(card.row.setKey)?.seriesKey, owned)
     );
     const order = (setKey: string) => sets.get(setKey)?.order ?? Number.MAX_SAFE_INTEGER;
     matches.sort(
@@ -232,14 +236,17 @@ export class CatalogSearchService {
     const owned = this.ownedTest();
     const matching = (except: Partial<SearchFilters>) => {
       const others = { ...filters, ...except };
-      return cards.filter(({ row }) =>
-        matchesFilters(row, others, sets.get(row.setKey)?.seriesKey, owned)
+      return cards.filter((card) =>
+        matchesFilters(card, others, sets.get(card.row.setKey)?.seriesKey, owned)
       );
     };
-    const tally = (rows: IndexedCard[], values: (row: CatalogSearchRow) => readonly string[]) => {
+    const tally = (
+      matches: IndexedCard[],
+      values: (row: CatalogSearchRow, card: IndexedCard) => readonly string[]
+    ) => {
       const counts = new Map<string, number>();
-      for (const { row } of rows) {
-        for (const value of values(row)) {
+      for (const card of matches) {
+        for (const value of values(card.row, card)) {
           counts.set(value, (counts.get(value) ?? 0) + 1);
         }
       }
@@ -257,15 +264,28 @@ export class CatalogSearchService {
       ),
       /** By set key. */
       sets: tally(matching({ series: [], sets: [] }), (row) => [row.setKey]),
+      /** By filter value (`illustratorKey`); `filterNames` has their names. */
+      illustrators: sorted(
+        tally(matching({ illustrators: [] }), (_row, card) =>
+          card.illustrator ? [card.illustrator] : []
+        )
+      ),
     };
   });
 
   constructor() {
     effect(() => {
-      this.region();
+      const region = this.region();
       untracked(() => {
-        // Sets belong to one catalog; the other filters apply to both.
-        this._filters.update((filters) => ({ ...filters, series: [], sets: [] }));
+        // Sets belong to one catalog (their keys start with it); the other
+        // filters apply to both. Picks already for the new catalog stay
+        // (`showOnly` picks before switching).
+        const ours = (key: string) => key.startsWith(`${region}:`);
+        this._filters.update((filters) => ({
+          ...filters,
+          series: filters.series.filter(ours),
+          sets: filters.sets.filter(ours),
+        }));
       });
     });
   }
@@ -280,6 +300,20 @@ export class CatalogSearchService {
     this._filters.set(filters);
     this._active.set(true);
     this.searchChanges.update((count) => count + 1);
+  }
+
+  /**
+   * Shows the cards of `region`'s catalog matching `filters` alone, without
+   * a query or any other filter: a card detail's Illustrator or Set row
+   * (docs/ui.md → Card detail). Switches the catalog (a remembered setting)
+   * when the card is from the other one, as a deck's card can be.
+   */
+  async showOnly(region: CatalogRegion, filters: Partial<SearchFilters>): Promise<void> {
+    this._query.set('');
+    this.setFilters({ ...NO_FILTERS, ...filters });
+    if (region !== this.region()) {
+      await this.browse.setRegion(region);
+    }
   }
 
   /** Loads the current catalog's search rows again after a failure. */
@@ -319,18 +353,20 @@ export class CatalogSearchService {
 
 /** `owned` tells a card's collection status; it's only asked while the Collection filter is used. */
 function matchesFilters(
-  row: CatalogSearchRow,
+  card: IndexedCard,
   filters: SearchFilters,
   seriesKey: string | undefined,
   owned: (row: CatalogSearchRow) => OwnedValue
 ): boolean {
   const any = (values: string[], test: (value: string) => boolean) =>
     values.length === 0 || values.some(test);
+  const { row } = card;
   const categories = categoryValues(row);
   return (
     any(filters.categories, (value) => categories.includes(value)) &&
     any(filters.types, (type) => row.types.includes(type)) &&
     any(filters.rarities, (rarity) => row.rarity === rarity) &&
+    any(filters.illustrators, (illustrator) => card.illustrator === illustrator) &&
     (filters.owned.length === 0 || filters.owned.includes(owned(row))) &&
     (filters.series.length === 0 && filters.sets.length === 0
       ? true

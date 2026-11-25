@@ -6,6 +6,7 @@ import { CATALOG_SEARCH_ROW_VERSION } from '../data/catalog-search-row';
 import type { CatalogSearchRow, StorageEngine } from '../data/storage-engine';
 import { StorageEngineFactory } from '../data/storage-engine.factory';
 import {
+  illustratorKey,
   parseCardNumber,
   prepareName,
   type CardNumber,
@@ -22,6 +23,15 @@ export interface IndexedCard {
   row: CatalogSearchRow;
   names: PreparedName[];
   number: CardNumber | null;
+  /** The illustrator's filter value (`illustratorKey`), or null without one. */
+  illustrator: string | null;
+}
+
+interface LoadedIndex {
+  region: CatalogRegion;
+  cards: IndexedCard[];
+  /** Each illustrator's name by filter value: its most common spelling in the catalog. */
+  illustrators: ReadonlyMap<string, string>;
 }
 
 /**
@@ -35,11 +45,16 @@ export class CatalogSearchIndexService {
   private readonly storageEngineFactory = inject(StorageEngineFactory);
   private readonly browse = inject(CatalogBrowseService);
 
-  private readonly index = signal<{ region: CatalogRegion; cards: IndexedCard[] } | null>(null);
+  private readonly index = signal<LoadedIndex | null>(null);
   /** The current catalog's cards, or none until they've loaded. */
   readonly cards = computed<IndexedCard[]>(() => {
     const index = this.index();
     return index?.region === this.browse.region() ? index.cards : [];
+  });
+  /** The current catalog's illustrator names by filter value (`illustratorKey`). */
+  readonly illustrators = computed<ReadonlyMap<string, string>>(() => {
+    const index = this.index();
+    return index?.region === this.browse.region() ? index.illustrators : new Map();
   });
   /** Whether the current catalog's search rows have loaded. */
   readonly ready = computed(() => this.index()?.region === this.browse.region());
@@ -80,15 +95,15 @@ export class CatalogSearchIndexService {
       if (load !== this.loads) {
         return;
       }
-      this.index.set({
-        region,
-        cards: rows.map((row) => ({
-          row,
-          names: row.names.map(prepareName),
-          // A row an older version wrote (another tab) just isn't searchable by number.
-          number: parseCardNumber(row.number ?? ''),
-        })),
-      });
+      const cards = rows.map<IndexedCard>((row) => ({
+        row,
+        names: row.names.map(prepareName),
+        // A row an older version wrote (another tab) has no number or
+        // illustrator, so it just isn't found by them.
+        number: parseCardNumber(row.number ?? ''),
+        illustrator: illustratorKey(row.illustrator),
+      }));
+      this.index.set({ region, cards, illustrators: illustratorNames(cards) });
     } catch (error: unknown) {
       console.error('catalog.search_load_failed', error);
       if (load === this.loads) {
@@ -117,4 +132,27 @@ export class CatalogSearchIndexService {
       throw error;
     }
   }
+}
+
+/**
+ * Each illustrator's most common spelling by filter value ("takuyoa" on 199
+ * cards beats "Takuyoa" on one); a tie goes to the first in A–Z order.
+ */
+function illustratorNames(cards: readonly IndexedCard[]): Map<string, string> {
+  const spellings = new Map<string, Map<string, number>>();
+  for (const { row, illustrator } of cards) {
+    if (illustrator && row.illustrator) {
+      const counts = spellings.get(illustrator) ?? new Map<string, number>();
+      counts.set(row.illustrator, (counts.get(row.illustrator) ?? 0) + 1);
+      spellings.set(illustrator, counts);
+    }
+  }
+  return new Map(
+    [...spellings].map(([key, counts]) => {
+      const [name = key] = [...counts]
+        .sort(([a, countA], [b, countB]) => countB - countA || a.localeCompare(b))
+        .map(([spelling]) => spelling);
+      return [key, name];
+    })
+  );
 }

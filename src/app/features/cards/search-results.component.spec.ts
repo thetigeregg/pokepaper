@@ -15,6 +15,7 @@ import { ImageCacheService } from '../../core/services/image-cache.service';
 import { LayoutService } from '../../core/services/layout.service';
 import { VisibilityService } from '../../core/services/visibility.service';
 import { CardDetailComponent } from './card-detail.component';
+import type { CardSearch } from './card-details.component';
 import { RESULTS_PAGE_SIZE, SearchResultsComponent } from './search-results.component';
 
 /** An empty collection, for specs that don't test collection tracking. */
@@ -63,6 +64,7 @@ describe('SearchResultsComponent', () => {
     language: signal('en'),
     recent: signal<string[]>([]),
     setQuery: vi.fn(),
+    showOnly: vi.fn(() => Promise.resolve()),
     rememberQuery: vi.fn(() => Promise.resolve()),
     clearRecent: vi.fn(() => Promise.resolve()),
   };
@@ -336,6 +338,22 @@ describe('SearchResultsComponent', () => {
 
     expect(await loadMore()).toHaveLength(RESULTS_PAGE_SIZE + 3);
     expect(results.allLoaded()).toBe(true);
+  });
+
+  it("lets the card modal's Set and Illustrator rows show this search, filtered", async () => {
+    const cards = [card('sv01', 1)];
+    store(cards);
+    search.results.set(result(cards));
+    const results = await create();
+
+    await results.openCard(0);
+    const props = (
+      createModal.mock.lastCall as unknown as [{ componentProps: Record<string, unknown> }]
+    )[0].componentProps;
+    const showSearch = props['showSearchProp'] as (search: CardSearch) => Promise<void>;
+    await showSearch({ region: 'intl', filters: { illustrators: ['kensugimori'] } });
+
+    expect(search.showOnly).toHaveBeenCalledWith('intl', { illustrators: ['kensugimori'] });
   });
 
   it('opens cards in a centered dialog on desktop', async () => {

@@ -198,6 +198,49 @@ describe('CardDetailsComponent', () => {
     expect(root.querySelector('app-card-image')).not.toBeNull();
   });
 
+  describe('Set and Illustrator rows', () => {
+    const searches = (fixture: ComponentFixture<CardDetailsComponent>) => {
+      const emitted: unknown[] = [];
+      fixture.componentInstance.searchFor.subscribe((search) => emitted.push(search));
+      return emitted;
+    };
+    const row = (fixture: ComponentFixture<CardDetailsComponent>, testId: string) =>
+      element(fixture).querySelector(`[data-testid="detail-${testId}-row"]`) as HTMLIonItemElement;
+
+    it('are buttons asking for a search of their value, with a search to show', () => {
+      const fixture = create({ ...base, illustrator: ' aky CG Works ' });
+      fixture.componentRef.setInput('searchable', true);
+      fixture.detectChanges();
+      const emitted = searches(fixture);
+
+      expect(row(fixture, 'set').button).toBe(true);
+      expect(row(fixture, 'illustrator').detail).toBe(true);
+      expect(detail(fixture, 'illustrator')).toBe('aky CG Works');
+      row(fixture, 'set').click();
+      row(fixture, 'illustrator').click();
+
+      expect(emitted).toEqual([
+        { region: 'intl', filters: { sets: ['intl:sv01'] } },
+        { region: 'intl', filters: { illustrators: ['akycgworks'] } },
+      ]);
+    });
+
+    it('stay plain without one', () => {
+      const fixture = create({ ...base, illustrator: 'Ken Sugimori' });
+      const emitted = searches(fixture);
+
+      expect(row(fixture, 'set').button).toBe(false);
+      row(fixture, 'set').click();
+      row(fixture, 'illustrator').click();
+
+      expect(emitted).toEqual([]);
+    });
+
+    it('leave out TCGdex\'s "N/A" illustrator', () => {
+      expect(detail(create({ ...base, illustrator: 'N/A' }), 'illustrator')).toBeUndefined();
+    });
+  });
+
   it('names the set in the language, else in another', () => {
     expect(detail(create(base, 'fr'), 'set')).toBe('Écarlate et Violet · 004/198');
     expect(detail(create(base, 'de'), 'set')).toBe('Scarlet & Violet · 004/198');

@@ -29,7 +29,7 @@ import { Keyboard, Virtual } from 'swiper/modules';
 import { catalogKey } from '../../core/data/storage-engine';
 import { CatalogLanguageService } from '../../core/services/catalog-language.service';
 import { cardText } from './card-display';
-import { CardDetailsComponent } from './card-details.component';
+import { CardDetailsComponent, type CardSearch } from './card-details.component';
 import { LanguageButtonComponent } from './language-button.component';
 
 /** Load more when the current card is this close to the last one loaded. */
@@ -81,7 +81,14 @@ export class CardDetailComponent implements OnInit, AfterViewInit, OnDestroy {
    * resolving to every card loaded so far; absent for a set, which is whole.
    */
   loadMoreProp: (() => Promise<CatalogCard[]>) | null = null;
+  /**
+   * Shows a search for a card's set or illustrator (its Set and Illustrator
+   * rows), after the modal closes: the opener's search, wherever it shows.
+   * Absent where there's none to show, which leaves the rows plain.
+   */
+  showSearchProp: ((search: CardSearch) => Promise<void>) | null = null;
   private loadingMore = false;
+  readonly searchable = signal(false);
 
   /** Null until ngOnInit copies the modal's props. */
   private readonly sets = signal<{
@@ -105,6 +112,7 @@ export class CardDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     this.sets.set({ one: this.setProp, byKey: this.setsProp });
     this.cards.set(this.cardsProp);
     this.index.set(this.startIndex);
+    this.searchable.set(this.showSearchProp !== null);
   }
   readonly current = computed(() => this.cards().at(this.index()));
   /** The current card's set, for the header's language button. */
@@ -236,5 +244,19 @@ export class CardDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   close(): void {
     void this.modalController.dismiss();
+  }
+
+  /** Closes the modal and shows the search a Set or Illustrator row asked for. */
+  async showSearch(search: CardSearch): Promise<void> {
+    const show = this.showSearchProp;
+    if (!show) {
+      return;
+    }
+    try {
+      await this.modalController.dismiss();
+      await show(search);
+    } catch (error: unknown) {
+      console.error('catalog.card_search_failed', error);
+    }
   }
 }

@@ -37,6 +37,7 @@ import {
   FILTER_TITLES,
   categoryGroups,
   collectionOptions,
+  illustratorOptions,
   rarityOptions,
   setGroups,
   typeOptions,
@@ -46,6 +47,11 @@ import {
   type FilterOption,
 } from './search-filters';
 import { SetLogoComponent } from './set-logo.component';
+
+const SEARCH_PLACEHOLDERS: Partial<Record<FilterKind, string>> = {
+  set: 'Search sets',
+  illustrator: 'Search illustrators',
+};
 
 /**
  * One filter's values as checkboxes (docs/ui.md → Cards → Search), in an
@@ -109,7 +115,15 @@ export class FilterPickerComponent implements OnInit {
   readonly kind = signal<FilterKind>('type');
   readonly sheet = signal(false);
   readonly title = computed(() => FILTER_TITLES[this.kind()]);
-  readonly setQuery = signal('');
+  /** What's typed in the picker's own searchbar (sets and illustrators, which are many). */
+  readonly query = signal('');
+  readonly searchPlaceholder = computed(() => SEARCH_PLACEHOLDERS[this.kind()] ?? null);
+  /** A search of the picker's own that leaves nothing says so, not that no card matches. */
+  readonly emptyText = computed(() =>
+    this.kind() === 'illustrator' && this.query().trim()
+      ? 'No illustrators match'
+      : 'No cards match this search'
+  );
   readonly language = this.browse.language;
   /** The searched catalog, for its rarity symbols. */
   readonly region = this.browse.region;
@@ -126,16 +140,10 @@ export class FilterPickerComponent implements OnInit {
       case 'category':
         return categoryGroups(withPicked(counts.categories, filters.categories));
       case 'set':
-        return setGroups(
-          this.browse.groups(),
-          this.browse.language(),
-          this.setQuery(),
-          counts.sets,
-          {
-            series: filters.series,
-            sets: filters.sets,
-          }
-        );
+        return setGroups(this.browse.groups(), this.browse.language(), this.query(), counts.sets, {
+          series: filters.series,
+          sets: filters.sets,
+        });
       default:
         return null;
     }
@@ -150,6 +158,12 @@ export class FilterPickerComponent implements OnInit {
         return typeOptions(withPicked(this.search.counts().types, filters.types));
       case 'rarity':
         return rarityOptions(withPicked(this.search.counts().rarities, filters.rarities));
+      case 'illustrator':
+        return illustratorOptions(
+          withPicked(this.search.counts().illustrators, filters.illustrators),
+          this.search.filterNames().illustrators,
+          this.query()
+        );
       default:
         return [];
     }

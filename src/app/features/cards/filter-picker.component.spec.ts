@@ -38,6 +38,20 @@ describe('FilterPickerComponent', () => {
         ['intl:sv01', 7],
         ['intl:sv02', 2],
       ]),
+      // Most common first, as the search counts them.
+      illustrators: [
+        { value: 'takuyoa', count: 200 },
+        { value: 'kensugimori', count: 90 },
+        { value: 'akycgworks', count: 12 },
+      ],
+    }),
+    filterNames: () => ({
+      illustrators: new Map([
+        ['takuyoa', 'takuyoa'],
+        ['kensugimori', 'Ken Sugimori'],
+        ['akycgworks', 'aky CG Works'],
+        ['mitsuhiroarita', 'Mitsuhiro Arita'],
+      ]),
     }),
     ownedCounts: signal([
       { value: 'owned', count: 0 },
@@ -155,12 +169,39 @@ describe('FilterPickerComponent', () => {
     picker.toggleGroup(series, true);
     expect(filters()).toEqual({ ...NO_FILTERS, series: ['intl:sv'] });
 
-    picker.setQuery.set('paldea');
+    picker.query.set('paldea');
     fixture.detectChanges();
     expect(testIds('filter-option-')).toEqual(['filter-option-intl:sv02']);
-    picker.setQuery.set('nothing like it');
+    picker.query.set('nothing like it');
     fixture.detectChanges();
     expect(root().querySelector('[data-testid="filter-empty"]')).not.toBeNull();
+  });
+
+  it('lists illustrators A–Z by name, and searches them', () => {
+    filters.set({ ...NO_FILTERS, illustrators: ['mitsuhiroarita'] });
+    const picker = create('illustrator');
+
+    expect(picker.title()).toBe('Illustrator');
+    expect(picker.options().map((option) => [option.label, option.count])).toEqual([
+      ['aky CG Works', 12],
+      ['Ken Sugimori', 90],
+      ['Mitsuhiro Arita', 0], // Picked, and kept with no cards.
+      ['takuyoa', 200],
+    ]);
+    expect(root().querySelector('[data-testid="illustrator-search"]')).not.toBeNull();
+    expect(picker.searchPlaceholder()).toBe('Search illustrators');
+
+    picker.toggleOption(picker.options()[1], true);
+    expect(filters().illustrators).toEqual(['mitsuhiroarita', 'kensugimori']);
+
+    picker.query.set('SUGI');
+    fixture.detectChanges();
+    expect(testIds('filter-option-')).toEqual(['filter-option-kensugimori']);
+    picker.query.set('nobody');
+    fixture.detectChanges();
+    expect(root().querySelector('[data-testid="filter-empty"]')?.textContent).toContain(
+      'No illustrators match'
+    );
   });
 
   it('keeps picked values the search has no cards for, at 0', () => {

@@ -26,9 +26,11 @@ describe('card searchbar and filter chips', () => {
     language: signal('en'),
     sets: signal(new Map([['intl:sv01', { set: sv01, seriesKey: 'intl:sv', order: 0 }]])),
     seriesNames: signal(new Map([['intl:swsh', 'Sword & Shield']])),
-    setNames: () => ({
+    illustrators: signal(new Map([['kensugimori', 'Ken Sugimori']])),
+    filterNames: () => ({
       sets: search.sets(),
       seriesNames: search.seriesNames(),
+      illustrators: search.illustrators(),
       language: search.language(),
     }),
     setQuery: vi.fn(),
@@ -138,6 +140,7 @@ describe('card searchbar and filter chips', () => {
         categories: ['Trainer/Supporter'],
         sets: ['intl:sv01'],
         series: ['intl:swsh', 'intl:gone'],
+        illustrators: ['kensugimori'],
         owned: ['missing'],
       });
       const chips = create();
@@ -147,12 +150,16 @@ describe('card searchbar and filter chips', () => {
         ['category', true, 'Category: Supporter'],
         ['type', false, 'Type'],
         ['rarity', false, 'Rarity'],
+        ['illustrator', true, 'Illustrator: Ken Sugimori'],
         ['set', true, 'Set: Sword & Shield +2'],
       ]);
       filters.set({ ...NO_FILTERS, series: ['intl:gone'], sets: ['intl:sv01'] });
-      expect(chips.chips()[4]?.label).toBe('Set: intl:gone +1');
+      expect(chips.chips()[5]?.label).toBe('Set: intl:gone +1');
       filters.set({ ...NO_FILTERS, sets: ['intl:sv01'] });
-      expect(chips.chips()[4]?.label).toBe('Set: Scarlet & Violet');
+      expect(chips.chips()[5]?.label).toBe('Set: Scarlet & Violet');
+      // A name the catalog no longer has shows its filter value.
+      filters.set({ ...NO_FILTERS, illustrators: ['gone'] });
+      expect(chips.chips()[4]?.label).toBe('Illustrator: gone');
     });
 
     it('clears one filter or all of them', () => {
@@ -279,6 +286,7 @@ describe('card searchbar and filter chips', () => {
         ['Category', 'Item'],
         ['Type', null],
         ['Rarity', null],
+        ['Illustrator', null],
         ['Set', 'Scarlet & Violet'],
       ]);
       expect(root().querySelector('[data-testid="filters-row-type"]')?.textContent).toContain(

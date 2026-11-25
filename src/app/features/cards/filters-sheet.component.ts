@@ -87,7 +87,7 @@ export class FiltersSheetComponent {
 
   readonly rows = computed(() => {
     const filters = this.search.filters();
-    const names = this.search.setNames();
+    const names = this.search.filterNames();
     return FILTER_KINDS.map((kind) => ({
       kind,
       title: FILTER_TITLES[kind],

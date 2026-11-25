@@ -57,21 +57,28 @@ function pack(
 }
 
 const SV01 = pack('intl', 'sv01', 'sv', '2023-03-31', [
-  { names: { en: 'Pineco', fr: 'Pomdépik' } },
-  { names: { en: 'Pikachu' }, types: ['Lightning'], rarity: 'Rare' },
+  { names: { en: 'Pineco', fr: 'Pomdépik' }, illustrator: 'takuyoa' },
+  { names: { en: 'Pikachu' }, types: ['Lightning'], rarity: 'Rare', illustrator: 'Ken Sugimori' },
   {
     names: { en: "Professor's Research" },
     category: 'Trainer',
     trainerType: 'Supporter',
     types: [],
     rarity: null,
+    illustrator: 'N/A',
   },
 ]);
 const SV02 = pack('intl', 'sv02', 'sv', '2023-06-09', [
-  { names: { en: 'Pikachu ex' }, types: ['Lightning'], rarity: 'Double rare' },
+  {
+    names: { en: 'Pikachu ex' },
+    types: ['Lightning'],
+    rarity: 'Double rare',
+    illustrator: 'takuyoa',
+  },
 ]);
 const SWSH1 = pack('intl', 'swsh1', 'swsh', '2020-02-07', [
-  { names: { en: 'Pikachu V' }, types: ['Lightning'], rarity: 'Rare' },
+  // TCGdex spells some illustrators more than one way.
+  { names: { en: 'Pikachu V' }, types: ['Lightning'], rarity: 'Rare', illustrator: 'Takuyoa' },
 ]);
 const SV2A = pack('asia', 'SV2a', 'SV', '2023-06-16', [
   { names: { ja: 'ピカチュウ' }, types: ['Lightning'] },
@@ -256,6 +263,61 @@ describe('CatalogSearchService', () => {
     service.setQuery('pika');
     service.setFilters({ ...NO_FILTERS, sets: ['intl:sv01'] });
     expect(keys(service)).toEqual(['intl:sv01-2']);
+  });
+
+  it('filters by illustrator, one value for spellings that differ only in case', async () => {
+    const service = await create();
+
+    expect(service.counts().illustrators).toEqual([
+      { value: 'takuyoa', count: 3 },
+      { value: 'kensugimori', count: 1 },
+    ]);
+    // The most common spelling names it; "N/A" isn't an illustrator.
+    expect([...service.filterNames().illustrators]).toEqual([
+      ['takuyoa', 'takuyoa'],
+      ['kensugimori', 'Ken Sugimori'],
+    ]);
+
+    service.setFilters({ ...NO_FILTERS, illustrators: ['takuyoa'] });
+    expect(keys(service)).toEqual(['intl:sv02-1', 'intl:sv01-1', 'intl:swsh1-1']);
+    service.setFilters({ ...NO_FILTERS, illustrators: ['takuyoa'], types: ['Lightning'] });
+    expect(keys(service)).toEqual(['intl:sv02-1', 'intl:swsh1-1']);
+    // Its own picks don't narrow its counts; the other filters' do.
+    expect(service.counts().illustrators).toEqual([
+      { value: 'takuyoa', count: 2 },
+      { value: 'kensugimori', count: 1 },
+    ]);
+  });
+
+  describe('showOnly', () => {
+    it('shows just the given filter, dropping the query and the other filters', async () => {
+      const service = await create();
+      service.setQuery('pika');
+      service.setFilters({ ...NO_FILTERS, types: ['Lightning'] });
+      service.deactivate();
+
+      await service.showOnly('intl', { illustrators: ['kensugimori'] });
+
+      expect(service.query()).toBe('');
+      expect(service.filters()).toEqual({ ...NO_FILTERS, illustrators: ['kensugimori'] });
+      expect(service.active()).toBe(true);
+      expect(keys(service)).toEqual(['intl:sv01-2']);
+    });
+
+    it("switches to the card's catalog, keeping a set filter for it", async () => {
+      const service = await create();
+      service.setFilters({ ...NO_FILTERS, sets: ['intl:sv01'] });
+
+      await service.showOnly('asia', { sets: ['asia:SV2a'] });
+      TestBed.tick();
+      await vi.waitFor(() => {
+        expect(service.ready()).toBe(true);
+      });
+
+      expect(TestBed.inject(CatalogBrowseService).region()).toBe('asia');
+      expect(service.filters()).toEqual({ ...NO_FILTERS, sets: ['asia:SV2a'] });
+      expect(keys(service)).toEqual(['asia:SV2a-1']);
+    });
   });
 
   it('counts filter values in the catalog, most common first', async () => {
@@ -468,7 +530,7 @@ describe('CatalogSearchService', () => {
     );
   });
 
-  it('loads rows an older version wrote without a number, matching them by name only', async () => {
+  it('loads rows an older version wrote without a number or illustrator, matching by name only', async () => {
     await engine.putSyncMeta({
       key: SEARCH_ROW_VERSION_KEY,
       value: String(CATALOG_SEARCH_ROW_VERSION),
@@ -477,12 +539,16 @@ describe('CatalogSearchService', () => {
     if (!row) {
       throw new Error('The set has a search row');
     }
-    delete row.number; // As another tab on the previous version writes it.
+    delete row.number; // As another tab on an older version writes it.
+    delete row.illustrator;
     await db.catalogCardSearch.put(row);
 
     const service = await create();
 
     expect(service.failed()).toBe(false);
+    service.setFilters({ ...NO_FILTERS, illustrators: ['takuyoa'] });
+    expect(keys(service)).toEqual(['intl:sv02-1', 'intl:sv01-1']);
+    service.setFilters(NO_FILTERS);
     service.setQuery('pika 1');
     expect(keys(service)).toEqual(['intl:sv02-1']);
     service.setQuery('pikachu v');
@@ -514,8 +580,8 @@ describe('CatalogSearchService', () => {
 
   it("names the catalog's series by key", async () => {
     const service = await create();
-    expect(service.setNames().sets.size).toBe(3);
-    expect(service.setNames().language).toBe('en');
+    expect(service.filterNames().sets.size).toBe(3);
+    expect(service.filterNames().language).toBe('en');
 
     expect([...service.seriesNames()]).toEqual([
       ['intl:sv', 'Scarlet & Violet'],
