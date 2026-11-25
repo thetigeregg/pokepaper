@@ -660,6 +660,7 @@ export function describeStorageEngineContract(
             subtype: null,
             rarity: 'Common',
             types: ['Grass'],
+            illustrator: null,
           },
           {
             key: 'intl:sv01-002',
@@ -672,6 +673,7 @@ export function describeStorageEngineContract(
             subtype: 'Supporter',
             rarity: null,
             types: [],
+            illustrator: null,
           },
         ]);
         expect(await engine.listCatalogSearchRows('asia')).toEqual([]);

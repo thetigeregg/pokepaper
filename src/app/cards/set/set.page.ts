@@ -22,6 +22,7 @@ import {
   IonTitle,
   IonToolbar,
   ModalController,
+  NavController,
 } from '@ionic/angular';
 import type { CatalogCard, CatalogLanguage, CatalogRegion, CatalogSet } from '@pokepaper/shared';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -31,6 +32,7 @@ import { cloudDoneOutline, cloudDownloadOutline, gridOutline, listOutline } from
 import { catalogKey, type StorageEngine } from '../../core/data/storage-engine';
 import { StorageEngineFactory } from '../../core/data/storage-engine.factory';
 import { CatalogBrowseService, localized } from '../../core/services/catalog-browse.service';
+import { CatalogSearchService } from '../../core/services/catalog-search.service';
 import {
   CatalogLanguageService,
   LANGUAGE_LABELS,
@@ -39,6 +41,8 @@ import { CatalogSyncService } from '../../core/services/catalog-sync.service';
 import { ImageDownloadService } from '../../core/services/image-download.service';
 import { LayoutService } from '../../core/services/layout.service';
 import { CardDetailComponent } from '../../features/cards/card-detail.component';
+import type { CardSearch } from '../../features/cards/card-details.component';
+import { CARDS_HOME_URL } from '../../features/cards/card-searchbar.component';
 import { cardText, setLine } from '../../features/cards/card-display';
 import { CardTileComponent } from '../../features/cards/card-tile.component';
 import { LanguageButtonComponent } from '../../features/cards/language-button.component';
@@ -85,6 +89,8 @@ export class SetPage implements OnInit {
   private readonly downloads = inject(ImageDownloadService);
   private readonly actionSheets = inject(ActionSheetController);
   private readonly modals = inject(ModalController);
+  private readonly nav = inject(NavController);
+  private readonly search = inject(CatalogSearchService);
   private readonly catalogSync = inject(CatalogSyncService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly browse = inject(CatalogBrowseService);
@@ -225,10 +231,26 @@ export class SetPage implements OnInit {
     const sheet = !this.layout.wide();
     const modal = await this.modals.create({
       component: CardDetailComponent,
-      componentProps: { setProp: set, cardsProp: this.cards(), startIndex: index },
+      componentProps: {
+        setProp: set,
+        cardsProp: this.cards(),
+        startIndex: index,
+        showSearchProp: (search: CardSearch) => this.showSearch(search),
+      },
       cssClass: 'card-detail-modal',
       ...(sheet ? { breakpoints: [0, 1], initialBreakpoint: 1, handle: true } : {}),
     });
     await modal.present();
+  }
+  /**
+   * A card's Set or Illustrator row: the Cards tab's search, filtered to it,
+   * where results show (back on phones; in place of the set on desktop, as
+   * the searchbar does).
+   */
+  private async showSearch(search: CardSearch): Promise<void> {
+    await this.search.showOnly(search.region, search.filters);
+    await (this.layout.wide()
+      ? this.nav.navigateRoot(CARDS_HOME_URL, { animated: false })
+      : this.nav.navigateBack(CARDS_HOME_URL));
   }
 }

@@ -8,6 +8,7 @@ import { makeContractCard, makeContractPack } from '../../core/data/storage-engi
 import { StorageEngineFactory } from '../../core/data/storage-engine.factory';
 import { CatalogLanguageService } from '../../core/services/catalog-language.service';
 import { CatalogPriceService } from '../../core/services/catalog-price.service';
+import { CatalogSearchService } from '../../core/services/catalog-search.service';
 import { CurrencyService, formatMoney } from '../../core/services/currency.service';
 import { CatalogSyncService } from '../../core/services/catalog-sync.service';
 import { DeckChecksService } from '../../features/decks/deck-checks.service';
@@ -18,6 +19,7 @@ import { ImageCacheService } from '../../core/services/image-cache.service';
 import { LayoutService } from '../../core/services/layout.service';
 import { VisibilityService } from '../../core/services/visibility.service';
 import { CardDetailComponent } from '../../features/cards/card-detail.component';
+import type { CardSearch } from '../../features/cards/card-details.component';
 import { DeckDialogsService } from '../../features/decks/deck-dialogs.service';
 import { AddCardsComponent } from '../add-cards/add-cards.component';
 import { DeckCoverPickerComponent } from './deck-cover-picker.component';
@@ -107,7 +109,9 @@ describe('DeckPage', () => {
       Promise.resolve({ name: 'x', total: 0, limit: 4 })
     ),
   };
+  const search = { showOnly: vi.fn(() => Promise.resolve()) };
   const nav = {
+    navigateRoot: vi.fn((_url: string) => Promise.resolve(true)),
     navigateBack: vi.fn((_url: string) => Promise.resolve(true)),
     navigateForward: vi.fn((_url: unknown, _options?: unknown) => Promise.resolve(true)),
   };
@@ -176,6 +180,7 @@ describe('DeckPage', () => {
         },
         { provide: VisibilityService, useValue: { whenVisible: () => () => undefined } },
         { provide: CatalogPriceService, useValue: priceService },
+        { provide: CatalogSearchService, useValue: search },
         { provide: CurrencyService, useValue: currencyService },
       ],
     });
@@ -1029,10 +1034,28 @@ describe('DeckPage', () => {
           setsProp: new Map([['intl:sv01', sv01]]),
           cardsProp: [pokemon, trainer, energy],
           startIndex: 1,
+          showSearchProp: expect.any(Function) as unknown,
         },
         breakpoints: [0, 1],
       })
     );
+  });
+
+  it("shows a card's Set or Illustrator search in the Cards tab", async () => {
+    await create();
+    (
+      query('[data-testid="deck-card-intl:sv01-166"] [data-testid="open-card"]') as HTMLElement
+    ).click();
+    await settle();
+    const props = createModal.mock.lastCall?.[0]['componentProps'] as {
+      showSearchProp: (search: CardSearch) => Promise<void>;
+    };
+
+    await props.showSearchProp({ region: 'asia', filters: { sets: ['asia:SV2a'] } });
+
+    // The card's catalog, which may not be the one the Cards tab shows.
+    expect(search.showOnly).toHaveBeenCalledWith('asia', { sets: ['asia:SV2a'] });
+    expect(nav.navigateRoot).toHaveBeenCalledWith('/tabs/cards');
   });
 
   it('opens a card from anywhere on its scan, name and number, or by keyboard', async () => {

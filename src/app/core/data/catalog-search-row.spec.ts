@@ -22,4 +22,15 @@ describe('catalogSearchRow', () => {
       })
     );
   });
+
+  it('keeps the illustrator as spelled, without TCGdex\'s "N/A"', () => {
+    const card = makeContractCard('intl', 'sv01', 'sv01-1', 0);
+
+    expect(catalogSearchRow({ ...card, illustrator: ' Ken Sugimori ' }, 'intl:sv01')).toEqual(
+      expect.objectContaining({ illustrator: 'Ken Sugimori' })
+    );
+    expect(catalogSearchRow({ ...card, illustrator: 'N/A' }, 'intl:sv01').illustrator).toBeNull();
+    expect(catalogSearchRow({ ...card, illustrator: '' }, 'intl:sv01').illustrator).toBeNull();
+    expect(catalogSearchRow({ ...card, illustrator: null }, 'intl:sv01').illustrator).toBeNull();
+  });
 });

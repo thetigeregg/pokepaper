@@ -34,6 +34,7 @@ import { CatalogLanguageService } from '../../core/services/catalog-language.ser
 import { CatalogSearchService } from '../../core/services/catalog-search.service';
 import { LayoutService } from '../../core/services/layout.service';
 import { CardDetailComponent } from './card-detail.component';
+import type { CardSearch } from './card-details.component';
 import { cardText, setLine } from './card-display';
 import { CardTileComponent } from './card-tile.component';
 import { SetSymbolComponent } from './set-symbol.component';
@@ -265,6 +266,8 @@ export class SearchResultsComponent {
           await this.loadMore();
           return this.loaded().map(({ card }) => card);
         },
+        // Set and Illustrator search here (the Cards tab's or a deck's Add cards).
+        showSearchProp: (search: CardSearch) => this.search.showOnly(search.region, search.filters),
       },
       cssClass: 'card-detail-modal',
       ...(sheet ? { breakpoints: [0, 1], initialBreakpoint: 1, handle: true } : {}),

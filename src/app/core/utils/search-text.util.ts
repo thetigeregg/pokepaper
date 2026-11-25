@@ -129,3 +129,22 @@ export function cardMatches(
       ) || name.compact.startsWith(query.compact)
   );
 }
+
+/** What TCGdex writes for a card without a credited illustrator. */
+const NO_ILLUSTRATOR = 'n a';
+
+/**
+ * An illustrator as one filter value (docs/catalog.md → Search): the name
+ * normalized with its spaces and punctuation left out, so TCGdex's spellings
+ * that differ only in those ("takuyoa" and "Takuyoa", "aky CG Works" and
+ * "akyCG Works") are one artist. Null for no name, or TCGdex's "N/A".
+ */
+export function illustratorKey(name: string | null | undefined): string | null {
+  const normalized = normalizeSearchText(name ?? '');
+  return normalized === '' || normalized === NO_ILLUSTRATOR ? null : normalized.replace(/ /g, '');
+}
+
+/** The illustrator as TCGdex spells it (trimmed), or null when it has no `illustratorKey`. */
+export function illustratorName(name: string | null | undefined): string | null {
+  return illustratorKey(name) ? (name?.trim() ?? null) : null;
+}

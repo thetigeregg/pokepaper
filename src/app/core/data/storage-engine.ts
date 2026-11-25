@@ -75,6 +75,11 @@ export interface CatalogSearchRow {
   subtype: string | null;
   rarity: string | null;
   types: string[];
+  /**
+   * The illustrator as TCGdex spells it, or null without one (or "N/A").
+   * Missing from rows built before `CATALOG_SEARCH_ROW_VERSION` 3.
+   */
+  illustrator?: string | null;
 }
 
 /** Counts for the catalog on this device. */

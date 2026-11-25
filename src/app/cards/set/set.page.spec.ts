@@ -1,13 +1,19 @@
 import { signal } from '@angular/core';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { ActionSheetController, AlertController, ModalController } from '@ionic/angular';
+import {
+  ActionSheetController,
+  AlertController,
+  ModalController,
+  NavController,
+} from '@ionic/angular';
 import type { CatalogLanguage, CatalogRegion, CatalogSet } from '@pokepaper/shared';
 import { Subject } from 'rxjs';
 import { vi } from 'vitest';
 import { makeContractPack } from '../../core/data/storage-engine.contract';
 import { StorageEngineFactory } from '../../core/data/storage-engine.factory';
 import { CatalogLanguageService } from '../../core/services/catalog-language.service';
+import { CatalogSearchService } from '../../core/services/catalog-search.service';
 import { CatalogSyncService } from '../../core/services/catalog-sync.service';
 import { CollectionService } from '../../core/services/collection.service';
 import { ImageCacheService } from '../../core/services/image-cache.service';
@@ -18,6 +24,7 @@ import {
 import { LayoutService } from '../../core/services/layout.service';
 import { VisibilityService } from '../../core/services/visibility.service';
 import { CardDetailComponent } from '../../features/cards/card-detail.component';
+import type { CardSearch } from '../../features/cards/card-details.component';
 import { CatalogBrowseService, type SetView } from '../../core/services/catalog-browse.service';
 import { SetPage } from './set.page';
 
@@ -69,6 +76,11 @@ describe('SetPage', () => {
     Promise.resolve({ present })
   );
   const createModal = vi.fn((_options: Record<string, unknown>) => Promise.resolve({ present }));
+  const search = { showOnly: vi.fn(() => Promise.resolve()) };
+  const nav = {
+    navigateRoot: vi.fn(() => Promise.resolve(true)),
+    navigateBack: vi.fn(() => Promise.resolve(true)),
+  };
   const setView = signal<SetView>('grid');
   const browse = {
     setView,
@@ -122,6 +134,8 @@ describe('SetPage', () => {
         { provide: LayoutService, useValue: { wide } },
         { provide: ActionSheetController, useValue: { create: createSheet } },
         { provide: ModalController, useValue: { create: createModal } },
+        { provide: NavController, useValue: nav },
+        { provide: CatalogSearchService, useValue: search },
         {
           provide: ImageCacheService,
           useValue: { resolve: vi.fn(() => Promise.resolve(null)), release: vi.fn() },
@@ -360,7 +374,12 @@ describe('SetPage', () => {
     expect(createModal).toHaveBeenCalledWith(
       expect.objectContaining({
         component: CardDetailComponent,
-        componentProps: { setProp: set, cardsProp: cards, startIndex: 1 },
+        componentProps: {
+          setProp: set,
+          cardsProp: cards,
+          startIndex: 1,
+          showSearchProp: expect.any(Function) as unknown,
+        },
         breakpoints: [0, 1],
         initialBreakpoint: 1,
       })
@@ -376,5 +395,32 @@ describe('SetPage', () => {
     await page.openCard(0);
 
     expect(createModal.mock.lastCall?.[0]).not.toHaveProperty('breakpoints');
+  });
+
+  describe("a card's Set or Illustrator row", () => {
+    const showSearch = async (): Promise<void> => {
+      const page = await create();
+      await page.openCard(0);
+      const props = createModal.mock.lastCall?.[0]['componentProps'] as {
+        showSearchProp: (search: CardSearch) => Promise<void>;
+      };
+      await props.showSearchProp({ region: 'intl', filters: { illustrators: ['kensugimori'] } });
+    };
+
+    it('goes back to the search on phones, filtered to it', async () => {
+      await showSearch();
+
+      expect(search.showOnly).toHaveBeenCalledWith('intl', { illustrators: ['kensugimori'] });
+      expect(nav.navigateBack).toHaveBeenCalledWith('/tabs/cards');
+      expect(nav.navigateRoot).not.toHaveBeenCalled();
+    });
+
+    it('shows the search in place of the set on desktop', async () => {
+      wide.set(true);
+      await showSearch();
+
+      expect(search.showOnly).toHaveBeenCalledWith('intl', { illustrators: ['kensugimori'] });
+      expect(nav.navigateRoot).toHaveBeenCalledWith('/tabs/cards', { animated: false });
+    });
   });
 });

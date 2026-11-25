@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   cardMatches,
+  illustratorKey,
+  illustratorName,
   normalizeSearchText,
   parseCardNumber,
   prepareName,
@@ -145,5 +147,29 @@ describe('cardMatches', () => {
     expect(matchesCard(['ニャース'], '067', 'にゃーす 67')).toBe(true);
     expect(matchesCard([], '67', '67')).toBe(true);
     expect(matchesCard([], 'LIG', '67')).toBe(false);
+  });
+});
+
+describe('illustratorKey', () => {
+  it('makes spellings that differ in case, spaces or punctuation one artist', () => {
+    expect(illustratorKey('aky CG Works')).toBe('akycgworks');
+    expect(illustratorKey('akyCG Works')).toBe('akycgworks');
+    expect(illustratorKey('Takuyoa')).toBe(illustratorKey('takuyoa'));
+    expect(illustratorKey('Mékayu')).toBe('mekayu');
+  });
+
+  it('has no key without a name', () => {
+    expect(illustratorKey(null)).toBeNull();
+    expect(illustratorKey(undefined)).toBeNull();
+    expect(illustratorKey('  ')).toBeNull();
+    expect(illustratorKey('N/A')).toBeNull();
+  });
+});
+
+describe('illustratorName', () => {
+  it('keeps the spelling, trimmed, and has none without a key', () => {
+    expect(illustratorName(' aky CG Works ')).toBe('aky CG Works');
+    expect(illustratorName('N/A')).toBeNull();
+    expect(illustratorName(null)).toBeNull();
   });
 });

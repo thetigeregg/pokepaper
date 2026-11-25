@@ -26,7 +26,13 @@
           [attr.data-swiper-slide-index]="window().from + i"
         >
           @if (setFor(card); as set) {
-            <app-card-details [card]="card" [set]="set" [language]="languageFor(card)" />
+            <app-card-details
+              [card]="card"
+              [set]="set"
+              [language]="languageFor(card)"
+              [searchable]="searchable()"
+              (searchFor)="showSearch($event)"
+            />
           }
         </div>
       }
