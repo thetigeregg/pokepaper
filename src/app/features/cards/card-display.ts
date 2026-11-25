@@ -15,6 +15,7 @@ import {
   type CatalogStampedPrinting,
   type CollectionTarget,
   type CollectionVariant,
+  type StampedVariant,
 } from '@pokepaper/shared';
 
 /** The card's text in `language`, else in its first available language. */
@@ -87,10 +88,20 @@ export function cardVariants(card: CatalogCard): [CollectionVariant, ...Collecti
   return listed.length > 0 ? [first, ...rest] : ['normal'];
 }
 
-/** Whether TCGplayer sells the card as a holo and not as a non-holo (`tcgplayerFinishes`). */
-function soldHoloOnly(card: CatalogCard): boolean {
+/**
+ * Whether `listedVariants` names the card's Normal Holo: TCGplayer sells it
+ * as a holo and not as a non-holo (`tcgplayerFinishes`), and TCGdex lists
+ * Normal but not Holo.
+ */
+function namesNormalHolo(card: CatalogCard): boolean {
   const finishes = card.tcgplayerFinishes;
-  return finishes?.holo === true && !finishes.normal;
+  const listed = cardVariants(card);
+  return (
+    finishes?.holo === true &&
+    !finishes.normal &&
+    listed.includes('normal') &&
+    !listed.includes('holo')
+  );
 }
 
 /**
@@ -101,7 +112,7 @@ function soldHoloOnly(card: CatalogCard): boolean {
  */
 export function listedVariants(card: CatalogCard): CollectionVariant[] {
   const listed = cardVariants(card);
-  return soldHoloOnly(card) && listed.includes('normal') && !listed.includes('holo')
+  return namesNormalHolo(card)
     ? COLLECTION_VARIANTS.filter(
         (variant) => variant === 'holo' || (variant !== 'normal' && listed.includes(variant))
       )
@@ -129,7 +140,7 @@ export function offeredVariants(
 /** What a copy of `card` in `variant` and `language` is counted under. */
 export function collectionTarget(
   card: CatalogCard,
-  variant: CollectionVariant | (string & {}),
+  variant: CollectionVariant | StampedVariant,
   language: CatalogLanguage
 ): CollectionTarget {
   return { region: card.region, cardId: card.id, setId: card.setId, variant, language };
@@ -138,7 +149,7 @@ export function collectionTarget(
 /** A variant of a card with the copies owned, for a stepper or a toggle. */
 export interface VariantRow {
   /** A plain variant, or a stamped version's (`CatalogStampedPrinting.key`). */
-  variant: CollectionVariant | (string & {});
+  variant: CollectionVariant | StampedVariant;
   label: string;
   quantity: number;
 }
@@ -187,23 +198,25 @@ const STAMP_LABELS: Readonly<Record<string, string>> = {
 
 /** How a TCGdex name (a stamp, subtype or foil) reads: `STAMP_LABELS`, else capitalized words. */
 export function stampLabel(name: string): string {
-  return Object.hasOwn(STAMP_LABELS, name)
-    ? (STAMP_LABELS[name] ?? name)
-    : name
-        .split('-')
-        .filter((word) => word)
-        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-        .join(' ');
+  const known = Object.hasOwn(STAMP_LABELS, name) ? STAMP_LABELS[name] : undefined;
+  return (
+    known ??
+    name
+      .split('-')
+      .filter((word) => word)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ')
+  );
 }
 
 /**
  * A stamped version's stepper label: its finish, then its stamps, subtype
  * and foil ("Holo · Prerelease"). The finish is named like the card's plain
- * variants: Normal is Holo for a card TCGplayer sells only as a holo
- * (`listedVariants`).
+ * variants: Normal is Holo where `listedVariants` names the card's Normal
+ * Holo.
  */
 export function stampedLabel(card: CatalogCard, printing: CatalogStampedPrinting): string {
-  const finish = printing.type === 'normal' && soldHoloOnly(card) ? 'holo' : printing.type;
+  const finish = printing.type === 'normal' && namesNormalHolo(card) ? 'holo' : printing.type;
   return [
     VARIANT_LABELS[finish],
     ...[...printing.stamps, printing.subtype, printing.foil]
@@ -226,22 +239,31 @@ export const UNLISTED_STAMPED_LABEL = 'Stamped version no longer listed';
 export function stampedRows(
   card: CatalogCard,
   owned: readonly string[],
-  quantity: (variant: string) => number,
+  quantity: (variant: StampedVariant) => number,
   offerAll: boolean
 ): VariantRow[] {
-  const printings = card.stamped ?? [];
-  const listed = new Set(printings.map((printing) => printing.key));
+  const printings = (card.stamped ?? []).flatMap((printing) => {
+    const { key } = printing;
+    return isStampedVariant(key) ? [{ key, printing }] : [];
+  });
+  const listed = new Set<string>(printings.map(({ key }) => key));
+  const unlisted = owned
+    .filter((variant): variant is StampedVariant => isStampedVariant(variant))
+    .filter((variant) => !listed.has(variant))
+    .sort();
   return [
     ...printings
-      .filter((printing) => offerAll || owned.includes(printing.key))
-      .map((printing) => ({
-        variant: printing.key,
+      .filter(({ key }) => offerAll || owned.includes(key))
+      .map(({ key, printing }) => ({
+        variant: key,
         label: stampedLabel(card, printing),
-        quantity: quantity(printing.key),
+        quantity: quantity(key),
       })),
-    ...owned
-      .filter((variant) => isStampedVariant(variant) && !listed.has(variant))
-      .map((variant) => ({ variant, label: UNLISTED_STAMPED_LABEL, quantity: quantity(variant) })),
+    ...unlisted.map((variant) => ({
+      variant,
+      label: UNLISTED_STAMPED_LABEL,
+      quantity: quantity(variant),
+    })),
   ];
 }
 

@@ -304,9 +304,36 @@ describe('parseStamped', () => {
     ]);
   });
 
-  it('is empty without detailed variants, and part of a parsed card', () => {
-    expect(stamped(undefined)).toEqual([]);
-    expect(raw().stamped).toEqual([]);
+  it('reads every detailed variant, keeping up to 30 versions', () => {
+    // A World Championship card: its plain holo listed after 40 stamped ones.
+    const decks = Array.from({ length: 40 }, (_, index) => ({
+      type: 'holo',
+      stamp: [`player-${String(index)}`],
+      variantId: `p${String(index)}`,
+    }));
+    const versions = stamped([...decks, { type: 'holo', variantId: 'jr7oetx1mqug9' }]);
+    expect(versions).toHaveLength(30);
+    expect(versions?.[0]).toEqual({ key: 'vp0', type: 'holo', stamps: ['player-0'] });
+  });
+
+  it('reads names in any case, and skips a subtype or foil that is not a slug', () => {
+    expect(stamped([...plain, { type: 'holo', stamp: ['Pre-Release'], variantId: 'a1' }])).toEqual([
+      { key: 'va1', type: 'holo', stamps: ['pre-release'] },
+    ]);
+    expect(
+      stamped([
+        ...plain,
+        { type: 'holo', stamp: ['staff'], subtype: 'Sans ombre', variantId: 'a1' },
+        { type: 'holo', stamp: ['staff'], foil: 'Lumière', variantId: 'a2' },
+        { type: 'holo', stamp: ['staff'], subtype: 'Shadowless', variantId: 'a3' },
+      ])
+    ).toEqual([{ key: 'va3', type: 'holo', stamps: ['staff'], subtype: 'shadowless' }]);
+  });
+
+  it('is null without detailed variants, and part of a parsed card', () => {
+    expect(stamped(undefined)).toBeNull();
+    expect(stamped([])).toEqual([]);
+    expect(raw().stamped).toBeNull();
     const card = parseCard({
       id: 'sm3-94',
       localId: '94',
@@ -478,10 +505,19 @@ describe('mergeCard', () => {
     });
     expect(kept?.stamped).toEqual([stamp]);
 
-    const dropped = mergeCard({
+    // No detailed variants in the response: a gap, not a removal.
+    const gap = mergeCard({
       ...base,
       languages: ['en', 'fr'],
       fetched: new Map([['en', raw()]]),
+      existing: fresh,
+    });
+    expect(gap?.stamped).toEqual([stamp]);
+
+    const dropped = mergeCard({
+      ...base,
+      languages: ['en', 'fr'],
+      fetched: new Map([['en', raw({ stamped: [] })]]),
       existing: fresh,
     });
     expect(dropped).not.toHaveProperty('stamped');

@@ -114,7 +114,8 @@ export class CardDetailsComponent {
     const card = this.card();
     const setHolos = this.setHolos();
     const offered = setHolos ? offeredVariants(card, this.set(), setHolos) : listedVariants(card);
-    const quantity = (variant: string) => this.collection.quantity(this.target(variant));
+    const quantity = (variant: VariantRow['variant']) =>
+      this.collection.quantity(this.target(variant));
     const owned = this.collection.variantsOwned(card.region, card.id, this.language());
     return [...variantRows(offered, quantity), ...stampedRows(card, owned, quantity, true)];
   });

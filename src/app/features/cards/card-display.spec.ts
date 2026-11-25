@@ -324,19 +324,33 @@ describe('stamped versions', () => {
       tcgplayerFinishes: { normal: false, holo: true, reverse: false, firstEdition: false },
     });
     expect(stampedLabel(holoRare, staff)).toBe('Holo · Staff · Worlds 2010');
+    // TCGdex lists Holo beside Normal: Normal stays Normal, as its plain row does.
+    const both = card({
+      ...holoRare,
+      variants: { normal: true, reverse: false, holo: true, firstEdition: false, wPromo: false },
+    });
+    expect(listedVariants(both)).toEqual(['normal', 'holo']);
+    expect(stampedLabel(both, staff)).toBe('Normal · Staff · Worlds 2010');
   });
 
   it('offers every listed version, or only those owned, and copies under unlisted ones', () => {
-    const owned: Partial<Record<string, number>> = { va1: 3, vgone: 1 };
+    const owned: Partial<Record<string, number>> = { va1: 3, vgone: 1, vearlier: 2 };
     const quantity = (variant: string) => owned[variant] ?? 0;
-    const ownedVariants = ['holo', 'va1', 'vgone'];
+    const ownedVariants = ['holo', 'va1', 'vgone', 'vearlier', 'not-stamped'];
     expect(stampedRows(stamped, ownedVariants, quantity, true)).toEqual([
       { variant: prerelease.key, label: 'Holo · Prerelease', quantity: 0 },
       { variant: 'va1', label: 'Normal · Staff · Worlds 2010', quantity: 3 },
+      // Unlisted ones by key, whatever order they're owned in.
+      { variant: 'vearlier', label: UNLISTED_STAMPED_LABEL, quantity: 2 },
       { variant: 'vgone', label: UNLISTED_STAMPED_LABEL, quantity: 1 },
     ]);
+    // A key the catalog lists in another shape isn't offered.
+    expect(
+      stampedRows(card({ stamped: [{ ...staff, key: 'BAD:KEY' }] }), [], quantity, true)
+    ).toEqual([]);
     expect(stampedRows(stamped, ownedVariants, quantity, false)).toEqual([
       { variant: 'va1', label: 'Normal · Staff · Worlds 2010', quantity: 3 },
+      { variant: 'vearlier', label: UNLISTED_STAMPED_LABEL, quantity: 2 },
       { variant: 'vgone', label: UNLISTED_STAMPED_LABEL, quantity: 1 },
     ]);
     expect(stampedRows(card({}), [], quantity, true)).toEqual([]);

@@ -93,7 +93,12 @@ export class CollectionService {
     const cards = new Map<string, string[]>();
     for (const entry of this.shown()) {
       const key = languageKey(entry.region, entry.cardId, entry.language);
-      cards.set(key, [...(cards.get(key) ?? []), entry.variant]);
+      const variants = cards.get(key);
+      if (variants) {
+        variants.push(entry.variant);
+      } else {
+        cards.set(key, [entry.variant]);
+      }
     }
     return cards;
   });

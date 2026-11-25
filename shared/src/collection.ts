@@ -34,14 +34,17 @@ export function isCollectionVariant(value: unknown): value is CollectionVariant 
  * of one card don't collide; the length fits a collection entry's variant
  * (16 characters). Never change this: tracked copies are stored under it.
  */
-export function stampedVariant(variantId: string): string {
-  return `v${variantId.slice(-15)}`;
+export function stampedVariant(variantId: string): StampedVariant {
+  return `v${variantId.slice(-15)}` as StampedVariant;
 }
+
+/** A stamped version's variant (`stampedVariant`), told apart by `isStampedVariant`. */
+export type StampedVariant = string & { readonly __stampedVariant: true };
 
 const STAMPED_VARIANT = /^v[0-9a-z]{1,15}$/;
 
 /** Whether `value` has the shape `stampedVariant` produces. */
-export function isStampedVariant(value: unknown): value is string {
+export function isStampedVariant(value: unknown): value is StampedVariant {
   return typeof value === 'string' && STAMPED_VARIANT.test(value);
 }
 

@@ -131,8 +131,11 @@ export interface RawCard {
   variants: CatalogVariants;
   /** TCGplayer's finishes (`pricing.tcgplayer`), when it lists any. */
   tcgplayerFinishes: CatalogFinishes | null;
-  /** Stamped versions (`variants_detailed`); names as in the response's language. */
-  stamped: CatalogStampedPrinting[];
+  /**
+   * Stamped versions (`variants_detailed`), names as in the response's
+   * language; null when the response has no detailed variants.
+   */
+  stamped: CatalogStampedPrinting[] | null;
   legal: CatalogLegality;
   weaknesses: CatalogTypeModifier[];
   resistances: CatalogTypeModifier[];
@@ -303,10 +306,14 @@ const VARIANT_ID = /^[0-9a-z]{1,64}$/;
 const GENERATED_VARIANT_ID = 'generated';
 const SLUG = /^[0-9a-z][0-9a-z-]{0,59}$/;
 const SET_LOGO_STAMP = 'set-logo';
+/** Detailed variants read per card; the stamped versions kept are capped lower. */
+const MAX_DETAILED_VARIANTS = 100;
 const MAX_STAMPED = 30;
 
+/** A TCGdex name as a lowercase slug (`pre-release`), or null when it isn't one. */
 function slug(value: unknown): string | null {
-  return typeof value === 'string' && SLUG.test(value) ? value : null;
+  const lower = typeof value === 'string' ? value.toLowerCase() : null;
+  return lower !== null && SLUG.test(lower) ? lower : null;
 }
 
 /** A detailed variant's finish, if it's one a stamped version can have. */
@@ -344,8 +351,11 @@ function cardmarketProduct(entry: Json): number | null {
  * language, so only the region's preferred language is read for them
  * (`mergeCard`); names that aren't slugs (`1. Auflage`) drop the entry.
  */
-export function parseStamped(card: Json): CatalogStampedPrinting[] {
-  const entries = list(card['variants_detailed'], MAX_STAMPED).filter(isObject);
+export function parseStamped(card: Json): CatalogStampedPrinting[] | null {
+  if (!Array.isArray(card['variants_detailed'])) {
+    return null;
+  }
+  const entries = list(card['variants_detailed'], MAX_DETAILED_VARIANTS).filter(isObject);
   const plainTypes = new Set(
     entries.filter((entry) => standardSize(entry) && !stampedOnly(entry)).map(stampedType)
   );
@@ -354,7 +364,7 @@ export function parseStamped(card: Json): CatalogStampedPrinting[] {
   );
   const listsReverse = entries.some((entry) => stampedType(entry) === 'reverse');
   const seen = new Set<string>();
-  return entries.flatMap((entry) => {
+  const stamped = entries.flatMap((entry): CatalogStampedPrinting[] => {
     const variantId = entry['variantId'];
     const type = stampedType(entry);
     const stamps = list(entry['stamp'], 10).map(slug);
@@ -387,6 +397,10 @@ export function parseStamped(card: Json): CatalogStampedPrinting[] {
     seen.add(key);
     const subtype = slug(entry['subtype']);
     const foil = slug(entry['foil']);
+    // A name that isn't a slug would leave two versions labeled alike.
+    if ((entry['subtype'] !== undefined && !subtype) || (entry['foil'] !== undefined && !foil)) {
+      return [];
+    }
     return [
       {
         key,
@@ -398,6 +412,7 @@ export function parseStamped(card: Json): CatalogStampedPrinting[] {
       },
     ];
   });
+  return stamped.slice(0, MAX_STAMPED);
 }
 
 /** `GET /{lang}/cards/{id}`; null when it isn't a usable card. */
@@ -704,8 +719,9 @@ export function mergeCard(input: MergeCardInput): CatalogCard | null {
   const { tcgplayerFinishes: fresh, stamped: _stored, ...rest } = neutral;
   const tcgplayerFinishes = keptFinishes(fresh, existing?.tcgplayerFinishes);
   // Stamp names are in the response's language: only the preferred one's
-  // are read, else the stored ones are kept.
-  const stamped = preferredRaw ? preferredRaw.stamped : (existing?.stamped ?? []);
+  // are read, else (or when it has no detailed variants) the stored ones
+  // are kept, so tracked copies don't lose their versions to a gap.
+  const stamped = preferredRaw?.stamped ?? existing?.stamped ?? [];
 
   return {
     region,

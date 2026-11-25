@@ -187,6 +187,26 @@ describe('SetChecklistComponent', () => {
       { region: 'intl', cardId: 'sv01-001', setId: 'sv01', variant: 'va1', language: 'en' },
       0
     );
+    fixture.detectChanges();
+
+    // Toggled off, it stays, so the tap can be undone; not in another language.
+    expect(checklist.rows()[0]?.variants.at(-1)).toEqual({
+      variant: 'va1',
+      label: 'Normal · Staff',
+      quantity: 0,
+    });
+    chip('sv01-001', 'va1')?.click();
+    expect(collection.setQuantity).toHaveBeenLastCalledWith(
+      expect.objectContaining({ variant: 'va1' }),
+      1
+    );
+    fixture.componentRef.setInput('language', 'de');
+    fixture.detectChanges();
+    expect(checklist.rows()[0]?.variants.map((v) => v.variant)).toEqual([
+      'normal',
+      'reverse',
+      'vb2',
+    ]);
   });
 
   it('toggles a variant between 0 and 1 copy in the current language', () => {
