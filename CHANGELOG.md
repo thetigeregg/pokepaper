@@ -237,3 +237,7 @@
 ## v0.36.0 - 2026-11-25
 
 - c095999 feat(cards): track stamped versions of cards (#72)
+
+## v0.37.0 - 2026-11-25
+
+- 7006af0 feat(prices): reject TCGdex products named for another card (#73)
