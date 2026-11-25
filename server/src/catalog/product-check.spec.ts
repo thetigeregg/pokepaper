@@ -124,6 +124,10 @@ describe('checkProductLink', () => {
       )
     ).toBe('ok');
     expect(checkProductLink(card('Unown', ['Hidden Power']), product('Unown [A]'))).toBe('ok');
+    // Unown's four-letter Poké-Powers are moves, even alone.
+    expect(checkProductLink(card('Unown', ['DARK']), product('Unown [HEAL]'))).toBe(
+      'other_printing'
+    );
     // Tags beside moves: the moves decide.
     expect(
       checkProductLink(card('Bulbasaur', ['Leech Seed']), product('Bulbasaur [Leech Seed | MEP]'))

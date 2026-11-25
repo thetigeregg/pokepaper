@@ -29,13 +29,14 @@ const MIN_SIMILAR_LENGTH = 6;
 const CARD_HALVES = new Set(['top', 'bottom', 'left', 'right']);
 
 /**
- * A bracketed entry shaped like a tag: a set code ("SV-P", "MEP", "151",
- * "30C", "s10a") or a letter ("A"). Some moves look like one too (Unown's
- * "HEAL", "DARK"), so only a bracket of nothing else is taken for tags
- * (`moveBrackets`): "Tohoku's Pikachu [SV-P]", "Unown [A]". Beside moves
- * ("Bulbasaur [Leech Seed | MEP]") the moves decide anyway.
+ * A bracketed entry shaped like a tag: a set code of up to three capitals
+ * or with a digit or hyphen ("ESP", "151", "30C", "SV2D", "SV-P", "s10a"),
+ * or a letter ("A"). Unown's four-letter Poké-Powers ("HEAL", "DARK") are
+ * moves. Only a bracket of nothing else is taken for tags (`moveBrackets`):
+ * "Tohoku's Pikachu [SV-P]"; beside moves ("Bulbasaur [Leech Seed | MEP]")
+ * the moves decide anyway.
  */
-const TAG = /^(?:[A-Z0-9]{1,4}(?:-[A-Z0-9]{1,2})?|[a-z]{1,3}\d+[a-z]?)$/;
+const TAG = /^(?:[A-Z]{1,3}|[A-Z0-9]*\d[A-Z0-9]*|[A-Z0-9]{1,4}-[A-Z0-9]{1,2}|[a-z]{1,3}\d+[a-z]?)$/;
 
 /**
  * Checks a card's Cardmarket product against it, by Cardmarket's product
