@@ -233,3 +233,7 @@
 ## v0.35.2 - 2026-11-24
 
 - 02bd315 fix(cards): show the 30-day average when the trend is an outlier (#71)
+
+## v0.36.0 - 2026-11-25
+
+- c095999 feat(cards): track stamped versions of cards (#72)
