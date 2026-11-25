@@ -48,15 +48,31 @@
         </ion-label>
       </ion-item>
       @if (current.matchedByHand) {
-        <ion-item
-          button="true"
-          [detail]="false"
-          [disabled]="busy()"
-          (click)="clear()"
-          data-testid="matcher-clear"
-        >
-          <ion-label color="danger">Remove match</ion-label>
-        </ion-item>
+        @if (result()?.tcgdex; as tcgdex) {
+          <!-- Removing the match goes back to TCGdex's product: say so. -->
+          <ion-item
+            button="true"
+            [detail]="false"
+            [disabled]="busy()"
+            (click)="clear()"
+            data-testid="matcher-restore"
+          >
+            <ion-label color="primary" class="ion-text-wrap">
+              Restore TCGdex’s match
+              <p class="hint">{{ tcgdex.name ?? 'Product ' + tcgdex.idProduct }}</p>
+            </ion-label>
+          </ion-item>
+        } @else {
+          <ion-item
+            button="true"
+            [detail]="false"
+            [disabled]="busy()"
+            (click)="clear()"
+            data-testid="matcher-clear"
+          >
+            <ion-label color="danger">Remove match</ion-label>
+          </ion-item>
+        }
       }
     }
 

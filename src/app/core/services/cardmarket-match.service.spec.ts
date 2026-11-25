@@ -31,7 +31,12 @@ describe('CardmarketMatchService', () => {
   });
 
   it('gets candidates, searched when there’s a query', async () => {
-    const answer: CardmarketCandidates = { current: null, products: [], truncated: false };
+    const answer: CardmarketCandidates = {
+      current: null,
+      tcgdex: null,
+      products: [],
+      truncated: false,
+    };
 
     const suggested = service.candidates('intl', 'xy8-63');
     http.expectOne(`${base}/candidates`).flush(answer);

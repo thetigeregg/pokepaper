@@ -288,16 +288,15 @@
           <ion-label>View on Cardmarket</ion-label>
         </ion-item>
       }
-      @if (matchedByHand()) {
-        <ion-item
-          button="true"
-          [detail]="false"
-          (click)="findOnCardmarket()"
-          data-testid="price-change-match"
-        >
-          <ion-label color="primary">Change Cardmarket match</ion-label>
-        </ion-item>
-      }
+      <!-- Also for TCGdex's products, which can be another printing's. -->
+      <ion-item
+        button="true"
+        [detail]="false"
+        (click)="findOnCardmarket()"
+        data-testid="price-change-match"
+      >
+        <ion-label color="primary">Change Cardmarket match</ion-label>
+      </ion-item>
     } @else if (offerMatch()) {
       <ion-list-header>
         <ion-label data-testid="price-header">Price · Cardmarket</ion-label>

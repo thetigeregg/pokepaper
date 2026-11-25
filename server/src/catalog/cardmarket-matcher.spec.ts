@@ -91,6 +91,7 @@ describe('CardmarketMatcher.candidates', () => {
 
     expect(candidates).toEqual({
       current: null,
+      tcgdex: null,
       truncated: false,
       searched: false,
       products: [
@@ -161,6 +162,7 @@ describe('CardmarketMatcher.candidates', () => {
 
     expect(candidates).toEqual({
       current: null,
+      tcgdex: null,
       products: [],
       truncated: false,
       searched: false,
@@ -229,6 +231,27 @@ describe('CardmarketMatcher.candidates', () => {
     });
   });
 
+  it('reports TCGdex’s product beside a match by hand, to go back to', async () => {
+    const { matcher } = await setup();
+    const tcgdex = { idProduct: PRODUCTS.pineco, name: 'Pineco [Guard Press]' };
+
+    expect((await matcher.candidates('intl', 'sv01-001'))?.tcgdex).toEqual(tcgdex);
+    await matcher.match('intl', 'sv01-001', UNMAPPED_PRODUCTS.energySearch);
+    const matched = await matcher.candidates('intl', 'sv01-001');
+    expect(matched?.current).toEqual({
+      idProduct: UNMAPPED_PRODUCTS.energySearch,
+      matchedByHand: true,
+      name: 'Energy Search',
+    });
+    expect(matched?.tcgdex).toEqual(tcgdex);
+
+    matcher.clear('intl', 'sv01-001');
+    expect((await matcher.candidates('intl', 'sv01-001'))?.current).toEqual({
+      ...tcgdex,
+      matchedByHand: false,
+    });
+  });
+
   it('reports no current product when TCGdex’s is another card’s, offering it unpriced', async () => {
     const { matcher } = await setup({
       productList: cardmarketProductList([
@@ -240,7 +263,9 @@ describe('CardmarketMatcher.candidates', () => {
       ]),
     });
 
-    expect((await matcher.candidates('intl', 'sv01-001'))?.current).toBeNull();
+    const candidates = await matcher.candidates('intl', 'sv01-001');
+    expect(candidates?.current).toBeNull();
+    expect(candidates?.tcgdex).toBeNull();
   });
 
   it('offers products without prices before any price guide is stored', async () => {
