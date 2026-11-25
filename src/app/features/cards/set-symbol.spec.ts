@@ -10,6 +10,14 @@ describe('setSymbol', () => {
     });
   });
 
+  it("gives MEP Black Star Promos the other Black Star Promos' star", () => {
+    expect(setSymbol('intl', 'mep')).toEqual({
+      url: 'assets/set-symbols/svp.png',
+      width: SET_SYMBOL_WIDTHS['svp'],
+    });
+    expect(setSymbol('asia', 'mep')).toBeNull();
+  });
+
   it('has no symbol for a set without one', () => {
     expect(setSymbol('intl', 'base1')).toBeNull();
     expect(setSymbol('intl', 'A1')).toBeNull();

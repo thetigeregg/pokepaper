@@ -273,11 +273,12 @@ International sets show their symbol before the set line in the card detail's Se
 - **Source:** pokesymbols.com's English set symbol sheet (a PDF, October 2026), not TCGdex. TCGdex links a symbol for 168 of the 220 International sets, but only 125 load: 23 exist only as PNG (the image route only takes WebP), 20 point to missing files, and modern ones are 25–40 px. The sheet's are 484 px JPEGs on white, matched to sets by name (14 by hand: trainer kits, HeartGold SoulSilver's sets, 30th Classic Collection, Scarlet & Violet Energy and Promos, Futsal). Each was cut out of its background (only the white touching the edges, so white inside a symbol stays), cropped, fitted to 48 px tall and at most 120 px wide, and outlined in white so it shows in dark mode.
 - **Images** are 48 px tall (widths in `SET_SYMBOL_WIDTHS`, which a spec checks against the files, so rows keep the symbol's space while it loads). They're cached by the service worker as they're first shown, not prefetched (194 images, about 590 KB).
 - **Sets list fallback:** `SetLogoComponent` falls back to the bundled symbol when a set's logo is missing or can't load offline, else to TCGdex's symbol for sets without a bundled one (the set page header never shows a symbol).
-- **Adding a set:** a 48 px tall PNG outlined in white, named by its TCGdex set ID, plus its width in `SET_SYMBOL_WIDTHS`.
+- **Shared symbols:** MEP Black Star Promos isn't on the sheet, so it shows SVP Black Star Promos' star, which every Black Star Promos set prints (`SHARED_SET_SYMBOLS`).
+- **Adding a set:** a 48 px tall PNG outlined in white, named by its TCGdex set ID, plus its width in `SET_SYMBOL_WIDTHS`; or, for a set that prints another set's symbol, an entry in `SHARED_SET_SYMBOLS`.
 
 **Not covered** (no symbol, text only):
 
-- **No symbol on the sheet:** TCG Pocket's 15 sets (A1–B2a, Promos-A), My First Battle, Mega Evolution Energy, MEP Black Star Promos, Miscellaneous Promos, McDonald's Collection 2013 and the French 2018 and 2019 ones, Yellow A Alternate, Unseen Forces Unown Collection and Poké Card Creator Pack. Base Set has no symbol; the sheet shows the TCG logo in its place, which isn't used.
+- **No symbol on the sheet:** TCG Pocket's 15 sets (A1–B2a, Promos-A), My First Battle, Mega Evolution Energy, Miscellaneous Promos (not a Black Star Promos set), McDonald's Collection 2013 and the French 2018 and 2019 ones, Yellow A Alternate, Unseen Forces Unown Collection and Poké Card Creator Pack. Base Set has no symbol; the sheet shows the TCG logo in its place, which isn't used.
 - **The Japan & Asia catalog:** none yet. Since Sun & Moon its symbols are the set code in a box (`sv4a`, `s12a`, `M4`), matching TCGdex's set IDs, so they could be drawn from the ID; older sets need images.
 
 ## Storage

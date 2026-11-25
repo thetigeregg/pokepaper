@@ -218,10 +218,19 @@ export const SET_SYMBOL_WIDTHS: Readonly<Record<string, number>> = {
   xyp: 51,
 };
 
+/**
+ * Sets the symbol sheet lacks that print another set's symbol: the Black
+ * Star Promos all carry the same promo star.
+ */
+const SHARED_SET_SYMBOLS: Readonly<Record<string, string>> = {
+  mep: 'svp',
+};
+
 /** The symbol of set `setId` in `region`, or null when it has none. */
 export function setSymbol(region: CatalogRegion, setId: string): SetSymbol | null {
-  if (region !== 'intl' || !Object.hasOwn(SET_SYMBOL_WIDTHS, setId)) {
+  const image = Object.hasOwn(SHARED_SET_SYMBOLS, setId) ? SHARED_SET_SYMBOLS[setId] : setId;
+  if (region !== 'intl' || !Object.hasOwn(SET_SYMBOL_WIDTHS, image)) {
     return null;
   }
-  return { url: `assets/set-symbols/${setId}.png`, width: SET_SYMBOL_WIDTHS[setId] };
+  return { url: `assets/set-symbols/${image}.png`, width: SET_SYMBOL_WIDTHS[image] };
 }
