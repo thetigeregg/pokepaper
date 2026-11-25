@@ -2,6 +2,7 @@ import { vi } from 'vitest';
 import {
   CARDMARKET_PRODUCTS_URL,
   PRODUCTS_MAX_AGE_MS,
+  PRODUCTS_RETRY_MS,
   refreshCardmarketProductsIfDue,
 } from './cardmarket-products.js';
 import {
@@ -54,6 +55,30 @@ describe('refreshCardmarketProductsIfDue', () => {
 
     expect(log.warnings).toEqual(['catalog.cardmarket_products_failed']);
     expect(store.getCardmarketProduct(483559)).toBeDefined();
+  });
+
+  it('shares one download between callers, and waits an hour after a failure', async () => {
+    const store = memoryCatalogStore();
+    const products = fakeCardmarket(fixtureProductList());
+    const fetch = vi.fn(products.fetch);
+    const log = silentLogger();
+
+    await Promise.all([
+      refreshCardmarketProductsIfDue({ store, log, fetch, now: () => start }),
+      refreshCardmarketProductsIfDue({ store, log, fetch, now: () => start }),
+    ]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    products.current = new Status(503);
+    const due = new Date(start.getTime() + PRODUCTS_MAX_AGE_MS);
+    await refreshCardmarketProductsIfDue({ store, log, fetch, now: () => due });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const soon = new Date(due.getTime() + PRODUCTS_RETRY_MS - 1);
+    await refreshCardmarketProductsIfDue({ store, log, fetch, now: () => soon });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const later = new Date(due.getTime() + PRODUCTS_RETRY_MS);
+    await refreshCardmarketProductsIfDue({ store, log, fetch, now: () => later });
+    expect(fetch).toHaveBeenCalledTimes(3);
   });
 
   it('rethrows when aborted', async () => {

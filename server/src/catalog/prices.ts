@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   CATALOG_LANGUAGE_REGION,
   CATALOG_REGIONS,
@@ -34,6 +35,8 @@ const MIN_PRODUCTS_FOR_SHARE = 100;
  */
 export const PRODUCT_LOOKUP_DAYS = 60;
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** Products checked between yields to the event loop (`productLinkChecker`). */
+const CHECKS_PER_YIELD = 500;
 /** Rejected cards named in the pass's log line; the rest are counted. */
 const MAX_LOGGED_REJECTIONS = 50;
 
@@ -133,13 +136,44 @@ export async function runPriceRefresh(options: PriceRefreshOptions): Promise<Pri
     const previous = store.getPriceGuideState();
     const productsVersion = store.productsVersion();
     const matchesVersion = options.matches?.version() ?? 0;
-    const productListCreatedAt = store.getCardmarketProductsState()?.createdAt ?? null;
-    // Products, matches or the product list changed since the guide was
+    const rejects = productLinkChecker(store, now());
+    const regions = [];
+    for (const region of CATALOG_REGIONS) {
+      const products = store.listCardmarketProducts(region);
+      const byHand = options.matches?.list(region) ?? new Map<string, number>();
+      const rejected = new Set<string>();
+      let checked = 0;
+      for (const [cardId, idProduct] of products) {
+        if (!byHand.has(cardId) && rejects(region, cardId, idProduct)) {
+          rejected.add(cardId);
+        }
+        // About a second for 20,000 cards: let the server answer requests meanwhile.
+        if (++checked % CHECKS_PER_YIELD === 0) {
+          await new Promise((resolve) => setImmediate(resolve));
+          signal?.throwIfAborted();
+        }
+      }
+      for (const [cardId, idProduct] of byHand) {
+        products.set(cardId, idProduct);
+      }
+      regions.push({ region, products, byHand, rejected });
+    }
+    const rejected = regions.flatMap(({ region, rejected: cards }) =>
+      [...cards].map((cardId) => `${region}:${cardId}`)
+    );
+    const rejections = rejectionsKey(rejected);
+    if (rejected.length > 0) {
+      log.info(
+        { count: rejected.length, cards: rejected.slice(0, MAX_LOGGED_REJECTIONS) },
+        'catalog.cardmarket_products_rejected'
+      );
+    }
+    // Products, matches or rejected products changed since the guide was
     // applied: apply it anew (no 304).
     const etag =
       previous?.productsVersion === productsVersion &&
       previous.matchesVersion === matchesVersion &&
-      previous.productListCreatedAt === productListCreatedAt
+      previous.rejections === rejections
         ? previous.etag
         : null;
     let download: GuideDownload | 'unchanged';
@@ -159,31 +193,6 @@ export async function runPriceRefresh(options: PriceRefreshOptions): Promise<Pri
     stats.guideCreatedAt = download.createdAt;
     stats.products = download.entries.size;
 
-    const rejects = productLinkChecker(store, now());
-    const regions = CATALOG_REGIONS.map((region) => {
-      const products = store.listCardmarketProducts(region);
-      const byHand = options.matches?.list(region) ?? new Map<string, number>();
-      const rejected = new Set(
-        [...products]
-          .filter(
-            ([cardId, idProduct]) => !byHand.has(cardId) && rejects(region, cardId, idProduct)
-          )
-          .map(([cardId]) => cardId)
-      );
-      for (const [cardId, idProduct] of byHand) {
-        products.set(cardId, idProduct);
-      }
-      return { region, products, byHand, rejected };
-    });
-    const rejected = regions.flatMap(({ region, rejected: cards }) =>
-      [...cards].map((cardId) => `${region}:${cardId}`)
-    );
-    if (rejected.length > 0) {
-      log.info(
-        { count: rejected.length, cards: rejected.slice(0, MAX_LOGGED_REJECTIONS) },
-        'catalog.cardmarket_products_rejected'
-      );
-    }
     const mapped = new Set(regions.flatMap(({ products }) => [...products.values()]));
     const found = [...mapped].filter((idProduct) => download.entries.has(idProduct)).length;
     if (mapped.size >= MIN_PRODUCTS_FOR_SHARE && found < mapped.size * MIN_FOUND_SHARE) {
@@ -229,7 +238,7 @@ export async function runPriceRefresh(options: PriceRefreshOptions): Promise<Pri
         createdAt: download.createdAt,
         productsVersion,
         matchesVersion,
-        productListCreatedAt,
+        rejections,
       });
     });
     return finish('ok');
@@ -250,11 +259,13 @@ export async function runPriceRefresh(options: PriceRefreshOptions): Promise<Pri
 }
 
 /**
- * TCGdex's products are checked only for sets released at least this long
- * ago: a new set's English names on TCGdex can still differ from
- * Cardmarket's (Delta Reign's Azurill, three weeks out, has "Bouncy-Bounce
- * Charge" where Cardmarket has "Hopping Charge"), which would reject its
- * right products. The window matches `PRODUCT_LOOKUP_DAYS`.
+ * TCGdex's products are checked only for cards out at least this long: of
+ * a set released, and a product Cardmarket added, at least this long ago.
+ * A new card's English names on TCGdex can still differ from Cardmarket's
+ * (Delta Reign's Azurill, three weeks out, has "Bouncy-Bounce Charge" where
+ * Cardmarket has "Hopping Charge"), which would reject its right product;
+ * the product's date covers new promos in sets years old. The window
+ * matches `PRODUCT_LOOKUP_DAYS`.
  */
 export const PRODUCT_CHECK_AFTER_DAYS = PRODUCT_LOOKUP_DAYS;
 
@@ -263,8 +274,8 @@ export const PRODUCT_CHECK_AFTER_DAYS = PRODUCT_LOOKUP_DAYS;
  * product list, another card or another printing of it (`checkProductLink`;
  * docs/catalog.md → Checking TCGdex's products). Such a card is left
  * unpriced, to be matched by hand. A card or product the stores lack, or a
- * card of a set released in the last `PRODUCT_CHECK_AFTER_DAYS`, isn't
- * rejected. Set release dates are read once per set.
+ * card out less than `PRODUCT_CHECK_AFTER_DAYS`, isn't rejected. Set release
+ * dates are read once per set.
  */
 export function productLinkChecker(
   store: CatalogStore,
@@ -288,12 +299,25 @@ export function productLinkChecker(
       return false;
     }
     const releaseDate = released(region, card.setId);
-    if (releaseDate === null || releaseDate >= since) {
+    const recent = [releaseDate, product.dateAdded].some((date) => date !== null && date >= since);
+    if (recent) {
       return false;
     }
     const check = checkProductLink(card, product);
     return check === 'other_card' || check === 'other_printing';
   };
+}
+
+/**
+ * Names the cards whose TCGdex product a pass rejected (`region:cardId`), as
+ * a short hash stored with the guide's state: a pass applies an unchanged
+ * guide anew once they differ.
+ */
+function rejectionsKey(cards: readonly string[]): string {
+  return createHash('sha256')
+    .update([...cards].sort().join('\n'))
+    .digest('hex')
+    .slice(0, 16);
 }
 
 /** A card's prices from its product's guide entry, flagged when matched by hand. */

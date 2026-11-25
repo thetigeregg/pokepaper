@@ -22,6 +22,8 @@ export type ProductLinkCheck = 'ok' | 'unchecked' | 'other_card' | 'other_printi
  * Lantern", "Star Cipher" and "Star Cypher".
  */
 export const MIN_NAME_SIMILARITY = 0.75;
+/** Names shorter than this are compared exactly (`similar`). */
+const MIN_SIMILAR_LENGTH = 6;
 
 /** Bracketed words naming one half of a split card ("Ho-Oh LEGEND [Top]"), not its moves. */
 const CARD_HALVES = new Set(['top', 'bottom', 'left', 'right']);
@@ -29,10 +31,9 @@ const CARD_HALVES = new Set(['top', 'bottom', 'left', 'right']);
 /**
  * Checks a card's Cardmarket product against it, by Cardmarket's product
  * name: the card's name before any bracket ("Staraptor [FB] Lv.50 [Quick
- * Attack | Whirlwind]"), then its attacks and abilities in the last
- * brackets. Names are compared as `cardmarketSearchText`: equal, one
- * holding the other ("Pelipper" in "Pelipper Lv.50"), or alike enough
- * (`MIN_NAME_SIMILARITY`).
+ * Attack | Whirlwind]", `namesMatch`), then its attacks and abilities in
+ * the brackets ending it (`moveBrackets`), one of which must be alike
+ * (`similar`).
  */
 export function checkProductLink(
   card: Pick<CatalogCard, 'text'>,
@@ -51,9 +52,11 @@ export function checkProductLink(
     .map((move) => cardmarketSearchText(move.name))
     // McDonald's cards list the Pokémon's own name as an attack in some data.
     .filter((move) => move && move !== name);
-  const listed = lastBrackets(product.name)
+  const nameWords = new Set(words(text.name));
+  const listed = moveBrackets(product.name)
     .map(cardmarketSearchText)
-    .filter((move) => move && !CARD_HALVES.has(move));
+    // A split card's half, or a tag from the card's name ("Garchomp C [C]").
+    .filter((move) => move && !CARD_HALVES.has(move) && !nameWords.has(move));
   if (moves.length === 0 || listed.length === 0) {
     return 'ok';
   }
@@ -63,25 +66,28 @@ export function checkProductLink(
 }
 
 /**
- * Whether two names are one card's: as `cardmarketSearchText`, equal, one
- * holding the other or alike (`similar`); else word by word, the shorter's
- * words all in the longer ("Legendary Trench", "Legendary Marine Trench"),
- * one standing for the longer's other words' initials ("Blend Energy GFPD").
+ * Whether two names are one card's: equal or alike as `cardmarketSearchText`
+ * (`similar`: "MMewtwo EX" and "M Mewtwo EX"); else word by word, the
+ * shorter's words all in the longer ("Pelipper", "Pelipper Lv.50"; "Legendary
+ * Trench", "Legendary Marine Trench"), or one standing for the longer's other
+ * words' initials ("Blend Energy GFPD"). Never one name merely inside the
+ * other: "N" isn't "Nidoking", nor "Mew" "Mewtwo".
  */
 function namesMatch(a: string, b: string): boolean {
-  const [textA, textB] = [cardmarketSearchText(a), cardmarketSearchText(b)];
-  if (textA.includes(textB) || textB.includes(textA) || similar(textA, textB)) {
+  if (similar(cardmarketSearchText(a), cardmarketSearchText(b))) {
     return true;
   }
   const [shorter, longer] = [words(a), words(b)].sort((x, y) => x.length - y.length) as [
     string[],
     string[],
   ];
+  const shared = shorter.filter((word) => longer.includes(word));
   const initials = longer
     .filter((word) => !shorter.includes(word))
     .map((word) => word.charAt(0))
     .join('');
-  return shorter.every((word) => longer.includes(word) || word === initials);
+  // Initials stand in only beside a shared word: "N" isn't Nidoking's initial.
+  return shorter.every((word) => longer.includes(word) || (shared.length > 0 && word === initials));
 }
 
 /** A name's words, lowercased without accents: "Team Aqua's Walrein" → team, aqua, s, walrein. */
@@ -93,19 +99,29 @@ function words(name: string): string[] {
     .filter((word) => word);
 }
 
-/** The `|`-separated entries of a product name's last brackets: `[Mirror Move | Feather Lance]`. */
-function lastBrackets(name: string): string[] {
-  const groups = [...name.matchAll(/\[([^\]]*)\]/g)];
-  return groups.at(-1)?.[1]?.split('|') ?? [];
+/**
+ * The `|`-separated moves in the brackets ending a product name: `Pidgeot
+ * [Mirror Move | Feather Lance]`. None when the name doesn't end in
+ * brackets: "Staraptor [FB] Lv.50" names a level-up tag, not moves.
+ */
+function moveBrackets(name: string): string[] {
+  return /\[([^\]]*)\]\s*$/.exec(name)?.[1]?.split('|') ?? [];
 }
 
-/** Equal, or alike enough to be one name spelled two ways (`MIN_NAME_SIMILARITY`). */
+/**
+ * Equal, or alike enough to be one name spelled two ways
+ * (`MIN_NAME_SIMILARITY`). Names shorter than `MIN_SIMILAR_LENGTH` must be
+ * equal: one letter apart, "Bite" and "Bide" are other moves.
+ */
 function similar(a: string, b: string): boolean {
   if (a === b) {
     return true;
   }
   const longer = Math.max(a.length, b.length);
-  return 1 - editDistance(a, b) / longer >= MIN_NAME_SIMILARITY;
+  return (
+    Math.min(a.length, b.length) >= MIN_SIMILAR_LENGTH &&
+    1 - editDistance(a, b) / longer >= MIN_NAME_SIMILARITY
+  );
 }
 
 /** Levenshtein distance: insertions, deletions and substitutions turning `a` into `b`. */

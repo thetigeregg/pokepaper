@@ -16,8 +16,7 @@ import {
   type CatalogStore,
 } from './store.js';
 
-/** After a failed check, a stored list isn't checked again for this long. */
-export const PRODUCTS_RETRY_MS = 60 * 60 * 1000;
+export { PRODUCTS_RETRY_MS } from './cardmarket-products.js';
 /** At most this many candidates per answer (`truncated` beyond). */
 export const MAX_CANDIDATES = 50;
 /** Searches shorter than this (after `cardmarketSearchText`) get the suggestions instead. */
@@ -51,8 +50,6 @@ export class CardmarketProductsUnavailableError extends Error {}
 export class CardmarketMatcher {
   private readonly now: () => Date;
   private refreshing: Promise<void> | null = null;
-  /** When the last check of the product list failed (ms since the epoch), if one did. */
-  private lastFailure: number | null = null;
 
   constructor(private readonly options: CardmarketMatcherOptions) {
     this.now = options.now ?? ((): Date => new Date());
@@ -215,7 +212,6 @@ export class CardmarketMatcher {
    */
   private async ensureProducts(): Promise<void> {
     const state = this.options.store.getCardmarketProductsState();
-    const now = this.now().getTime();
     if (!state) {
       try {
         await this.refresh();
@@ -226,9 +222,7 @@ export class CardmarketMatcher {
       }
       return;
     }
-    const due = cardmarketProductsDue(this.options.store, this.now());
-    const retrying = this.lastFailure !== null && now - this.lastFailure < PRODUCTS_RETRY_MS;
-    if (due && !retrying) {
+    if (cardmarketProductsDue(this.options.store, this.now())) {
       this.refresh().catch(() => undefined); // Logged in refresh().
     }
   }
@@ -236,11 +230,7 @@ export class CardmarketMatcher {
   /** Downloads the product list; concurrent calls share one download. Failures are logged. */
   private refresh(): Promise<void> {
     this.refreshing ??= this.refreshProducts()
-      .then(() => {
-        this.lastFailure = null;
-      })
       .catch((error: unknown) => {
-        this.lastFailure = this.now().getTime();
         this.options.log.warn({ err: error }, 'catalog.cardmarket_products_failed');
         throw error;
       })

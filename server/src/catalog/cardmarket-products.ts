@@ -11,6 +11,8 @@ const FETCH_TIMEOUT_MS = 120_000;
 const MAX_PRODUCTS_BYTES = 128 * 1024 * 1024;
 /** The stored list is checked for a newer one (with its ETag) once it's this old. */
 export const PRODUCTS_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+/** After a failed download, the list isn't checked again for this long. */
+export const PRODUCTS_RETRY_MS = 60 * 60 * 1000;
 
 export interface CardmarketProductsDownload {
   store: CatalogStore;
@@ -28,9 +30,37 @@ type Json = Record<string, unknown>;
  * or records that the stored one is still current (304). Throws when it
  * can't be downloaded or isn't one; the stored list is left as it was.
  */
-export async function downloadCardmarketProducts(
-  options: CardmarketProductsDownload
-): Promise<void> {
+export function downloadCardmarketProducts(options: CardmarketProductsDownload): Promise<void> {
+  const { store } = options;
+  const running = downloads.get(store);
+  if (running) {
+    return running;
+  }
+  const now = options.now ?? ((): Date => new Date());
+  const download = fetchProducts(options)
+    .then(() => {
+      failures.delete(store);
+    })
+    .catch((error: unknown) => {
+      failures.set(store, now().getTime());
+      throw error;
+    })
+    .finally(() => {
+      downloads.delete(store);
+    });
+  downloads.set(store, download);
+  return download;
+}
+
+/**
+ * Downloads in progress, per store: the matcher and the scheduled price
+ * pass share one. Kept per store, not per process, so tests stay apart.
+ */
+const downloads = new WeakMap<CatalogStore, Promise<void>>();
+/** When each store's last download failed (ms since the epoch), until one succeeds. */
+const failures = new WeakMap<CatalogStore, number>();
+
+async function fetchProducts(options: CardmarketProductsDownload): Promise<void> {
   const { store, log } = options;
   const fetchFn = options.fetch ?? fetch;
   const now = options.now ?? ((): Date => new Date());
@@ -90,8 +120,16 @@ export async function refreshCardmarketProductsIfDue(
   }
 }
 
-/** Whether the stored product list is missing or due a check for a newer one. */
+/**
+ * Whether the stored product list is missing or due a check for a newer one
+ * (`PRODUCTS_MAX_AGE_MS` old), unless a download failed in the last
+ * `PRODUCTS_RETRY_MS`.
+ */
 export function cardmarketProductsDue(store: CatalogStore, now: Date): boolean {
+  const failed = failures.get(store);
+  if (failed !== undefined && now.getTime() - failed < PRODUCTS_RETRY_MS) {
+    return false;
+  }
   const state = store.getCardmarketProductsState();
   return !state || now.getTime() - Date.parse(state.checkedAt) >= PRODUCTS_MAX_AGE_MS;
 }

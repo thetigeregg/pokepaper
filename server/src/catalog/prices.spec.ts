@@ -385,8 +385,15 @@ describe('runPriceRefresh', () => {
         'catalog.cardmarket_products_rejected'
       );
 
+      // Another printing's name: still rejected, so nothing to apply anew.
       storeProductList(store, { [PRODUCTS.pineco]: 'Pineco [Ram | Tackle]' }, '2026-11-25');
-      expect((await refresh()).cards.rejected).toBe(1);
+      expect((await refresh()).status).toBe('unchanged');
+      expect(store.getCardPrices('intl', 'sv01-001')).toBeUndefined();
+      // Rejected under another guide too.
+      const next = await refresh({
+        fetch: fakeCardmarket(fixtureGuide('2026-11-21T02:43:56+0100')).fetch,
+      });
+      expect(next.cards.rejected).toBe(1);
     });
 
     it('aren’t checked in a set released in the last 60 days, whose names can still change', async () => {
@@ -398,12 +405,64 @@ describe('runPriceRefresh', () => {
 
       expect(stats.cards.rejected).toBe(0);
       expect(store.getCardPrices('intl', 'sv01-001')?.base?.trend).toBe(0.14);
-      // Checked once 60 days old, with the next guide (Cardmarket's is new each night).
-      const later = await refresh({
-        now: () => new Date('2023-05-31T00:00:00.000Z'),
-        fetch: fakeCardmarket(fixtureGuide('2026-11-21T02:43:56+0100')).fetch,
-      });
+      // Checked once 60 days old, the same guide applied anew as the rejections changed.
+      const later = await refresh({ now: () => new Date('2023-05-31T00:00:00.000Z') });
+      expect(later.status).toBe('ok');
       expect(later.cards.rejected).toBe(1);
+    });
+
+    it('aren’t checked for a product Cardmarket added in the last 60 days', async () => {
+      const { store, refresh } = await setup();
+      const list = parseProductList(
+        cardmarketProductList([
+          {
+            idProduct: PRODUCTS.pineco,
+            name: 'Psyduck [Confusion Wave]',
+            idExpansion: 5001,
+            dateAdded: '2026-11-01 10:00:00',
+          },
+        ])
+      );
+      store.replaceCardmarketProducts(list?.products ?? [], {
+        etag: null,
+        createdAt: '2026-11-24T12:00:00.000Z',
+        checkedAt: '2026-11-24T12:00:00.000Z',
+      });
+
+      // A new promo in an old set: its product is three weeks old.
+      expect((await refresh({ now: () => new Date('2026-11-24T12:00:00Z') })).cards.rejected).toBe(
+        0
+      );
+      expect((await refresh({ now: () => new Date('2027-01-02T12:00:00Z') })).cards.rejected).toBe(
+        1
+      );
+    });
+
+    it('are checked a few hundred at a time, letting the server answer meanwhile', async () => {
+      const { store, refresh } = await setup();
+      // 1,200 more cards, copies of Pineco with its product.
+      const stored = store.getSet('intl', 'sv01');
+      const pineco = store.getCard('intl', 'sv01-001');
+      if (!stored || !pineco) {
+        throw new Error('fixture missing');
+      }
+      const copies = Array.from({ length: 1200 }, (_, index) => ({
+        ...pineco,
+        id: `sv01-copy${String(index)}`,
+        sortIndex: 1000 + index,
+      }));
+      store.writeSet(stored.set, [...store.listSetCards('intl', 'sv01'), ...copies]);
+      store.saveCardmarketProducts(
+        'intl',
+        new Map(copies.map((card) => [card.id, PRODUCTS.pineco]))
+      );
+      const yields = vi.spyOn(globalThis, 'setImmediate');
+
+      const stats = await refresh();
+
+      expect(stats.status).toBe('ok');
+      expect(yields.mock.calls.length).toBeGreaterThanOrEqual(2); // 1,200 products, 500 a time.
+      yields.mockRestore();
     });
 
     it('give way to a match made by hand, which is never checked', async () => {

@@ -84,7 +84,30 @@ describe('checkProductLink', () => {
     );
   });
 
+  it('never takes a name inside another for it', () => {
+    expect(checkProductLink(card('N'), product('Nidoking [Poison Jab]'))).toBe('other_card');
+    expect(checkProductLink(card('Mew', ['Psywave']), product('Mewtwo [Super Psywave]'))).toBe(
+      'other_card'
+    );
+  });
+
+  it('reads moves only from brackets ending the name, never a tag from the card’s name', () => {
+    expect(
+      checkProductLink(card('Staraptor FB', ['Quick Attack']), product('Staraptor [FB] Lv.50'))
+    ).toBe('ok');
+    expect(
+      checkProductLink(
+        card('Ancient Technical Machine [Ice]', ['Ice Generator']),
+        product('Ancient Technical Machine [Ice]')
+      )
+    ).toBe('ok');
+  });
+
   it('flags another printing of the card: its name, none of its attacks', () => {
+    // Short moves one letter apart are other moves.
+    expect(checkProductLink(card('Zubat', ['Bite']), product('Zubat [Bide]'))).toBe(
+      'other_printing'
+    );
     // HeartGold & SoulSilver's Typhlosion Prime, linked to the plain one.
     expect(
       checkProductLink(

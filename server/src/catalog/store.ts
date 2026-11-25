@@ -25,11 +25,10 @@ export interface PriceGuideState {
   /** Likewise, the version of the matches made by hand (`CardmarketMatchStore.version`). */
   matchesVersion: number;
   /**
-   * Likewise, the Cardmarket product list's `createdAt` (null without one),
-   * which TCGdex's products are checked against (`checkProductLink`).
-   * Absent from states saved before products were checked.
+   * Likewise, which cards' TCGdex products were rejected (`rejectionsKey`
+   * in prices.ts). Absent from states saved before products were checked.
    */
-  productListCreatedAt?: string | null;
+  rejections?: string;
 }
 
 /** A single card in Cardmarket's product list (`products_singles_6.json`). */
