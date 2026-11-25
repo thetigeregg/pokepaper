@@ -249,3 +249,7 @@
 ## v0.38.1 - 2026-11-25
 
 - 836fc5d fix(prices): keep hand matches and correct products in price passes (#75)
+
+## v0.38.2 - 2026-11-25
+
+- f411e86 fix(prices): let callers stop waiting on a shared product download (#76)
