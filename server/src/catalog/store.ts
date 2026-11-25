@@ -24,6 +24,11 @@ export interface PriceGuideState {
   productsVersion: number;
   /** Likewise, the version of the matches made by hand (`CardmarketMatchStore.version`). */
   matchesVersion: number;
+  /**
+   * Likewise, which cards' TCGdex products were rejected (`rejectionsKey`
+   * in prices.ts). Absent from states saved before products were checked.
+   */
+  rejections?: string;
 }
 
 /** A single card in Cardmarket's product list (`products_singles_6.json`). */

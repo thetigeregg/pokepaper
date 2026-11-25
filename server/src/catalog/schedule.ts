@@ -1,4 +1,5 @@
 import type { CatalogLanguage } from '@pokepaper/shared';
+import { refreshCardmarketProductsIfDue } from './cardmarket-products.js';
 import { runCatalogIngest, type CatalogLogger } from './ingest.js';
 import { runPriceRefresh, type CardmarketMatchSource } from './prices.js';
 import { refreshExchangeRates } from './rates.js';
@@ -134,6 +135,14 @@ export function startCatalogSchedule(options: CatalogScheduleOptions): CatalogSc
 
   const refreshPrices = async (client: TcgdexClient): Promise<void> => {
     try {
+      // The pass checks TCGdex's products against Cardmarket's product list.
+      await refreshCardmarketProductsIfDue({
+        store,
+        log,
+        signal: controller.signal,
+        fetch: options.fetch,
+        now,
+      });
       await runPriceRefresh({
         store,
         matches: options.matches,
