@@ -241,3 +241,7 @@
 ## v0.37.0 - 2026-11-25
 
 - 7006af0 feat(prices): reject TCGdex products named for another card (#73)
+
+## v0.38.0 - 2026-11-25
+
+- 79c005d feat(cards): show set symbols beside set names (#74)
