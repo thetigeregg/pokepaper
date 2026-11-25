@@ -253,3 +253,7 @@
 ## v0.38.2 - 2026-11-25
 
 - f411e86 fix(prices): let callers stop waiting on a shared product download (#76)
+
+## v0.39.0 - 2026-11-25
+
+- 7f5dbc3 feat(cards): filter by illustrator, search from card details (#77)
